@@ -14,7 +14,58 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from litellm.proxy.db.db_spend_update_writer import DBSpendUpdateWriter
+from litellm.proxy.db.db_spend_update_writer import (
+    DBSpendUpdateWriter,
+    _performance_metrics,
+)
+
+
+def test_performance_metrics_tracks_response_time_and_streaming_ttft():
+    metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:00.250Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": None,
+            "cache_hit": "False",
+        },
+        request_succeeded=True,
+    )
+
+    assert metrics == {
+        "response_time_ms_sum": 1000.0,
+        "response_time_count": 1,
+        "ttft_ms_sum": 250.0,
+        "ttft_count": 1,
+    }
+
+
+def test_performance_metrics_excludes_cache_hits_and_non_streaming_ttft():
+    cached_metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:00.100Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": 1000,
+            "cache_hit": "True",
+        },
+        request_succeeded=True,
+    )
+    non_streaming_metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:01Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": 1000,
+            "cache_hit": "False",
+        },
+        request_succeeded=True,
+    )
+
+    assert cached_metrics["response_time_count"] == 0
+    assert cached_metrics["ttft_count"] == 0
+    assert non_streaming_metrics["response_time_count"] == 1
+    assert non_streaming_metrics["ttft_count"] == 0
 
 
 @pytest.mark.asyncio

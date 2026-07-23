@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Required, TypedDict
+from typing_extensions import NotRequired, Required, TypedDict
 
 from litellm._uuid import uuid
 from litellm.constants import MCP_STDIO_ALLOWED_COMMANDS
@@ -4449,6 +4449,10 @@ class BaseDailySpendTransaction(TypedDict):
     api_requests: int
     successful_requests: int
     failed_requests: int
+    response_time_ms_sum: NotRequired[float]
+    response_time_count: NotRequired[int]
+    ttft_ms_sum: NotRequired[float]
+    ttft_count: NotRequired[int]
 
 
 class DailyTeamSpendTransaction(BaseDailySpendTransaction):

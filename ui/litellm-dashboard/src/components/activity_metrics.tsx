@@ -14,6 +14,28 @@ interface ActivityMetricsProps {
   hidePromptCachingMetrics?: boolean;
 }
 
+const formatDuration = (milliseconds: number | null | undefined): string => {
+  if (milliseconds === null || milliseconds === undefined) return "N/A";
+  if (milliseconds < 1000) return `${Math.round(milliseconds).toLocaleString()} ms`;
+  return `${formatNumberWithCommas(milliseconds / 1000, 2)} s`;
+};
+
+const combineAverage = (
+  currentAverage: number | null | undefined,
+  currentCount: number | undefined,
+  nextAverage: number | null | undefined,
+  nextCount: number | undefined,
+): { average: number | null; count: number } => {
+  const existingCount = currentCount || 0;
+  const incomingCount = nextCount || 0;
+  const combinedCount = existingCount + incomingCount;
+  if (combinedCount === 0) return { average: null, count: 0 };
+  return {
+    average: ((currentAverage || 0) * existingCount + (nextAverage || 0) * incomingCount) / combinedCount,
+    count: combinedCount,
+  };
+};
+
 const ModelSection = ({
   modelName,
   metrics,
@@ -26,7 +48,7 @@ const ModelSection = ({
   return (
     <div className="space-y-2">
       {/* Summary Cards */}
-      <Grid numItems={4} className="gap-4">
+      <Grid numItems={3} className="gap-4">
         <Card>
           <Text>Total Requests</Text>
           <Title>{metrics.total_requests.toLocaleString()}</Title>
@@ -46,6 +68,16 @@ const ModelSection = ({
           <Text>
             ${formatNumberWithCommas(metrics.total_spend / metrics.total_successful_requests, 3)} per successful request
           </Text>
+        </Card>
+        <Card>
+          <Text>Average Response Time</Text>
+          <Title>{formatDuration(metrics.average_response_time_ms)}</Title>
+          <Text>{(metrics.response_time_count || 0).toLocaleString()} measured requests</Text>
+        </Card>
+        <Card>
+          <Text>Average TTFT</Text>
+          <Title>{formatDuration(metrics.average_ttft_ms)}</Title>
+          <Text>{(metrics.ttft_count || 0).toLocaleString()} streaming requests</Text>
         </Card>
       </Grid>
 
@@ -196,6 +228,10 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
     total_spend: 0,
     total_cache_read_input_tokens: 0,
     total_cache_creation_input_tokens: 0,
+    average_response_time_ms: null as number | null,
+    response_time_count: 0,
+    average_ttft_ms: null as number | null,
+    ttft_count: 0,
     daily_data: {} as Record<
       string,
       {
@@ -220,6 +256,22 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
     totalMetrics.total_spend += model.total_spend;
     totalMetrics.total_cache_read_input_tokens += model.total_cache_read_input_tokens || 0;
     totalMetrics.total_cache_creation_input_tokens += model.total_cache_creation_input_tokens || 0;
+    const responseTime = combineAverage(
+      totalMetrics.average_response_time_ms,
+      totalMetrics.response_time_count,
+      model.average_response_time_ms,
+      model.response_time_count,
+    );
+    totalMetrics.average_response_time_ms = responseTime.average;
+    totalMetrics.response_time_count = responseTime.count;
+    const ttft = combineAverage(
+      totalMetrics.average_ttft_ms,
+      totalMetrics.ttft_count,
+      model.average_ttft_ms,
+      model.ttft_count,
+    );
+    totalMetrics.average_ttft_ms = ttft.average;
+    totalMetrics.ttft_count = ttft.count;
 
     // Aggregate daily data
     model.daily_data.forEach((day) => {
@@ -258,7 +310,7 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
       {/* Global Summary */}
       <div className="border rounded-lg p-4">
         <Title>Overall Usage</Title>
-        <Grid numItems={4} className="gap-4 mb-4">
+        <Grid numItems={3} className="gap-4 mb-4">
           <Card>
             <Text>Total Requests</Text>
             <Title>{totalMetrics.total_requests.toLocaleString()}</Title>
@@ -274,6 +326,16 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
           <Card>
             <Text>Total Spend</Text>
             <Title>${formatNumberWithCommas(totalMetrics.total_spend, 2)}</Title>
+          </Card>
+          <Card>
+            <Text>Average Response Time</Text>
+            <Title>{formatDuration(totalMetrics.average_response_time_ms)}</Title>
+            <Text>{totalMetrics.response_time_count.toLocaleString()} measured requests</Text>
+          </Card>
+          <Card>
+            <Text>Average TTFT</Text>
+            <Title>{formatDuration(totalMetrics.average_ttft_ms)}</Title>
+            <Text>{totalMetrics.ttft_count.toLocaleString()} streaming requests</Text>
           </Card>
         </Grid>
 
@@ -386,6 +448,10 @@ export const processActivityData = (
           total_spend: 0,
           total_cache_read_input_tokens: 0,
           total_cache_creation_input_tokens: 0,
+          average_response_time_ms: null,
+          response_time_count: 0,
+          average_ttft_ms: null,
+          ttft_count: 0,
           top_api_keys: [],
           top_models: [],
           daily_data: [],
@@ -401,6 +467,22 @@ export const processActivityData = (
       modelMetrics[model].total_failed_requests += modelData.metrics.failed_requests;
       modelMetrics[model].total_cache_read_input_tokens += modelData.metrics.cache_read_input_tokens || 0;
       modelMetrics[model].total_cache_creation_input_tokens += modelData.metrics.cache_creation_input_tokens || 0;
+      const responseTime = combineAverage(
+        modelMetrics[model].average_response_time_ms,
+        modelMetrics[model].response_time_count,
+        modelData.metrics.average_response_time_ms,
+        modelData.metrics.response_time_count,
+      );
+      modelMetrics[model].average_response_time_ms = responseTime.average;
+      modelMetrics[model].response_time_count = responseTime.count;
+      const ttft = combineAverage(
+        modelMetrics[model].average_ttft_ms,
+        modelMetrics[model].ttft_count,
+        modelData.metrics.average_ttft_ms,
+        modelData.metrics.ttft_count,
+      );
+      modelMetrics[model].average_ttft_ms = ttft.average;
+      modelMetrics[model].ttft_count = ttft.count;
 
       // Add daily data
       modelMetrics[model].daily_data.push({
@@ -415,6 +497,10 @@ export const processActivityData = (
           failed_requests: modelData.metrics.failed_requests,
           cache_read_input_tokens: modelData.metrics.cache_read_input_tokens || 0,
           cache_creation_input_tokens: modelData.metrics.cache_creation_input_tokens || 0,
+          average_response_time_ms: modelData.metrics.average_response_time_ms,
+          response_time_count: modelData.metrics.response_time_count,
+          average_ttft_ms: modelData.metrics.average_ttft_ms,
+          ttft_count: modelData.metrics.ttft_count,
         },
       });
     });

@@ -26,6 +26,10 @@ class SpendMetrics(BaseModel):
     successful_requests: int = Field(default=0)
     failed_requests: int = Field(default=0)
     api_requests: int = Field(default=0)
+    average_response_time_ms: Optional[float] = Field(default=None)
+    response_time_count: int = Field(default=0)
+    average_ttft_ms: Optional[float] = Field(default=None)
+    ttft_count: int = Field(default=0)
 
 
 class MetricBase(BaseModel):

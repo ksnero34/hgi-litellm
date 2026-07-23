@@ -112,6 +112,20 @@ class DailySpendUpdateQueue(BaseUpdateQueue):
                     daily_transaction["api_requests"] += payload["api_requests"]
                     daily_transaction["successful_requests"] += payload["successful_requests"]
                     daily_transaction["failed_requests"] += payload["failed_requests"]
+                    if "response_time_ms_sum" in daily_transaction or "response_time_ms_sum" in payload:
+                        daily_transaction["response_time_ms_sum"] = daily_transaction.get(
+                            "response_time_ms_sum", 0.0
+                        ) + payload.get("response_time_ms_sum", 0.0)
+                        daily_transaction["response_time_count"] = daily_transaction.get(
+                            "response_time_count", 0
+                        ) + payload.get("response_time_count", 0)
+                    if "ttft_ms_sum" in daily_transaction or "ttft_ms_sum" in payload:
+                        daily_transaction["ttft_ms_sum"] = daily_transaction.get("ttft_ms_sum", 0.0) + payload.get(
+                            "ttft_ms_sum", 0.0
+                        )
+                        daily_transaction["ttft_count"] = daily_transaction.get("ttft_count", 0) + payload.get(
+                            "ttft_count", 0
+                        )
 
                     # Add optional metrics cache_read_input_tokens and cache_creation_input_tokens
                     daily_transaction["cache_read_input_tokens"] = (

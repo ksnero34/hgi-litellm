@@ -204,6 +204,26 @@ describe("ActivityMetrics", () => {
     expect(screen.getByText("Overall Usage")).toBeInTheDocument();
   });
 
+  it("should display average response time and TTFT with sample counts", () => {
+    const metrics = {
+      "gpt-4": createMockModelActivityData("GPT-4", {
+        average_response_time_ms: 1250,
+        response_time_count: 8,
+        average_ttft_ms: 275,
+        ttft_count: 5,
+      }),
+    };
+
+    render(<ActivityMetrics modelMetrics={metrics} />);
+
+    expect(screen.getAllByText("Average Response Time").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1.25 s").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Average TTFT").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("275 ms").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("8 measured requests").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("5 streaming requests").length).toBeGreaterThan(0);
+  });
+
   it("should display prompt caching metrics when hidePromptCachingMetrics is false", () => {
     render(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={false} />);
     expect(screen.getByText("Prompt Caching Metrics")).toBeInTheDocument();
@@ -714,6 +734,56 @@ describe("processActivityData", () => {
     expect(result["gpt-4"].label).toBe("gpt-4");
     expect(result["gpt-4"].total_requests).toBe(100);
     expect(result["gpt-4"].total_spend).toBe(100.5);
+  });
+
+  it("should calculate weighted model performance averages across days", () => {
+    const firstDay: DailyData = {
+      date: "2025-01-01",
+      metrics: EMPTY_SPEND_METRICS,
+      breakdown: {
+        ...EMPTY_BREAKDOWN,
+        models: {
+          "local-model": {
+            metrics: {
+              ...EMPTY_SPEND_METRICS,
+              average_response_time_ms: 1000,
+              response_time_count: 1,
+              average_ttft_ms: 200,
+              ttft_count: 1,
+            },
+            metadata: {},
+            api_key_breakdown: {},
+          },
+        },
+      },
+    };
+    const secondDay: DailyData = {
+      date: "2025-01-02",
+      metrics: EMPTY_SPEND_METRICS,
+      breakdown: {
+        ...EMPTY_BREAKDOWN,
+        models: {
+          "local-model": {
+            metrics: {
+              ...EMPTY_SPEND_METRICS,
+              average_response_time_ms: 2000,
+              response_time_count: 3,
+              average_ttft_ms: 500,
+              ttft_count: 2,
+            },
+            metadata: {},
+            api_key_breakdown: {},
+          },
+        },
+      },
+    };
+
+    const result = processActivityData({ results: [firstDay, secondDay] }, "models");
+
+    expect(result["local-model"].average_response_time_ms).toBe(1750);
+    expect(result["local-model"].response_time_count).toBe(4);
+    expect(result["local-model"].average_ttft_ms).toBe(400);
+    expect(result["local-model"].ttft_count).toBe(3);
   });
 
   it("should process data for mcp_servers key", () => {
