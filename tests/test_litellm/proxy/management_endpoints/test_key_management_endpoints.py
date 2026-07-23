@@ -3705,10 +3705,6 @@ async def test_generate_key_foreign_org_with_mismatched_team_still_enforces_memb
             new_callable=AsyncMock,
         ),
         patch(
-            "litellm_enterprise.proxy.management_endpoints.key_management_endpoints.apply_enterprise_key_management_params",
-            side_effect=lambda data, team_table: data,
-        ),
-        patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._validate_caller_can_assign_key_org",
             mock_validate_org,
         ),
@@ -12994,6 +12990,10 @@ async def test_ghsa_q775_ui_session_token_team_key_exempt_from_budget_ceiling():
         patch("litellm.proxy.proxy_server.llm_router", None),
         patch("litellm.proxy.proxy_server.premium_user", False),
         patch("litellm.proxy.proxy_server.litellm_proxy_admin_name", "default_user_id"),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.generate_key_helper_fn",
+            new=AsyncMock(return_value={"key": "sk-team-key", "token_id": "team-key"}),
+        ),
     ):
         try:
             await _common_key_generation_helper(

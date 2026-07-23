@@ -92,6 +92,7 @@ from litellm.proxy.common_utils.html_forms.jwt_display_template import (
 )
 from litellm.proxy.common_utils.html_forms.ui_login import build_ui_login_form
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
 from litellm.proxy.management_endpoints.internal_user_endpoints import new_user
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
 from litellm.proxy.management_endpoints.sso_helper_utils import (
@@ -874,16 +875,12 @@ async def google_login(
 
     # check if user defined a custom auth sso sign in handler, if yes, use it
     if user_custom_ui_sso_sign_in_handler is not None:
-        try:
-            from litellm_enterprise.proxy.auth.custom_sso_handler import (  # type: ignore[import-untyped]
-                EnterpriseCustomSSOHandler,
-            )
-
-            return await EnterpriseCustomSSOHandler.handle_custom_ui_sso_sign_in(
-                request=request,
-            )
-        except ImportError:
-            verbose_proxy_logger.warning("Custom UI SSO handler unavailable - falling back to built-in SSO handlers.")
+        return await handle_custom_ui_sso_sign_in(
+            request=request,
+            handler=user_custom_ui_sso_sign_in_handler,
+            general_settings=general_settings,
+            return_to=return_to,
+        )
 
     # Check if we should use SSO handler
     if (

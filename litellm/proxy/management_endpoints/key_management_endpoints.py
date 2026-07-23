@@ -59,6 +59,9 @@ from litellm.proxy.common_utils.callback_utils import (
 from litellm.proxy.common_utils.rbac_utils import check_org_admin_can_generate_keys
 from litellm.proxy.common_utils.timezone_utils import get_budget_reset_time
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.feature_policy import (
+    is_oss_virtual_key_metadata_field,
+)
 from litellm.proxy.hooks.key_management_event_hooks import KeyManagementEventHooks
 from litellm.proxy.hooks.model_max_budget_limiter import (
     VIRTUAL_KEY_SPEND_CACHE_KEY_PREFIX,
@@ -127,11 +130,9 @@ from litellm.types.utils import (
     TeamUIKeyGenerationConfig,
 )
 
-OSS_VIRTUAL_KEY_METADATA_FIELDS = frozenset({"disable_global_guardrails", "guardrails", "policies"})
-
 
 def _set_virtual_key_metadata_field(object_data: Any, field_name: str, value: Any) -> None:
-    if field_name not in OSS_VIRTUAL_KEY_METADATA_FIELDS:
+    if not is_oss_virtual_key_metadata_field(field_name):
         _set_object_metadata_field(object_data=object_data, field_name=field_name, value=value)
         return
 
@@ -1861,7 +1862,7 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
                 else:
                     casted_metadata[k] = v
             if k in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
-                if k not in {"disable_global_guardrails", "guardrails", "policies"} and v:
+                if not is_oss_virtual_key_metadata_field(k) and v:
                     from litellm.proxy.utils import _premium_user_check
 
                     _premium_user_check(k)

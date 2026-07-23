@@ -17,6 +17,7 @@ sys.path.insert(
 import litellm
 from litellm.proxy._types import LiteLLM_UserTable, NewUserResponse
 from litellm.proxy.auth.handle_jwt import JWTHandler
+from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
 from litellm.proxy.management_endpoints.types import CustomOpenID
 from litellm.proxy.management_endpoints.ui_sso import (
@@ -7208,6 +7209,39 @@ async def test_oidc_login_has_no_user_count_limit():
 
     assert response is expected_response
     redirect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_custom_sso_handler_uses_oss_extension_object():
+    request = MagicMock(spec=Request)
+    request.client = SimpleNamespace(host="10.0.0.10")
+    openid = MagicMock()
+    expected_response = MagicMock()
+    handler = MagicMock()
+    handler.handle_custom_ui_sso_sign_in = AsyncMock(return_value=openid)
+
+    with patch.object(
+        SSOAuthenticationHandler,
+        "get_redirect_response_from_openid",
+        new=AsyncMock(return_value=expected_response),
+    ) as redirect:
+        response = await handle_custom_ui_sso_sign_in(
+            request=request,
+            handler=handler,
+            general_settings={"trusted_proxy_ranges": ["10.0.0.0/24"]},
+            return_to="https://control.example.com/ui",
+        )
+
+    assert response is expected_response
+    handler.handle_custom_ui_sso_sign_in.assert_awaited_once_with(request=request)
+    redirect.assert_awaited_once_with(
+        result=openid,
+        request=request,
+        received_response=None,
+        generic_client_id=None,
+        ui_access_mode=None,
+        return_to="https://control.example.com/ui",
+    )
 
 
 @pytest.mark.asyncio
