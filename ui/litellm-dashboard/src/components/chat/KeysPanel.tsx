@@ -340,7 +340,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
                 <div className="flex flex-col gap-1.5">
                   <Label>Grace Period</Label>
                   <Input
-                    placeholder="e.g. 24h, 2d"
+                    placeholder="기본값 72h"
                     value={formState.grace_period}
                     onChange={(e) => updateField("grace_period", e.target.value)}
                   />

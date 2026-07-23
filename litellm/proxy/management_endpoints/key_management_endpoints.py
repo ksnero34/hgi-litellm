@@ -14,7 +14,6 @@ import copy
 import inspect
 import json
 import math
-import os
 import re
 import secrets
 import traceback
@@ -31,6 +30,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm._uuid import uuid
 from litellm.constants import (
     LENGTH_OF_LITELLM_GENERATED_KEY,
+    LITELLM_KEY_ROTATION_GRACE_PERIOD,
     LITELLM_PROXY_ADMIN_NAME,
     UI_SESSION_TOKEN_TEAM_ID,
 )
@@ -4387,9 +4387,9 @@ async def _insert_deprecated_key(
         prisma_client: DB client
         old_token_hash: Hash of the old key being rotated out
         new_token_hash: Hash of the new replacement key
-        grace_period: Duration string (e.g. "24h", "2d") or None/empty for immediate revoke
+        grace_period: Duration string (e.g. "24h", "2d") or None/empty for the configured default
     """
-    grace_period_value = grace_period or os.getenv("LITELLM_KEY_ROTATION_GRACE_PERIOD", "")
+    grace_period_value = grace_period or LITELLM_KEY_ROTATION_GRACE_PERIOD
     if not grace_period_value:
         return
 
@@ -4576,7 +4576,7 @@ async def regenerate_key_fn(
         - permissions: Optional[dict] - Key-specific permissions
         - guardrails: Optional[List[str]] - List of active guardrails for the key
         - blocked: Optional[bool] - Whether the key is blocked
-        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = immediate revoke. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
+        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = 72h by default. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
 
 
     Returns:

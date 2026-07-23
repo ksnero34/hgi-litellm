@@ -115,7 +115,7 @@ describe("RegenerateKeyModal", () => {
 
   it("should display grace period recommendation text", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText("운영 키 권장값: 24h~72h")).toBeInTheDocument();
+    expect(screen.getByText("기본값: 72h")).toBeInTheDocument();
   });
 
   it("should call regenerateKeyCall and show success view on successful regeneration", async () => {

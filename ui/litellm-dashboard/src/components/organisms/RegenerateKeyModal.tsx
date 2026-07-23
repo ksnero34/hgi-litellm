@@ -235,10 +235,10 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
               <Form.Item
                 name="grace_period"
                 label="유예 기간"
-                tooltip="교체 후에도 기존 키를 이 기간 동안 유지합니다. 비워 두면 즉시 폐기됩니다."
+                tooltip="교체 후에도 기존 키를 이 기간 동안 유지합니다. 비워 두면 기본값 72h가 적용됩니다."
                 extra={
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    운영 키 권장값: 24h~72h
+                    기본값: 72h
                   </Text>
                 }
                 rules={[DURATION_RULE]}

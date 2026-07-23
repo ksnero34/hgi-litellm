@@ -6690,7 +6690,7 @@ export interface paths {
          *         - permissions: Optional[dict] - Key-specific permissions
          *         - guardrails: Optional[List[str]] - List of active guardrails for the key
          *         - blocked: Optional[bool] - Whether the key is blocked
-         *         - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = immediate revoke. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
+         *         - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = 72h by default. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
          *
          *
          *     Returns:
@@ -6947,7 +6947,7 @@ export interface paths {
          *         - permissions: Optional[dict] - Key-specific permissions
          *         - guardrails: Optional[List[str]] - List of active guardrails for the key
          *         - blocked: Optional[bool] - Whether the key is blocked
-         *         - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = immediate revoke. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
+         *         - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = 72h by default. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
          *
          *
          *     Returns:

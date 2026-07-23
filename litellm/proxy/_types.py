@@ -1185,7 +1185,7 @@ class RegenerateKeyRequest(GenerateKeyRequest):
     spend: Optional[float] = None
     metadata: Optional[dict] = None
     new_master_key: Optional[str] = None
-    grace_period: Optional[str] = None  # Duration to keep old key valid (e.g. "24h", "2d"); None = immediate revoke
+    grace_period: Optional[str] = None  # Duration to keep old key valid; None uses the configured 72h default
 
 
 class ResetSpendRequest(LiteLLMPydanticObjectBase):

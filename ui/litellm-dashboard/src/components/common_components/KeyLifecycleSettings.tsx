@@ -167,7 +167,7 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
 
         {autoRotationEnabled && (
           <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-700">
-            키가 회전되면 새 키가 발급됩니다. 기존 키는 유예 기간이 끝난 뒤 비활성화됩니다.
+            키가 회전되면 새 키가 발급됩니다. 기존 키는 기본 72시간의 유예 기간이 끝난 뒤 비활성화됩니다.
           </div>
         )}
       </div>
