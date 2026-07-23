@@ -1,8 +1,10 @@
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders, screen, waitFor } from "../../../../../../tests/test-utils";
 import { Form } from "antd";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 import { ProjectBaseForm, ProjectFormValues } from "./ProjectBaseForm";
 
 const mockUseTeams = vi.fn();
@@ -27,8 +29,14 @@ function FormWrapper() {
   return <ProjectBaseForm form={form} />;
 }
 
+beforeAll(() => {
+  void i18n.changeLanguage("en");
+});
+
 describe("ProjectBaseForm", () => {
   beforeEach(() => {
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
     mockUseTeams.mockReturnValue({ data: [], isLoading: false });
   });
 
@@ -59,7 +67,6 @@ describe("ProjectBaseForm", () => {
 
   it("should show the models select as disabled when no team is selected", () => {
     renderWithProviders(<FormWrapper />);
-    // The models select should be disabled — its placeholder indicates no team yet
     expect(screen.getByText("Select a team first")).toBeInTheDocument();
   });
 
@@ -73,7 +80,6 @@ describe("ProjectBaseForm", () => {
       isLoading: false,
     });
     renderWithProviders(<FormWrapper />);
-    // The form label "Team" is associated with the combobox input inside the Select
     await user.click(screen.getByLabelText("Team"));
     await waitFor(() => {
       expect(screen.getByText("Engineering")).toBeInTheDocument();

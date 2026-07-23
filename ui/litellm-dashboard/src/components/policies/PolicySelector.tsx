@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Select } from "antd";
+import { useTranslation } from "react-i18next";
 import { Policy } from "./types";
 import { getPoliciesList } from "../networking";
 
@@ -51,6 +52,7 @@ const PolicySelector: React.FC<PolicySelectorProps> = ({
   disabled,
   onPoliciesLoaded,
 }) => {
+  const { t } = useTranslation();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -84,7 +86,9 @@ const PolicySelector: React.FC<PolicySelectorProps> = ({
       <Select
         mode="multiple"
         disabled={disabled}
-        placeholder={disabled ? "정책을 변경할 권한이 없습니다" : "정책 선택"}
+        placeholder={
+          disabled ? t("gateway.policySelector.disabledPlaceholder") : t("gateway.policySelector.placeholder")
+        }
         onChange={handlePolicyChange}
         value={value}
         loading={loading}

@@ -12,6 +12,7 @@ import { Accordion, AccordionBody, AccordionHeader, Button, Col, Grid, Text, Tex
 import { Button as Button2, Form, Input, Modal, Radio, Select, Switch, Tag, Tooltip, Typography } from "antd";
 import debounce from "lodash/debounce";
 import React, { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { rolesWithWriteAccess } from "../../utils/roles";
 import AgentSelector from "../agent_management/AgentSelector";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
@@ -160,6 +161,7 @@ export const fetchUserModels = async (
  * ─────────────────────────────────────────────────────────────────────────
  */
 const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOpenCreate, prefillData }) => {
+  const { t } = useTranslation();
   const { accessToken, userId: userID, userRole } = useAuthorized();
   const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
   const { data: organizations, isLoading: isOrganizationsLoading } = useOrganizations();
@@ -902,7 +904,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               <Form.Item
                 label={
                   <span>
-                    Models{" "}
+                    {t("gateway.keyEdit.models")}{" "}
                     <Tooltip title="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
                       <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                     </Tooltip>
@@ -912,14 +914,14 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 rules={[]}
                 help={
                   keyType === "management" || keyType === "read_only"
-                    ? "Models field is disabled for this key type"
+                    ? t("gateway.createKey.modelsDisabled")
                     : "optional - leave empty to allow access to all models"
                 }
                 className="mt-4"
               >
                 <Select
                   mode="multiple"
-                  placeholder="Select models"
+                  placeholder={t("gateway.createKey.modelsPlaceholder")}
                   style={{ width: "100%" }}
                   disabled={keyType === "management" || keyType === "read_only"}
                   onChange={(values) => {
@@ -932,12 +934,12 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 >
                   {!selectedProjectId && selectedCreateKeyTeam && (
                     <Option key="all-team-models" value="all-team-models">
-                      All Team Models
+                      {t("gateway.createKey.modelsAllTeam")}
                     </Option>
                   )}
                   {!selectedProjectId && !selectedCreateKeyTeam && (
                     <Option key="all-proxy-models" value="all-proxy-models">
-                      All Proxy Models
+                      {t("gateway.createKey.modelsAllProxy")}
                     </Option>
                   )}
                   {modelsToPick.map((model: string) => (
@@ -951,7 +953,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               <Form.Item
                 label={
                   <span>
-                    Key Type{" "}
+                    {t("gateway.createKey.keyTypePlaceholder")}{" "}
                     <Tooltip title="Select the type of key to determine what routes and operations this key can access">
                       <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                     </Tooltip>
@@ -963,7 +965,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               >
                 <Select
                   defaultValue="llm_api"
-                  placeholder="Select key type"
+                  placeholder={t("gateway.createKey.keyTypePlaceholder")}
                   style={{ width: "100%" }}
                   optionLabelProp="label"
                   onChange={(value) => {
@@ -974,27 +976,27 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     }
                   }}
                 >
-                  <Option value="llm_api" label="AI APIs">
+                  <Option value="llm_api" label={t("gateway.createKey.keyType.aiApis")}>
                     <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>AI APIs</Typography.Text>
+                      <Typography.Text strong>{t("gateway.createKey.keyType.aiApis")}</Typography.Text>
                       <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        Can call only AI API routes (chat/completions, embeddings, etc.)
+                        {t("gateway.createKey.keyType.aiApisDescription")}
                       </Typography.Paragraph>
                     </div>
                   </Option>
-                  <Option value="management" label="Management">
+                  <Option value="management" label={t("gateway.createKey.keyType.management")}>
                     <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>Management</Typography.Text>
+                      <Typography.Text strong>{t("gateway.createKey.keyType.management")}</Typography.Text>
                       <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        Can call only management routes (user/team/key management)
+                        {t("gateway.createKey.keyType.managementDescription")}
                       </Typography.Paragraph>
                     </div>
                   </Option>
-                  <Option value="default" label="Full Access">
+                  <Option value="default" label={t("gateway.createKey.keyType.fullAccess")}>
                     <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>Full Access</Typography.Text>
+                      <Typography.Text strong>{t("gateway.createKey.keyType.fullAccess")}</Typography.Text>
                       <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        Can call all routes (AI APIs, Management, and read-only)
+                        {t("gateway.createKey.keyType.fullAccessDescription")}
                       </Typography.Paragraph>
                     </div>
                   </Option>
@@ -1008,7 +1010,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
             <div className="mb-8">
               <Accordion className="mt-4 mb-4">
                 <AccordionHeader>
-                  <Title className="m-0">Optional Settings</Title>
+                  <Title className="m-0">{t("gateway.createKey.optionalSettings")}</Title>
                 </AccordionHeader>
                 <AccordionBody>
                   <Form.Item
@@ -1178,29 +1180,29 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                   <Form.Item
                     label={
                       <span>
-                        가드레일{" "}
-                        <Tooltip title="이 키에 안전 가드레일을 적용합니다">
+                        {t("gateway.createKey.guardrails")}{" "}
+                        <Tooltip title={t("gateway.createKey.guardrailsTooltip")}>
                           <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
                     }
                     name="guardrails"
                     className="mt-4"
-                    help="적용할 가드레일을 선택하거나 입력하세요"
+                    help={t("gateway.createKey.guardrailsHelp")}
                   >
                     <Select
                       mode="tags"
                       style={{ width: "100%" }}
                       disabled={!canEditGuardrails}
-                      placeholder="가드레일 선택 또는 입력"
+                      placeholder={t("gateway.createKey.guardrailsPlaceholder")}
                       options={guardrailsList.map((name) => ({ value: name, label: name }))}
                     />
                   </Form.Item>
                   <Form.Item
                     label={
                       <span>
-                        전역 가드레일 제외{" "}
-                        <Tooltip title="이 키가 모든 요청에 적용되는 전역 가드레일을 우회하도록 설정합니다">
+                        {t("gateway.createKey.disableGlobalGuardrails")}{" "}
+                        <Tooltip title={t("gateway.createKey.disableGlobalGuardrailsTooltip")}>
                           <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
@@ -1208,28 +1210,32 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     name="disable_global_guardrails"
                     className="mt-4"
                     valuePropName="checked"
-                    help="이 키에서 전역 가드레일을 적용하지 않습니다"
+                    help={t("gateway.createKey.disableGlobalGuardrailsHelp")}
                   >
-                    <Switch disabled={!canEditGuardrails} checkedChildren="예" unCheckedChildren="아니요" />
+                    <Switch
+                      disabled={!canEditGuardrails}
+                      checkedChildren={t("gateway.createKey.yes")}
+                      unCheckedChildren={t("gateway.createKey.no")}
+                    />
                   </Form.Item>
                   <Form.Item
                     label={
                       <span>
-                        정책{" "}
-                        <Tooltip title="이 키에 가드레일 정책을 적용합니다">
+                        {t("gateway.createKey.policies")}{" "}
+                        <Tooltip title={t("gateway.createKey.policiesTooltip")}>
                           <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
                     }
                     name="policies"
                     className="mt-4"
-                    help="적용할 정책을 선택하거나 입력하세요"
+                    help={t("gateway.createKey.policiesHelp")}
                   >
                     <Select
                       mode="tags"
                       style={{ width: "100%" }}
                       disabled={!canEditGuardrails}
-                      placeholder="정책 선택 또는 입력"
+                      placeholder={t("gateway.createKey.policiesPlaceholder")}
                       options={policiesList.map((name) => ({ value: name, label: name }))}
                     />
                   </Form.Item>
@@ -1502,7 +1508,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
           <div style={{ textAlign: "right", marginTop: "10px" }}>
             <Button2 htmlType="submit" disabled={isFormDisabled} style={{ opacity: isFormDisabled ? 0.5 : 1 }}>
-              Create Key
+              {t("gateway.createKey.create")}
             </Button2>
           </div>
         </Form>
@@ -1511,7 +1517,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       {/* Add the Create User Modal */}
       {isCreateUserModalVisible && (
         <Modal
-          title="Create New User"
+          title={t("gateway.createKey.createUserTitle")}
           open={isCreateUserModalVisible}
           onCancel={() => setIsCreateUserModalVisible(false)}
           footer={null}

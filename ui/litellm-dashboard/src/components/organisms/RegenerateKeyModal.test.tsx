@@ -4,6 +4,8 @@ import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils"
 import { RegenerateKeyModal } from "./RegenerateKeyModal";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import { formatExpiresUtc } from "@/utils/keyExpiryUtils";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 
 // Mock the networking call
 const mockRegenerateKeyCall = vi.fn();
@@ -46,17 +48,19 @@ describe("RegenerateKeyModal", () => {
   };
 
   beforeEach(() => {
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
     vi.clearAllMocks();
   });
 
   it("should render the modal with correct title", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText("가상 키 교체")).toBeInTheDocument();
+    expect(screen.getByText("Rotate Virtual Key")).toBeInTheDocument();
   });
 
   it("should not render the modal when visible is false", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} visible={false} />);
-    expect(screen.queryByText("가상 키 교체")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rotate Virtual Key")).not.toBeInTheDocument();
   });
 
   it("should display the form with pre-filled values", () => {
@@ -69,18 +73,18 @@ describe("RegenerateKeyModal", () => {
 
   it("should display the current expiry when token has expires", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText(/현재 만료:/)).toBeInTheDocument();
+    expect(screen.getByText(/Current expiry:/)).toBeInTheDocument();
   });
 
   it("should display 'Never' when token has no expires", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} selectedToken={makeToken({ expires: undefined })} />);
-    expect(screen.getByText("현재 만료: 만료 없음")).toBeInTheDocument();
+    expect(screen.getByText("Current expiry: Never")).toBeInTheDocument();
   });
 
   it("should show Cancel and Regenerate buttons in form view", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Regenerate/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Issue New Key/ })).toBeInTheDocument();
   });
 
   it("should call onClose when Cancel is clicked", async () => {
@@ -110,13 +114,13 @@ describe("RegenerateKeyModal", () => {
   it("should render duration and grace period fields", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
 
-    expect(screen.getByText("키 만료")).toBeInTheDocument();
-    expect(screen.getByText("유예 기간")).toBeInTheDocument();
+    expect(screen.getByText("Expire Key")).toBeInTheDocument();
+    expect(screen.getByText("Grace Period")).toBeInTheDocument();
   });
 
   it("should display grace period recommendation text", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText("기본값: 72h")).toBeInTheDocument();
+    expect(screen.getByText("Default: 72h")).toBeInTheDocument();
   });
 
   it("should call regenerateKeyCall and show success view on successful regeneration", async () => {
@@ -128,7 +132,7 @@ describe("RegenerateKeyModal", () => {
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
 
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockRegenerateKeyCall).toHaveBeenCalledOnce();
@@ -138,7 +142,7 @@ describe("RegenerateKeyModal", () => {
       expect(screen.getByText("sk-new-regenerated-key")).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/다시 표시되지 않으므로/)).toBeInTheDocument();
+    expect(screen.getByText(/you will not see it again/)).toBeInTheDocument();
   });
 
   it("should display the exact previous key revoke time after regeneration", async () => {
@@ -151,10 +155,10 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
-    expect(await screen.findByText("기존 키 사용 가능 기한")).toBeInTheDocument();
-    expect(screen.getByText(`${formatExpiresUtc(previousKeyRevokeAt)}까지`)).toBeInTheDocument();
+    expect(await screen.findByText("Previous key usable until")).toBeInTheDocument();
+    expect(screen.getByText(formatExpiresUtc(previousKeyRevokeAt))).toBeInTheDocument();
   });
 
   it("should show Close button after successful regeneration", async () => {
@@ -165,7 +169,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(screen.getByText("sk-new-regenerated-key")).toBeInTheDocument();
@@ -175,7 +179,7 @@ describe("RegenerateKeyModal", () => {
     const closeButtons = screen.getAllByRole("button", { name: "Close" });
     expect(closeButtons.length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Regenerate/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Issue New Key/ })).not.toBeInTheDocument();
   });
 
   it("should show Copy Key button after successful regeneration", async () => {
@@ -186,7 +190,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Copy Key/ })).toBeInTheDocument();
@@ -201,7 +205,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     const copyButton = await screen.findByRole("button", { name: /Copy Key/ });
     await user.click(copyButton);
@@ -220,10 +224,10 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("가상 키")).toBeInTheDocument();
+      expect(screen.getByText("Virtual Key")).toBeInTheDocument();
     });
   });
 
@@ -235,7 +239,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockOnKeyUpdate).toHaveBeenCalledOnce();
@@ -246,12 +250,12 @@ describe("RegenerateKeyModal", () => {
   });
 
   it.each([
-    ["30s", /새 만료:/],
-    ["15m", /새 만료:/],
-    ["2h", /새 만료:/],
-    ["7d", /새 만료:/],
-    ["2w", /새 만료:/],
-    ["1mo", /새 만료:/],
+    ["30s", /New:/],
+    ["15m", /New:/],
+    ["2h", /New:/],
+    ["7d", /New:/],
+    ["2w", /New:/],
+    ["1mo", /New:/],
   ])("should compute a new expiry preview for duration '%s'", async (durationInput, expected) => {
     const user = userEvent.setup();
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
@@ -278,7 +282,7 @@ describe("RegenerateKeyModal", () => {
       <RegenerateKeyModal {...defaultProps} selectedToken={makeToken({ expires: "2026-12-31T00:00:00Z" })} />,
     );
 
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockOnKeyUpdate).toHaveBeenCalledOnce();
@@ -299,7 +303,7 @@ describe("RegenerateKeyModal", () => {
       <RegenerateKeyModal {...defaultProps} selectedToken={makeToken({ expires: previousExpires })} />,
     );
 
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockOnKeyUpdate).toHaveBeenCalledOnce();
@@ -317,10 +321,10 @@ describe("RegenerateKeyModal", () => {
     await user.clear(durationField);
     await user.type(durationField, "bogus");
 
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("30s, 30m, 24h, 2d, 1w, 1mo 형식으로 입력하세요")).toBeInTheDocument();
+      expect(screen.getByText("Enter a value like 30s, 30m, 24h, 2d, 1w, or 1mo")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     expect(mockNotificationFromBackend).not.toHaveBeenCalled();
@@ -341,7 +345,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockOnKeyUpdate).toHaveBeenCalledOnce();
@@ -362,7 +366,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(screen.getByText("my-test-key")).toBeInTheDocument();
@@ -377,10 +381,10 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} selectedToken={makeToken({ key_alias: undefined })} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("별칭 없음")).toBeInTheDocument();
+      expect(screen.getByText("No alias")).toBeInTheDocument();
     });
   });
 
@@ -389,7 +393,7 @@ describe("RegenerateKeyModal", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} selectedToken={null} />);
 
     // The form shouldn't even be populated, but we check the button doesn't trigger a call
-    const regenerateBtn = screen.queryByRole("button", { name: /Regenerate/ });
+    const regenerateBtn = screen.queryByRole("button", { name: /Issue New Key/ });
     if (regenerateBtn) {
       await user.click(regenerateBtn);
     }
@@ -407,7 +411,7 @@ describe("RegenerateKeyModal", () => {
       />,
     );
 
-    expect(screen.getByText(/\(만료됨\)/)).toBeInTheDocument();
+    expect(screen.getByText(/\(expired\)/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. 30s, 30h, 30d")).toHaveValue("");
   });
 
@@ -422,10 +426,10 @@ describe("RegenerateKeyModal", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("만료된 키에는 새 만료 기간이 필요합니다")).toBeInTheDocument();
+      expect(screen.getByText("Expired keys require a new expiration duration")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     // Form validation rejections must not surface a backend-style toast.
@@ -440,7 +444,7 @@ describe("RegenerateKeyModal", () => {
     });
 
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
       expect(mockRegenerateKeyCall).toHaveBeenCalledWith(

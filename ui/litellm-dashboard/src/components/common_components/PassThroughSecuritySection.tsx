@@ -1,6 +1,7 @@
 import React from "react";
 import { Card, Title, Subtitle, Text } from "@tremor/react";
 import { Form, Switch } from "antd";
+import { useTranslation } from "react-i18next";
 
 export interface PassThroughSecuritySectionProps {
   premiumUser: boolean;
@@ -17,12 +18,12 @@ const PassThroughSecuritySection: React.FC<PassThroughSecuritySectionProps> = ({
   authEnabled,
   onAuthChange,
 }) => {
+  const { t } = useTranslation();
+
   return (
     <Card className="p-6">
-      <Title className="text-lg font-semibold text-gray-900 mb-2">Security</Title>
-      <Subtitle className="text-gray-600 mb-4">
-        When enabled, requests to this endpoint will require a valid LiteLLM Virtual Key
-      </Subtitle>
+      <Title className="text-lg font-semibold text-gray-900 mb-2">{t("settings.passThrough.title")}</Title>
+      <Subtitle className="text-gray-600 mb-4">{t("settings.passThrough.subtitle")}</Subtitle>
       {premiumUser ? (
         <Form.Item name="auth" valuePropName="checked" className="mb-0">
           <Switch
@@ -36,12 +37,10 @@ const PassThroughSecuritySection: React.FC<PassThroughSecuritySectionProps> = ({
         <div>
           <div className="flex items-center mb-3">
             <Switch disabled checked={false} style={{ outline: "2px solid #d1d5db", outlineOffset: "2px" }} />
-            <span className="ml-2 text-sm text-gray-400">인증</span>
+            <span className="ml-2 text-sm text-gray-400">{t("settings.passThrough.auth")}</span>
           </div>
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <Text className="text-sm text-yellow-800">
-              현재 구성에서는 패스스루 엔드포인트 인증을 설정할 수 없습니다.
-            </Text>
+            <Text className="text-sm text-yellow-800">{t("settings.passThrough.upgradeMessage")}</Text>
           </div>
         </div>
       )}

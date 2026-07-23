@@ -4,16 +4,18 @@ import { useLogin } from "@/app/(dashboard)/hooks/login/useLogin";
 import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
 import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { exchangeLoginCode, getProxyBaseUrl, switchToWorkerUrl } from "@/components/networking";
+import { useWorker } from "@/hooks/useWorker";
 import { clearTokenCookies, getCookieFromDocument } from "@/utils/cookieUtils";
 import { isJwtExpired } from "@/utils/jwtUtils";
 import { consumeReturnUrl, getReturnUrl, isValidReturnUrl } from "@/utils/returnUrlUtils";
-import { InfoCircleOutlined, CloudServerOutlined } from "@ant-design/icons";
+import { CloudServerOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Form, Input, Popover, Select, Space, Typography } from "antd";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useWorker } from "@/hooks/useWorker";
+import { useTranslation } from "react-i18next";
 
 function LoginPageContent() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -23,7 +25,6 @@ function LoginPageContent() {
   const { workers, selectWorker } = useWorker();
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
 
-  // Pre-select worker from URL param (e.g. /ui/login?worker=team-b)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const workerParam = params.get("worker");
@@ -37,23 +38,16 @@ function LoginPageContent() {
       return;
     }
 
-    // Check if admin UI is disabled
     if (uiConfig && uiConfig.admin_ui_disabled) {
       setIsLoading(false);
       return;
     }
 
-    // Cross-origin SSO: worker redirected back with a single-use code.
-    // Exchange it for the JWT via the worker's /v3/login/exchange endpoint.
     const params = new URLSearchParams(window.location.search);
     const rawSsoCode = params.get("code");
-    // Validate the SSO code is a plausible OAuth authorization code (alphanumeric
-    // plus common URL-safe chars) so that arbitrary user input cannot trigger the
-    // exchange endpoint.
     const ssoCode = rawSsoCode && /^[a-zA-Z0-9._~+/=-]+$/.test(rawSsoCode) ? rawSsoCode : null;
     if (ssoCode) {
       const rawWorkerUrl = localStorage.getItem("litellm_worker_url");
-      // Validate the stored worker URL: only allow http(s) URLs.
       const workerUrl = rawWorkerUrl && /^https?:\/\/.+/.test(rawWorkerUrl) ? rawWorkerUrl : null;
       exchangeLoginCode(ssoCode, workerUrl).then(() => {
         params.delete("code");
@@ -64,7 +58,6 @@ function LoginPageContent() {
       return;
     }
 
-    // If switching workers on a control plane, clear the old token and show login
     const switchingWorker = params.has("worker");
     if (switchingWorker && uiConfig?.is_control_plane) {
       clearTokenCookies();
@@ -74,7 +67,6 @@ function LoginPageContent() {
 
     const rawToken = getCookieFromDocument("token");
     if (rawToken && !isJwtExpired(rawToken)) {
-      // User already logged in - redirect to return URL or default
       const returnUrl = consumeReturnUrl();
       if (returnUrl) {
         router.replace(returnUrl);
@@ -85,7 +77,6 @@ function LoginPageContent() {
     }
 
     if (uiConfig && uiConfig.auto_redirect_to_sso) {
-      // For SSO, pass the return URL to the SSO endpoint
       const returnUrl = getReturnUrl();
       let ssoUrl = `${getProxyBaseUrl()}/sso/key/generate`;
       if (returnUrl && isValidReturnUrl(returnUrl)) {
@@ -99,8 +90,7 @@ function LoginPageContent() {
   }, [isConfigLoading, router, uiConfig]);
 
   const handleSubmit = () => {
-    // If a worker is selected, point proxyBaseUrl at it before login
-    const selectedWorker = workers.find((w) => w.worker_id === selectedWorkerId);
+    const selectedWorker = workers.find((worker) => worker.worker_id === selectedWorkerId);
     if (selectedWorker) {
       switchToWorkerUrl(selectedWorker.url);
     }
@@ -109,13 +99,10 @@ function LoginPageContent() {
       { username, password, useV3: !!selectedWorker },
       {
         onSuccess: (data) => {
-          // Update the worker context with the selected worker
           if (selectedWorker) {
             selectWorker(selectedWorker.worker_id);
-            // Stay on the CP's UI — proxyBaseUrl already points at the worker
             router.push("/ui/?login=success");
           } else {
-            // Normal (non-control-plane) login — follow the server's redirect
             const returnUrl = consumeReturnUrl();
             if (returnUrl) {
               router.push(returnUrl);
@@ -125,7 +112,6 @@ function LoginPageContent() {
           }
         },
         onError: () => {
-          // Reset proxyBaseUrl on login failure
           if (selectedWorker) {
             switchToWorkerUrl(null);
           }
@@ -137,13 +123,12 @@ function LoginPageContent() {
   const error = loginMutation.error instanceof Error ? loginMutation.error.message : null;
   const isLoginLoading = loginMutation.isPending;
 
-  const { Title, Text, Paragraph } = Typography;
+  const { Paragraph, Text, Title } = Typography;
 
   if (isConfigLoading || isLoading) {
     return <LoadingScreen />;
   }
 
-  // Show disabled message if admin UI is disabled
   if (uiConfig && uiConfig.admin_ui_disabled) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -154,12 +139,10 @@ function LoginPageContent() {
             </div>
 
             <Alert
-              message="관리자 화면 비활성화"
+              message={t("auth.login.adminUiDisabled.title")}
               description={
                 <>
-                  <Paragraph className="text-sm">
-                    관리자가 관리자 화면을 비활성화했습니다. 다시 사용하려면 다음 환경 변수를 설정하세요.
-                  </Paragraph>
+                  <Paragraph className="text-sm">{t("auth.login.adminUiDisabled.description")}</Paragraph>
                   <Paragraph className="text-sm">
                     <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">DISABLE_ADMIN_UI=False</code>
                   </Paragraph>
@@ -183,21 +166,20 @@ function LoginPageContent() {
           </div>
 
           <div className="text-center">
-            <Title level={3}>로그인</Title>
-            <Text type="secondary">사내 LLM 게이트웨이 관리자 화면에 접속합니다.</Text>
+            <Title level={3}>{t("auth.login.title")}</Title>
+            <Text type="secondary">{t("auth.login.subtitle")}</Text>
           </div>
 
           {!uiConfig?.hide_default_credentials_hint && (
             <Alert
-              message="기본 로그인 정보"
+              message={t("auth.login.defaultCredentials.title")}
               description={
-                <>
-                  <Paragraph className="text-sm">
-                    기본 사용자 이름은 <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">admin</code>이며,
-                    비밀번호는 프록시에 설정한{" "}
-                    <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
-                  </Paragraph>
-                </>
+                <Paragraph className="text-sm">
+                  {t("auth.login.defaultCredentials.descriptionPrefix")}{" "}
+                  <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">admin</code>{" "}
+                  {t("auth.login.defaultCredentials.descriptionMiddle")}{" "}
+                  <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
+                </Paragraph>
               }
               type="info"
               icon={<InfoCircleOutlined />}
@@ -209,43 +191,57 @@ function LoginPageContent() {
 
           <Form onFinish={handleSubmit} layout="vertical" requiredMark={false}>
             {uiConfig?.is_control_plane && workers.length > 0 && (
-              <Form.Item label="워커" style={{ marginBottom: 16 }}>
+              <Form.Item label={t("auth.login.worker.label")} style={{ marginBottom: 16 }}>
                 <Select
                   value={selectedWorkerId || undefined}
                   onChange={(value) => setSelectedWorkerId(value)}
-                  placeholder="접속할 워커 선택"
+                  placeholder={t("auth.login.worker.placeholder")}
                   size="large"
                   suffixIcon={<CloudServerOutlined />}
-                  options={workers.map((w) => ({
-                    label: w.name,
-                    value: w.worker_id,
+                  options={workers.map((worker) => ({
+                    label: worker.name,
+                    value: worker.worker_id,
                   }))}
                 />
               </Form.Item>
             )}
 
             <Form.Item
-              label="사용자 이름"
+              label={t("auth.login.username.label")}
               name="username"
-              rules={[{ required: true, message: "사용자 이름을 입력하세요" }]}
+              rules={[
+                {
+                  required: true,
+                  message: t("auth.login.username.required"),
+                },
+              ]}
             >
               <Input
-                placeholder="사용자 이름 입력"
+                placeholder={t("auth.login.username.placeholder")}
                 autoComplete="username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(event) => setUsername(event.target.value)}
                 disabled={isLoginLoading}
                 size="large"
                 className="rounded-md border-gray-300"
               />
             </Form.Item>
 
-            <Form.Item label="비밀번호" name="password" rules={[{ required: true, message: "비밀번호를 입력하세요" }]}>
+            <Form.Item
+              label={t("auth.login.password.label")}
+              name="password"
+              rules={[
+                {
+                  required: true,
+                  message: t("auth.login.password.required"),
+                },
+              ]}
+            >
               <Input.Password
-                placeholder="비밀번호 입력"
+                placeholder={t("auth.login.password.placeholder")}
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 disabled={isLoginLoading}
                 size="large"
               />
@@ -260,28 +256,25 @@ function LoginPageContent() {
                 block
                 size="large"
               >
-                {isLoginLoading ? "로그인 중..." : "로그인"}
+                {isLoginLoading ? t("auth.login.actions.signingIn") : t("auth.login.actions.signIn")}
               </Button>
             </Form.Item>
             <Form.Item>
               {!uiConfig?.sso_configured ? (
-                <Popover content="SSO 로그인을 사용하려면 SSO를 먼저 구성하세요." trigger="hover">
+                <Popover content={t("auth.login.sso.configureHint")} trigger="hover">
                   <Button disabled block size="large">
-                    SSO로 로그인
+                    {t("auth.login.actions.signInWithSso")}
                   </Button>
                 </Popover>
               ) : (
                 <Button
                   disabled={isLoginLoading || (!!selectedWorkerId && workers.length === 0)}
                   onClick={() => {
-                    const selectedWorker = workers.find((w) => w.worker_id === selectedWorkerId);
+                    const selectedWorker = workers.find((worker) => worker.worker_id === selectedWorkerId);
                     if (selectedWorker) {
-                      // Store worker selection so useWorker hook restores it after redirect
                       localStorage.setItem("litellm_selected_worker_id", selectedWorkerId!);
                       switchToWorkerUrl(selectedWorker.url);
                     }
-                    // SSO on the worker (or this instance if no worker), always
-                    // include return_to so the callback redirects back here
                     const ssoBase = selectedWorker?.url ?? getProxyBaseUrl();
                     const returnTo = encodeURIComponent(window.location.origin + "/ui/login");
                     router.push(`${ssoBase}/sso/key/generate?return_to=${returnTo}`);
@@ -289,7 +282,7 @@ function LoginPageContent() {
                   block
                   size="large"
                 >
-                  SSO로 로그인
+                  {t("auth.login.actions.signInWithSso")}
                 </Button>
               )}
             </Form.Item>
@@ -302,8 +295,8 @@ function LoginPageContent() {
             closable
             message={
               <Text>
-                SSO가 활성화되어 있습니다. 이 화면에서는 SSO 로그인으로 자동 이동하지 않습니다. 자동 이동을 사용하려면
-                환경 변수에 <Text code>AUTO_REDIRECT_UI_LOGIN_TO_SSO=true</Text>를 설정하세요.
+                {t("auth.login.sso.enabledNoticePrefix")} <Text code>AUTO_REDIRECT_UI_LOGIN_TO_SSO=true</Text>
+                {t("auth.login.sso.enabledNoticeSuffix")}
               </Text>
             }
           />

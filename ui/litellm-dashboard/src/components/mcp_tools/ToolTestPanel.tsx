@@ -5,6 +5,7 @@ import { resolveLogoSrc } from "@/lib/assetPaths";
 import { Form, Select, Tooltip } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import NotificationsManager from "../molecules/notifications_manager";
+import { useTranslation } from "react-i18next";
 
 const isPlainObject = (value: unknown): value is Record<string, any> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -115,6 +116,7 @@ export function ToolTestPanel({
   onClose: () => void;
 }) {
   const [form] = Form.useForm();
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = React.useState<"formatted" | "json">("formatted");
   const [startTime, setStartTime] = React.useState<number | null>(null);
   const [duration, setDuration] = React.useState<number | null>(null);
@@ -128,14 +130,14 @@ export function ToolTestPanel({
         properties: {
           input: {
             type: "string",
-            description: "Input for this tool",
+            description: t("toolsModels.mcp.toolInputDescription"),
           },
         },
         required: ["input"],
       };
     }
     return tool.inputSchema as InputSchema;
-  }, [tool.inputSchema]);
+  }, [t, tool.inputSchema]);
 
   // Check if this is a nested params structure and extract the actual parameters
   const actualSchema: InputSchema = React.useMemo(() => {
@@ -279,18 +281,18 @@ export function ToolTestPanel({
   const handleCopyResult = async () => {
     const success = await copyToClipboard(JSON.stringify(result, null, 2));
     if (success) {
-      NotificationsManager.success("Result copied to clipboard");
+      NotificationsManager.success(t("toolsModels.mcp.resultCopied"));
     } else {
-      NotificationsManager.fromBackend("Failed to copy result");
+      NotificationsManager.fromBackend(t("toolsModels.mcp.resultCopyFailed"));
     }
   };
 
   const handleCopyToolName = async () => {
     const success = await copyToClipboard(tool.name);
     if (success) {
-      NotificationsManager.success("Tool name copied to clipboard");
+      NotificationsManager.success(t("toolsModels.mcp.toolNameCopied"));
     } else {
-      NotificationsManager.fromBackend("Failed to copy tool name");
+      NotificationsManager.fromBackend(t("toolsModels.mcp.toolNameCopyFailed"));
     }
   };
 
@@ -303,17 +305,17 @@ export function ToolTestPanel({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={resolveLogoSrc(tool.mcp_info.logo_url)}
-              alt={`${tool.mcp_info.server_name} logo`}
+              alt={t("toolsModels.mcp.serverLogoAlt", { name: tool.mcp_info.server_name })}
               className="w-6 h-6 object-contain"
             />
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-1">
-              <h2 className="text-lg font-semibold text-gray-900">Test Tool:</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{t("toolsModels.mcp.testTool")}</h2>
               <div
                 className="group inline-flex items-center space-x-1 bg-slate-50 hover:bg-slate-100 px-3 py-1 rounded-md cursor-pointer transition-colors border border-slate-200"
                 onClick={handleCopyToolName}
-                title="Click to copy tool name"
+                title={t("toolsModels.mcp.clickToCopyToolName")}
               >
                 <span className="font-mono text-slate-700 font-medium text-sm">{tool.name}</span>
                 <svg
@@ -332,7 +334,9 @@ export function ToolTestPanel({
               </div>
             </div>
             <p className="text-xs text-gray-600">{tool.description}</p>
-            <p className="text-xs text-gray-500">Provider: {tool.mcp_info.server_name}</p>
+            <p className="text-xs text-gray-500">
+              {t("toolsModels.mcp.providerLabel")}: {tool.mcp_info.server_name}
+            </p>
           </div>
         </div>
         <Button onClick={onClose} variant="light" size="sm" className="text-gray-500 hover:text-gray-700">
@@ -348,8 +352,8 @@ export function ToolTestPanel({
         <div className="bg-white border border-gray-200 rounded-lg">
           <div className="border-b border-gray-100 px-4 py-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Input Parameters</h3>
-              <Tooltip title="Configure the input parameters for this tool call">
+              <h3 className="text-sm font-semibold text-gray-900">{t("toolsModels.mcp.inputParameters")}</h3>
+              <Tooltip title={t("toolsModels.mcp.configureInputParameters")}>
                 <InfoCircleOutlined className="text-gray-400 hover:text-gray-600" />
               </Tooltip>
             </div>
@@ -366,11 +370,11 @@ export function ToolTestPanel({
                       </span>
                     }
                     name="input"
-                    rules={[{ required: true, message: "Please enter input for this tool" }]}
+                    rules={[{ required: true, message: t("toolsModels.mcp.enterToolInput") }]}
                     className="mb-3"
                   >
                     <TextInput
-                      placeholder="Enter input for this tool"
+                      placeholder={t("toolsModels.mcp.enterToolInput")}
                       className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                     />
                   </Form.Item>
@@ -378,8 +382,10 @@ export function ToolTestPanel({
               ) : actualSchema.properties === undefined ? (
                 <div className="text-center py-6 bg-gray-50 rounded-lg border border-gray-200">
                   <div className="max-w-sm mx-auto">
-                    <h4 className="text-sm font-medium text-gray-900 mb-1">No Parameters Required</h4>
-                    <p className="text-xs text-gray-500">This tool can be called without any input parameters.</p>
+                    <h4 className="text-sm font-medium text-gray-900 mb-1">
+                      {t("toolsModels.mcp.noParametersRequiredTitle")}
+                    </h4>
+                    <p className="text-xs text-gray-500">{t("toolsModels.mcp.noParametersRequiredHelp")}</p>
                   </div>
                 </div>
               ) : (
@@ -405,7 +411,7 @@ export function ToolTestPanel({
                         rules={[
                           {
                             required: actualSchema.required?.includes(key),
-                            message: `Please enter ${key}`,
+                            message: t("toolsModels.mcp.enterField", { field: key }),
                           },
                           ...(prop.type === "object" || prop.type === "array"
                             ? [
@@ -437,12 +443,12 @@ export function ToolTestPanel({
                                       return Promise.reject(
                                         new Error(
                                           prop.type === "object"
-                                            ? "Please enter a JSON object"
-                                            : "Please enter a JSON array",
+                                            ? t("toolsModels.mcp.enterJsonObject")
+                                            : t("toolsModels.mcp.enterJsonArray"),
                                         ),
                                       );
                                     } catch (error) {
-                                      return Promise.reject(new Error("Invalid JSON"));
+                                      return Promise.reject(new Error(t("toolsModels.mcp.invalidJson")));
                                     }
                                   },
                                 },
@@ -467,7 +473,7 @@ export function ToolTestPanel({
 
                         {prop.type === "string" && !prop.enum && (
                           <TextInput
-                            placeholder={prop.description || `Enter ${key}`}
+                            placeholder={prop.description || t("toolsModels.mcp.enterField", { field: key })}
                             defaultValue={(initialValue as string) ?? ""}
                             className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                           />
@@ -477,7 +483,7 @@ export function ToolTestPanel({
                           <input
                             type="number"
                             step={prop.type === "integer" ? 1 : "any"}
-                            placeholder={prop.description || `Enter ${key}`}
+                            placeholder={prop.description || t("toolsModels.mcp.enterField", { field: key })}
                             defaultValue={initialValue ?? 0}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-colors"
                           />
@@ -485,12 +491,12 @@ export function ToolTestPanel({
 
                         {prop.type === "boolean" && (
                           <Select
-                            placeholder={`Select ${key}`}
+                            placeholder={t("toolsModels.mcp.selectField", { field: key })}
                             allowClear={!actualSchema.required?.includes(key)}
                             className="w-full"
                           >
-                            <Select.Option value={true}>True</Select.Option>
-                            <Select.Option value={false}>False</Select.Option>
+                            <Select.Option value={true}>{t("toolsModels.mcp.true")}</Select.Option>
+                            <Select.Option value={false}>{t("toolsModels.mcp.false")}</Select.Option>
                           </Select>
                         )}
 
@@ -501,8 +507,8 @@ export function ToolTestPanel({
                               placeholder={
                                 prop.description ||
                                 (prop.type === "object"
-                                  ? `Enter JSON object for ${key}`
-                                  : `Enter JSON array for ${key}`)
+                                  ? t("toolsModels.mcp.enterJsonObjectForField", { field: key })
+                                  : t("toolsModels.mcp.enterJsonArrayForField", { field: key }))
                               }
                               defaultValue={(initialValue as string) ?? (prop.type === "object" ? "{}" : "[]")}
                               spellCheck={false}
@@ -510,7 +516,9 @@ export function ToolTestPanel({
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
                             />
                             <p className="text-xs text-gray-500">
-                              {prop.type === "object" ? "Provide a valid JSON object." : "Provide a valid JSON array."}
+                              {prop.type === "object"
+                                ? t("toolsModels.mcp.validJsonObjectHelp")
+                                : t("toolsModels.mcp.validJsonArrayHelp")}
                             </p>
                           </div>
                         )}
@@ -529,7 +537,11 @@ export function ToolTestPanel({
                   className="w-full"
                   loading={isLoading}
                 >
-                  {isLoading ? "Calling Tool..." : result || error ? "Call Again" : "Call Tool"}
+                  {isLoading
+                    ? t("toolsModels.mcp.callingTool")
+                    : result || error
+                      ? t("toolsModels.mcp.callAgain")
+                      : t("toolsModels.mcp.callTool")}
                 </Button>
               </div>
             </Form>
@@ -539,7 +551,7 @@ export function ToolTestPanel({
         {/* Right Column - Tool Result */}
         <div className="bg-white border border-gray-200 rounded-lg">
           <div className="border-b border-gray-100 px-4 py-2">
-            <h3 className="text-sm font-semibold text-gray-900">Tool Result</h3>
+            <h3 className="text-sm font-semibold text-gray-900">{t("toolsModels.mcp.toolResult")}</h3>
           </div>
 
           <div className="p-4">
@@ -562,10 +574,8 @@ export function ToolTestPanel({
                       />
                     </svg>
                   </div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-1">Ready to Call Tool</h4>
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    Configure the input parameters and click &quot;Call Tool&quot; to see the results here.
-                  </p>
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">{t("toolsModels.mcp.readyToCallTool")}</h4>
+                  <p className="text-xs text-gray-500 leading-relaxed">{t("toolsModels.mcp.readyToCallToolHelp")}</p>
                 </div>
               </div>
             ) : (
@@ -583,7 +593,9 @@ export function ToolTestPanel({
                             d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                           />
                         </svg>
-                        <h4 className="text-xs font-medium text-green-900">Tool executed successfully</h4>
+                        <h4 className="text-xs font-medium text-green-900">
+                          {t("toolsModels.mcp.toolExecutedSuccessfully")}
+                        </h4>
                         {duration !== null && (
                           <span className="text-xs text-green-600 ml-1">• {(duration / 1000).toFixed(2)}s</span>
                         )}
@@ -599,7 +611,7 @@ export function ToolTestPanel({
                                 : "text-green-600 hover:text-green-800"
                             }`}
                           >
-                            Formatted
+                            {t("toolsModels.mcp.formatted")}
                           </button>
                           <button
                             onClick={() => setViewMode("json")}
@@ -616,7 +628,7 @@ export function ToolTestPanel({
                         <button
                           onClick={handleCopyResult}
                           className="p-1 hover:bg-green-100 rounded-sm text-green-700"
-                          title="Copy response"
+                          title={t("toolsModels.mcp.copyResponse")}
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -645,8 +657,8 @@ export function ToolTestPanel({
                         <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200"></div>
                         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent absolute top-0"></div>
                       </div>
-                      <p className="text-sm font-medium mt-3">Calling tool...</p>
-                      <p className="text-xs text-gray-400 mt-1">Please wait while we process your request</p>
+                      <p className="text-sm font-medium mt-3">{t("toolsModels.mcp.callingToolLower")}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t("toolsModels.mcp.processingRequest")}</p>
                     </div>
                   )}
 
@@ -665,7 +677,7 @@ export function ToolTestPanel({
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
-                            <h4 className="text-xs font-medium text-red-900">Tool Call Failed</h4>
+                            <h4 className="text-xs font-medium text-red-900">{t("toolsModels.mcp.toolCallFailed")}</h4>
                             {duration !== null && (
                               <span className="text-xs text-red-600">• {(duration / 1000).toFixed(2)}s</span>
                             )}
@@ -692,7 +704,7 @@ export function ToolTestPanel({
                               <div>
                                 <div className="bg-gray-50 px-3 py-1 border-b border-gray-200">
                                   <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                    Text Response
+                                    {t("toolsModels.mcp.textResponse")}
                                   </span>
                                 </div>
                                 <div className="p-3">
@@ -781,7 +793,7 @@ export function ToolTestPanel({
                               <div>
                                 <div className="bg-gray-50 px-3 py-1 border-b border-gray-200">
                                   <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                    Image Response
+                                    {t("toolsModels.mcp.imageResponse")}
                                   </span>
                                 </div>
                                 <div className="p-3">
@@ -789,7 +801,7 @@ export function ToolTestPanel({
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={content.url}
-                                      alt="Tool result"
+                                      alt={t("toolsModels.mcp.toolResultImageAlt")}
                                       className="max-w-full h-auto rounded-sm shadow-xs"
                                     />
                                   </div>
@@ -801,7 +813,7 @@ export function ToolTestPanel({
                               <div>
                                 <div className="bg-gray-50 px-3 py-1 border-b border-gray-200">
                                   <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                    Embedded Resource
+                                    {t("toolsModels.mcp.embeddedResource")}
                                   </span>
                                 </div>
                                 <div className="p-3">
@@ -823,7 +835,7 @@ export function ToolTestPanel({
                                     </div>
                                     <div className="flex-1">
                                       <p className="text-xs font-medium text-blue-900">
-                                        Resource Type: {content.resource_type}
+                                        {t("toolsModels.mcp.resourceType")}: {content.resource_type}
                                       </p>
                                       {content.url && (
                                         <a
@@ -832,7 +844,7 @@ export function ToolTestPanel({
                                           rel="noopener noreferrer"
                                           className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline mt-1 transition-colors"
                                         >
-                                          View Resource
+                                          {t("toolsModels.mcp.viewResource")}
                                           <svg className="ml-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
                                             <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
                                             <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />

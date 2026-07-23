@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import LoginPage from "./LoginPage";
+import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
@@ -57,16 +56,6 @@ import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
 import { getCookieFromDocument } from "@/utils/cookieUtils";
 import { isJwtExpired } from "@/utils/jwtUtils";
 
-const createQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        gcTime: 0,
-      },
-    },
-  });
-
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -86,15 +75,10 @@ describe("LoginPage", () => {
     });
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
     });
   });
 
@@ -112,12 +96,7 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(validToken);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/ui");
@@ -138,12 +117,7 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(invalidToken);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("http://localhost:4000/sso/key/generate");
@@ -164,15 +138,10 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(invalidToken);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
     });
 
     expect(mockPush).not.toHaveBeenCalled();
@@ -193,12 +162,7 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(validToken);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/ui");
@@ -219,16 +183,11 @@ describe("LoginPage", () => {
     });
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("Admin UI Disabled")).toBeInTheDocument();
+      expect(screen.getByText("관리자 화면 비활성화")).toBeInTheDocument();
     });
 
     expect(mockPush).not.toHaveBeenCalled();
@@ -248,18 +207,13 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(null);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "Login with SSO" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "SSO로 로그인" })).toBeInTheDocument();
   });
 
   it("should show disabled Login with SSO button with popover when sso_configured is false", async () => {
@@ -275,18 +229,13 @@ describe("LoginPage", () => {
     (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(null);
     (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<LoginPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
     });
 
-    const ssoButton = screen.getByRole("button", { name: "Login with SSO" });
+    const ssoButton = screen.getByRole("button", { name: "SSO로 로그인" });
     expect(ssoButton).toBeInTheDocument();
     expect(ssoButton).toBeDisabled();
   });
@@ -327,15 +276,10 @@ describe("LoginPage", () => {
       (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue(null);
       (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-      const queryClient = createQueryClient();
-      render(
-        <QueryClientProvider client={queryClient}>
-          <LoginPage />
-        </QueryClientProvider>,
-      );
+      renderWithProviders(<LoginPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
       });
 
       expect(document.cookie).not.toContain("token=attacker.jwt.value");
@@ -355,12 +299,7 @@ describe("LoginPage", () => {
       (getCookieFromDocument as ReturnType<typeof vi.fn>).mockReturnValue("legitimate-session-jwt");
       (isJwtExpired as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-      const queryClient = createQueryClient();
-      render(
-        <QueryClientProvider client={queryClient}>
-          <LoginPage />
-        </QueryClientProvider>,
-      );
+      renderWithProviders(<LoginPage />);
 
       await waitFor(() => {
         expect(mockReplace).toHaveBeenCalledWith("/ui");

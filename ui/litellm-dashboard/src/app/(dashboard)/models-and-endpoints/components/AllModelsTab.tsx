@@ -16,6 +16,7 @@ import { Badge, Button, Select, Skeleton, Space, Typography } from "antd";
 import ModelSettingsModal from "@/components/model_dashboard/ModelSettingsModal/ModelSettingsModal";
 import debounce from "lodash/debounce";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useModelsInfo } from "../../hooks/models/useModels";
 import { transformModelData } from "../utils/modelDataTransformer";
 type ModelViewMode = "all" | "current_team";
@@ -39,6 +40,7 @@ const AllModelsTab = ({
   setSelectedTeamId,
 }: AllModelsTabProps) => {
   const { data: modelCostMapData, isLoading: isLoadingModelCostMap } = useModelCostMap();
+  const { t } = useTranslation();
   const { accessToken, userId, userRole, premiumUser } = useAuthorized();
   const { data: teams, isLoading: isLoadingTeams } = useTeams();
   const queryClient = useQueryClient();
@@ -244,7 +246,7 @@ const AllModelsTab = ({
             <div className="border-b px-6 py-4 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <Text className="text-lg font-semibold text-gray-900">Current Team:</Text>
+                  <Text className="text-lg font-semibold text-gray-900">{t("toolsModels.models.currentTeam")}</Text>
                   <div className="w-80">
                     {isLoading ? (
                       <Skeleton.Input active block size="large" />
@@ -277,7 +279,7 @@ const AllModelsTab = ({
                             label: (
                               <Space direction="horizontal" align="center">
                                 <Badge color="blue" size="small" />
-                                <Text style={{ fontSize: 16 }}>Personal</Text>
+                                <Text style={{ fontSize: 16 }}>{t("toolsModels.models.personal")}</Text>
                               </Space>
                             ),
                           },
@@ -300,7 +302,7 @@ const AllModelsTab = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <Text className="text-lg font-semibold text-gray-900">View:</Text>
+                  <Text className="text-lg font-semibold text-gray-900">{t("toolsModels.models.view")}</Text>
                   <div className="w-64">
                     {isLoading ? (
                       <Skeleton.Input active block size="large" />
@@ -317,7 +319,7 @@ const AllModelsTab = ({
                             label: (
                               <Space direction="horizontal" align="center">
                                 <Badge color="purple" size="small" />
-                                <Text style={{ fontSize: 16 }}>Current Team Models</Text>
+                                <Text style={{ fontSize: 16 }}>{t("toolsModels.models.currentTeamModels")}</Text>
                               </Space>
                             ),
                           },
@@ -326,7 +328,7 @@ const AllModelsTab = ({
                             label: (
                               <Space direction="horizontal" align="center">
                                 <Badge color="gray" size="small" />
-                                <Text style={{ fontSize: 16 }}>All Available Models</Text>
+                                <Text style={{ fontSize: 16 }}>{t("toolsModels.models.allModels")}</Text>
                               </Space>
                             ),
                           },

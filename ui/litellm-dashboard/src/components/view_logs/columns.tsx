@@ -3,6 +3,8 @@ import { getSpendString } from "@/utils/dataUtils";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Tooltip } from "antd";
 import React from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "@/i18n/i18n";
 import { getProviderLogoAndName } from "../provider_info_helpers";
 import { TableHeaderSortDropdown } from "../common_components/TableHeaderSortDropdown/TableHeaderSortDropdown";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
@@ -104,25 +106,28 @@ const SortableHeader = ({
   </div>
 );
 
-export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] => [
+export const createColumns = (
+  sortProps?: LogsSortProps,
+  t: (key: string) => string = i18n.t.bind(i18n),
+): ColumnDef<LogEntry>[] => [
   {
     header: sortProps
       ? () => (
           <SortableHeader
-            label="Time"
+            label={t("observability.logs.columns.time")}
             field="startTime"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "Time",
+      : t("observability.logs.columns.time"),
     accessorKey: "startTime",
     size: 200,
     cell: (info: any) => <DateCell value={info.getValue()} />,
   },
   {
-    header: "Type",
+    header: t("observability.logs.columns.type"),
     id: "type",
     size: 90,
     cell: (info: any) => {
@@ -167,24 +172,29 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     },
   },
   {
-    header: "Status",
+    header: t("observability.logs.columns.status"),
     accessorKey: "metadata.status",
     size: 100,
     cell: (info: any) => {
       const status = info.getValue() || "Success";
       const isSuccess = status.toLowerCase() !== "failure";
-      return <StatusBadge tone={isSuccess ? "success" : "error"} label={isSuccess ? "Success" : "Failure"} />;
+      return (
+        <StatusBadge
+          tone={isSuccess ? "success" : "error"}
+          label={isSuccess ? t("observability.logs.columns.success") : t("observability.logs.columns.failure")}
+        />
+      );
     },
   },
   {
-    header: "Session ID",
+    header: t("observability.logs.columns.session_id"),
     accessorKey: "session_id",
     size: 120,
     cell: (info: any) => <IdCell value={info.getValue()} onClick={info.row.original.onSessionClick} />,
   },
 
   {
-    header: "Request ID",
+    header: t("observability.logs.columns.request_id"),
     accessorKey: "request_id",
     cell: (info: any) => <IdCell value={info.getValue()} variant="plain" />,
   },
@@ -192,14 +202,14 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: sortProps
       ? () => (
           <SortableHeader
-            label="Cost"
+            label={t("observability.logs.columns.cost")}
             field="spend"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "Cost",
+      : t("observability.logs.columns.cost"),
     accessorKey: "spend",
     size: 110,
     meta: { numeric: true },
@@ -217,10 +227,12 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
               <MoneyCell value={spend} decimals={6} />
             </span>
           </Tooltip>
-          {isMultiCallSession && <span className="text-[10px] text-gray-400">session total</span>}
+          {isMultiCallSession && (
+            <span className="text-[10px] text-gray-400">{t("observability.logs.columns.session_total")}</span>
+          )}
           {mcpCount > 0 && mcpSpend > 0 && (
             <span className="text-[10px] text-amber-600">
-              incl. {getSpendString(mcpSpend)} from {mcpCount} MCP
+              {i18n.t("observability.logs.columns.includes_mcp", { spend: getSpendString(mcpSpend), count: mcpCount })}
             </span>
           )}
         </div>
@@ -231,14 +243,14 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: sortProps
       ? () => (
           <SortableHeader
-            label="Duration (s)"
+            label={t("observability.logs.columns.duration_seconds")}
             field="request_duration_ms"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "Duration (s)",
+      : t("observability.logs.columns.duration_seconds"),
     accessorKey: "request_duration_ms",
     meta: { numeric: true },
     cell: (info: any) => {
@@ -256,14 +268,14 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: sortProps
       ? () => (
           <SortableHeader
-            label="TTFT (s)"
+            label={t("observability.logs.columns.ttft_seconds")}
             field="ttft_ms"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "TTFT (s)",
+      : t("observability.logs.columns.ttft_seconds"),
     accessorKey: "completionStartTime",
     meta: { numeric: true },
     cell: (info: any) => {
@@ -283,7 +295,7 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     },
   },
   {
-    header: "Team Name",
+    header: t("observability.logs.columns.team_name"),
     accessorKey: "metadata.user_api_key_team_alias",
     size: 150,
     cell: (info: any) => (
@@ -293,13 +305,13 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     ),
   },
   {
-    header: "Key Hash",
+    header: t("observability.logs.columns.key_hash"),
     accessorKey: "metadata.user_api_key",
     size: 110,
     cell: (info: any) => <IdCell value={info.getValue()} variant="plain" onClick={info.row.original.onKeyHashClick} />,
   },
   {
-    header: "Key Alias",
+    header: t("observability.logs.columns.key_alias"),
     accessorKey: "metadata.user_api_key_alias",
     size: 150,
     cell: (info: any) => (
@@ -312,14 +324,14 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: sortProps
       ? () => (
           <SortableHeader
-            label="Model"
+            label={t("observability.logs.columns.model")}
             field="model"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "Model",
+      : t("observability.logs.columns.model"),
     accessorKey: "model",
     size: 200,
     cell: (info: any) => {
@@ -350,14 +362,14 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: sortProps
       ? () => (
           <SortableHeader
-            label="Tokens"
+            label={t("observability.logs.columns.tokens")}
             field="total_tokens"
             sortBy={sortProps.sortBy}
             sortOrder={sortProps.sortOrder}
             onSortChange={sortProps.onSortChange}
           />
         )
-      : "Tokens",
+      : t("observability.logs.columns.tokens"),
     accessorKey: "total_tokens",
     size: 140,
     meta: { numeric: true },
@@ -374,7 +386,7 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     },
   },
   {
-    header: "Internal User",
+    header: t("observability.logs.columns.internal_user"),
     accessorKey: "user",
     size: 150,
     cell: (info: any) => (
@@ -384,7 +396,7 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     ),
   },
   {
-    header: "End User",
+    header: t("observability.logs.columns.end_user"),
     accessorKey: "end_user",
     size: 140,
     cell: (info: any) => (
@@ -395,7 +407,7 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
   },
 
   {
-    header: "Tags",
+    header: t("observability.logs.columns.tags"),
     accessorKey: "request_tags",
     size: 150,
     cell: (info: any) => {
@@ -447,6 +459,7 @@ const formatMessage = (message: any): string => {
 
 // Add this new component for displaying request/response with copy buttons
 export const RequestResponsePanel = ({ request, response }: { request: any; response: any }) => {
+  const { t } = useTranslation();
   const requestStr = typeof request === "object" ? JSON.stringify(request, null, 2) : String(request || "{}");
   const responseStr = typeof response === "object" ? JSON.stringify(response, null, 2) : String(response || "{}");
 
@@ -462,11 +475,11 @@ export const RequestResponsePanel = ({ request, response }: { request: any; resp
     <div className="grid grid-cols-2 gap-4 mt-4">
       <div className="rounded-lg border border-gray-200 bg-gray-50">
         <div className="flex justify-between items-center p-3 border-b border-gray-200">
-          <h3 className="text-sm font-medium">Request</h3>
+          <h3 className="text-sm font-medium">{t("observability.logs.request")}</h3>
           <button
             onClick={() => copyToClipboard(requestStr)}
             className="p-1 hover:bg-gray-200 rounded-sm"
-            title="Copy request"
+            title={t("observability.logs.columns.copy_request")}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -489,11 +502,11 @@ export const RequestResponsePanel = ({ request, response }: { request: any; resp
 
       <div className="rounded-lg border border-gray-200 bg-gray-50">
         <div className="flex justify-between items-center p-3 border-b border-gray-200">
-          <h3 className="text-sm font-medium">Response</h3>
+          <h3 className="text-sm font-medium">{t("observability.logs.response")}</h3>
           <button
             onClick={() => copyToClipboard(responseStr)}
             className="p-1 hover:bg-gray-200 rounded-sm"
-            title="Copy response"
+            title={t("observability.logs.columns.copy_response")}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -521,6 +534,7 @@ export const RequestResponsePanel = ({ request, response }: { request: any; resp
 
 // New component for collapsible JSON display
 const CollapsibleJsonCell = ({ jsonData }: { jsonData: any }) => {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = React.useState(false);
   const jsonString = JSON.stringify(jsonData, null, 2);
 
@@ -531,7 +545,8 @@ const CollapsibleJsonCell = ({ jsonData }: { jsonData: any }) => {
   return (
     <div>
       <button onClick={() => setIsExpanded(!isExpanded)} className="text-blue-500 hover:text-blue-700 text-xs">
-        {isExpanded ? "Hide JSON" : "Show JSON"} ({Object.keys(jsonData).length} fields)
+        {isExpanded ? t("observability.logs.columns.hide_json") : t("observability.logs.columns.show_json")} (
+        {Object.keys(jsonData).length} fields)
       </button>
       {isExpanded && (
         <pre className="mt-2 p-2 bg-gray-50 border rounded-sm text-xs overflow-auto max-h-60">{jsonString}</pre>

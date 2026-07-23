@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { MCPServer, MCPUserEnvVarsStatus } from "./types";
 import { getMCPUserEnvVars, storeMCPUserEnvVars } from "../networking";
 import NotificationsManager from "../molecules/notifications_manager";
+import { useTranslation } from "react-i18next";
 
 const { Text, Title } = Typography;
 
@@ -23,6 +24,7 @@ interface UserEnvVarsModalProps {
  * description as the placeholder.
  */
 const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, accessToken, onClose, onSaved }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
 
   const {
@@ -38,12 +40,14 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
   const saveMutation = useMutation({
     mutationFn: (values: Record<string, string>) => storeMCPUserEnvVars(accessToken!, server!.server_id, values),
     onSuccess: (saved) => {
-      NotificationsManager.success("Credentials saved");
+      NotificationsManager.success(t("toolsModels.mcp.userEnv.credentialsSaved"));
       onSaved?.(saved);
       onClose();
     },
     onError: (err) => {
-      NotificationsManager.fromBackend(`Failed to save env vars: ${err instanceof Error ? err.message : String(err)}`);
+      NotificationsManager.fromBackend(
+        t("toolsModels.mcp.userEnv.saveFailed", { error: err instanceof Error ? err.message : String(err) }),
+      );
     },
   });
 
@@ -56,7 +60,8 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
     saveMutation.mutate(trimmed);
   };
 
-  const displayName = server?.server_name || server?.alias || server?.server_id || "MCP Server";
+  const displayName =
+    server?.server_name || server?.alias || server?.server_id || t("toolsModels.mcp.userEnv.defaultServerName");
   const required = status?.required ?? [];
   const isSaving = saveMutation.isPending;
 
@@ -74,9 +79,9 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
         <div>
           <div className="flex items-center gap-2">
             <Title level={5} style={{ margin: 0 }}>
-              Set your credentials
+              {t("toolsModels.mcp.userEnv.title")}
             </Title>
-            <Tag color="blue">Per-user</Tag>
+            <Tag color="blue">{t("toolsModels.mcp.userEnv.perUser")}</Tag>
           </div>
           <Text type="secondary" className="text-xs">
             {displayName}
@@ -90,16 +95,12 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
             <Spin />
           </div>
         ) : isError ? (
-          <Alert type="error" showIcon message="Failed to load env vars" />
+          <Alert type="error" showIcon message={t("toolsModels.mcp.userEnv.loadFailed")} />
         ) : required.length === 0 ? (
-          <Alert type="info" showIcon message="No per-user fields configured for this server." />
+          <Alert type="info" showIcon message={t("toolsModels.mcp.userEnv.noFields")} />
         ) : (
           <>
-            <Text className="text-sm text-gray-600 block">
-              These values are private to you. Your admin configured this MCP server to require these per-user
-              credentials. Saved values are never shown back; leave an already-set field blank to keep it, or enter a
-              value to set or change it.
-            </Text>
+            <Text className="text-sm text-gray-600 block">{t("toolsModels.mcp.userEnv.description")}</Text>
             <Form form={form} layout="vertical" onFinish={handleSave} disabled={isSaving}>
               {required.map((spec) => (
                 <Form.Item
@@ -108,15 +109,26 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
                   label={
                     <span className="flex items-center gap-2">
                       <span className="font-mono text-sm font-semibold">{spec.name}</span>
-                      {spec.is_set && <Tag color="green">Set</Tag>}
+                      {spec.is_set && <Tag color="green">{t("toolsModels.mcp.userEnv.set")}</Tag>}
                     </span>
                   }
                   extra={spec.description || undefined}
-                  rules={spec.is_set ? undefined : [{ required: true, message: `${spec.name} is required` }]}
+                  rules={
+                    spec.is_set
+                      ? undefined
+                      : [
+                          {
+                            required: true,
+                            message: t("toolsModels.mcp.userEnv.fieldRequired", { fieldName: spec.name }),
+                          },
+                        ]
+                  }
                 >
                   <Input.Password
                     placeholder={
-                      spec.is_set ? "Enter a new value to overwrite" : spec.description || `Enter your ${spec.name}`
+                      spec.is_set
+                        ? t("toolsModels.mcp.userEnv.overwritePlaceholder")
+                        : spec.description || t("toolsModels.mcp.userEnv.valuePlaceholder", { fieldName: spec.name })
                     }
                     visibilityToggle
                   />
@@ -124,10 +136,10 @@ const UserEnvVarsModal: React.FC<UserEnvVarsModalProps> = ({ server, open, acces
               ))}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
                 <Button onClick={onClose} disabled={isSaving}>
-                  Cancel
+                  {t("toolsModels.mcp.userEnv.cancel")}
                 </Button>
                 <Button type="primary" htmlType="submit" loading={isSaving}>
-                  Save Credentials
+                  {t("toolsModels.mcp.userEnv.saveCredentials")}
                 </Button>
               </div>
             </Form>

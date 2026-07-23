@@ -17,6 +17,7 @@ import { getGeneralSettingsCall, updateConfigFieldSetting, deleteConfigFieldSett
 import { InputNumber } from "antd";
 import { TrashIcon } from "@heroicons/react/outline";
 import { StatusBadge } from "@/components/shared/table_cells";
+import { useTranslation } from "react-i18next";
 
 import RouterSettings from "@/components/router_settings";
 import Fallbacks from "@/components/Settings/RouterSettings/Fallbacks/Fallbacks";
@@ -36,6 +37,7 @@ interface generalSettingsItem {
 }
 
 const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, userRole, userID }) => {
+  const { t } = useTranslation();
   const [generalSettings, setGeneralSettings] = useState<generalSettingsItem[]>([]);
 
   useEffect(() => {
@@ -105,10 +107,10 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
     <div className="w-full">
       <TabGroup className="h-[75vh] w-full">
         <TabList variant="line" defaultValue="1" className="px-8 pt-4">
-          <Tab value="1">Loadbalancing</Tab>
-          <Tab value="2">Routing Groups</Tab>
-          <Tab value="3">Fallbacks</Tab>
-          <Tab value="4">General</Tab>
+          <Tab value="1">{t("settings.router.tabs.loadbalancing")}</Tab>
+          <Tab value="2">{t("settings.router.tabs.routingGroups")}</Tab>
+          <Tab value="3">{t("settings.router.tabs.fallbacks")}</Tab>
+          <Tab value="4">{t("settings.router.tabs.general")}</Tab>
         </TabList>
         <TabPanels className="px-8 py-6">
           <TabPanel>
@@ -125,10 +127,10 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableHeaderCell>Setting</TableHeaderCell>
-                    <TableHeaderCell>Value</TableHeaderCell>
-                    <TableHeaderCell>Status</TableHeaderCell>
-                    <TableHeaderCell>Action</TableHeaderCell>
+                    <TableHeaderCell>{t("settings.router.table.setting")}</TableHeaderCell>
+                    <TableHeaderCell>{t("settings.router.table.value")}</TableHeaderCell>
+                    <TableHeaderCell>{t("settings.router.table.status")}</TableHeaderCell>
+                    <TableHeaderCell>{t("settings.router.table.action")}</TableHeaderCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -173,17 +175,19 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
                         </TableCell>
                         <TableCell>
                           {value.stored_in_db == true ? (
-                            <StatusBadge tone="success" label="In DB" />
+                            <StatusBadge tone="success" label={t("settings.router.status.inDb")} />
                           ) : value.stored_in_db == false ? (
-                            <StatusBadge tone="neutral" label="In Config" />
+                            <StatusBadge tone="neutral" label={t("settings.router.status.inConfig")} />
                           ) : (
-                            <StatusBadge tone="neutral" label="Not Set" />
+                            <StatusBadge tone="neutral" label={t("settings.router.status.notSet")} />
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button onClick={() => handleUpdateField(value.field_name, index)}>Update</Button>
+                          <Button onClick={() => handleUpdateField(value.field_name, index)}>
+                            {t("settings.router.update")}
+                          </Button>
                           <Icon icon={TrashIcon} color="red" onClick={() => handleResetField(value.field_name, index)}>
-                            Reset
+                            {t("settings.router.reset")}
                           </Icon>
                         </TableCell>
                       </TableRow>

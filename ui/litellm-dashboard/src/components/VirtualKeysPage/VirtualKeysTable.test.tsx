@@ -193,7 +193,7 @@ it("should show loading message only on initial load (isPending)", () => {
 
   renderWithProviders(<VirtualKeysTable />);
 
-  expect(screen.getByText("🚅 Loading keys...")).toBeInTheDocument();
+  expect(screen.getByText("🚅 키를 불러오는 중...")).toBeInTheDocument();
   expect(screen.queryByText("Test Key Alias")).not.toBeInTheDocument();
   expect(screen.queryByText("Test Team")).not.toBeInTheDocument();
 });
@@ -203,7 +203,7 @@ it("should show 'No keys found' message when the key list is empty", () => {
 
   renderWithProviders(<VirtualKeysTable />);
 
-  expect(screen.getByText("No keys found")).toBeInTheDocument();
+  expect(screen.getByText("키가 없습니다")).toBeInTheDocument();
 });
 
 it("should handle models with more than 3 entries to trigger expansion UI", () => {
@@ -219,11 +219,11 @@ it("should handle models with more than 3 entries to trigger expansion UI", () =
 it("should render table headers correctly", () => {
   renderWithProviders(<VirtualKeysTable />);
 
-  expect(screen.getByText("Key ID")).toBeInTheDocument();
-  expect(screen.getByText("Key Alias")).toBeInTheDocument();
-  expect(screen.getByText("Team")).toBeInTheDocument();
-  expect(screen.getByText("Models")).toBeInTheDocument();
-  expect(screen.getByText("Spend (USD)")).toBeInTheDocument();
+  expect(screen.getByText("키 ID")).toBeInTheDocument();
+  expect(screen.getByText("키 별칭")).toBeInTheDocument();
+  expect(screen.getByText("팀")).toBeInTheDocument();
+  expect(screen.getByText("모델")).toBeInTheDocument();
+  expect(screen.getByText("사용량 (USD)")).toBeInTheDocument();
 });
 
 it("should handle column resizing hover events", () => {
@@ -250,17 +250,17 @@ it("should open KeyInfoView when clicking on a key ID button", async () => {
     expect(screen.getByText("Test Key Alias")).toBeInTheDocument();
   });
 
-  expect(screen.getByText(/Showing.*results/)).toBeInTheDocument();
+  expect(screen.getByText(/표시 중/)).toBeInTheDocument();
 
   const keyIdButton = screen.getByText("sk-1234567890abcdef");
   fireEvent.click(keyIdButton);
 
   await waitFor(() => {
-    expect(screen.getByText("Back to Keys")).toBeInTheDocument();
-    expect(screen.getByText("Created At")).toBeInTheDocument();
+    expect(screen.getByText("키 목록으로 돌아가기")).toBeInTheDocument();
+    expect(screen.getByText("생성 시각")).toBeInTheDocument();
   });
 
-  expect(screen.queryByText(/Showing.*results/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/표시 중/)).not.toBeInTheDocument();
 });
 
 it("should display 'Default Proxy Admin' for user_id when value is 'default_user_id'", async () => {
@@ -388,8 +388,8 @@ describe("pagination display – total count comes from useKeys", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     await waitFor(() => {
-      expect(screen.getByText("Showing 1 - 50 of 509 results")).toBeInTheDocument();
-      expect(screen.getByText("Page 1 of 11")).toBeInTheDocument();
+      expect(screen.getByText("1 - 50 / 전체 509개 표시 중")).toBeInTheDocument();
+      expect(screen.getByText("페이지 1 / 11")).toBeInTheDocument();
     });
   });
 
@@ -399,8 +399,8 @@ describe("pagination display – total count comes from useKeys", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     await waitFor(() => {
-      expect(screen.getByText("Showing 1 - 1 of 1 results")).toBeInTheDocument();
-      expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+      expect(screen.getByText("1 - 1 / 전체 1개 표시 중")).toBeInTheDocument();
+      expect(screen.getByText("페이지 1 / 1")).toBeInTheDocument();
     });
   });
 });
@@ -409,10 +409,10 @@ describe("refetch button", () => {
   it("should show Fetch button in normal state", () => {
     renderWithProviders(<VirtualKeysTable />);
 
-    const fetchButton = screen.getByTitle("Fetch data");
+    const fetchButton = screen.getByTitle("데이터 불러오기");
     expect(fetchButton).toBeInTheDocument();
     expect(fetchButton).not.toBeDisabled();
-    expect(screen.getByText("Fetch")).toBeInTheDocument();
+    expect(screen.getByText("불러오기")).toBeInTheDocument();
   });
 
   it("should show Fetching state and keep table data visible during refetch", () => {
@@ -420,10 +420,10 @@ describe("refetch button", () => {
 
     renderWithProviders(<VirtualKeysTable />);
 
-    expect(screen.getByText("Fetching")).toBeInTheDocument();
-    expect(screen.getByTitle("Fetch data")).toBeDisabled();
+    expect(screen.getByText("불러오는 중")).toBeInTheDocument();
+    expect(screen.getByTitle("데이터 불러오기")).toBeDisabled();
     expect(screen.getByText("Test Key Alias")).toBeInTheDocument();
-    expect(screen.queryByText("🚅 Loading keys...")).not.toBeInTheDocument();
+    expect(screen.queryByText("🚅 키를 불러오는 중...")).not.toBeInTheDocument();
   });
 
   it("should call refetch when Fetch button is clicked", () => {
@@ -432,7 +432,7 @@ describe("refetch button", () => {
 
     renderWithProviders(<VirtualKeysTable />);
 
-    fireEvent.click(screen.getByTitle("Fetch data"));
+    fireEvent.click(screen.getByTitle("데이터 불러오기"));
 
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
@@ -442,9 +442,9 @@ describe("refetch button", () => {
 
     renderWithProviders(<VirtualKeysTable />);
 
-    const fetchButton = screen.getByTitle("Fetch data");
+    const fetchButton = screen.getByTitle("데이터 불러오기");
     expect(fetchButton).not.toBeDisabled();
-    expect(screen.getByText("Fetch")).toBeInTheDocument();
+    expect(screen.getByText("불러오기")).toBeInTheDocument();
   });
 });
 
@@ -455,7 +455,7 @@ describe("Status column reflects key.blocked / scim_blocked metadata", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     await waitFor(() => {
-      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("Active");
+      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("활성");
     });
   });
 
@@ -465,7 +465,7 @@ describe("Status column reflects key.blocked / scim_blocked metadata", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     await waitFor(() => {
-      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("Blocked");
+      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("차단됨");
     });
     expect(screen.queryByText(/Blocked by SCIM/i)).not.toBeInTheDocument();
   });
@@ -476,12 +476,12 @@ describe("Status column reflects key.blocked / scim_blocked metadata", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     const tag = await screen.findByTestId(`key-status-${mockKey.token_id}`);
-    expect(tag).toHaveTextContent("Blocked");
+    expect(tag).toHaveTextContent("차단됨");
 
     const user = userEvent.setup();
     await user.hover(tag);
     await waitFor(() => {
-      expect(screen.getByText(/Blocked by SCIM/i)).toBeInTheDocument();
+      expect(screen.getByText(/SCIM에 의해 차단됨/)).toBeInTheDocument();
     });
   });
 });

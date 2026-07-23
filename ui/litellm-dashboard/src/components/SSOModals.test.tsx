@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { Form } from "antd";
 import { describe, expect, it, vi } from "vitest";
+import { renderWithProviders } from "../../tests/test-utils";
 import SSOModals from "./SSOModals";
 
 // Mock the networking functions
@@ -38,7 +39,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
     expect(screen.getByText("Add SSO")).toBeInTheDocument();
   });
 
@@ -61,7 +62,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Find and interact with the SSO provider select
     const ssoProviderSelect = screen.getByLabelText("SSO Provider");
@@ -113,7 +114,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Find and interact with the SSO provider select
     const ssoProviderSelect = screen.getByLabelText("SSO Provider");
@@ -160,7 +161,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     const urlInput = screen.getByLabelText("Proxy Base URL") as HTMLInputElement;
 
@@ -210,7 +211,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Find and interact with the SSO provider select
     const ssoProviderSelect = screen.getByLabelText("SSO Provider");
@@ -282,7 +283,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Wait for the useEffect to load data and populate form
     await waitFor(() => {
@@ -331,7 +332,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Wait for any initial loading to complete
     await waitFor(() => {
@@ -436,7 +437,7 @@ describe("SSOModals", () => {
       );
     };
 
-    render(<TestWrapper />);
+    renderWithProviders(<TestWrapper />);
 
     // Check that Clear button is visible when SSO is configured
     const clearButton = screen.getByText("Clear");

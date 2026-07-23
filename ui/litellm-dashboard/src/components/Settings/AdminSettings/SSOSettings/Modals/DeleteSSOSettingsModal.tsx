@@ -1,5 +1,6 @@
 import { useEditSSOSettings } from "@/app/(dashboard)/hooks/sso/useEditSSOSettings";
 import { useSSOSettings } from "@/app/(dashboard)/hooks/sso/useSSOSettings";
+import { useTranslation } from "react-i18next";
 import React from "react";
 import DeleteResourceModal from "../../../../common_components/DeleteResourceModal";
 import NotificationsManager from "../../../../molecules/notifications_manager";
@@ -13,6 +14,7 @@ interface DeleteSSOSettingsModalProps {
 }
 
 const DeleteSSOSettingsModal: React.FC<DeleteSSOSettingsModalProps> = ({ isVisible, onCancel, onSuccess }) => {
+  const { t } = useTranslation();
   const { data: ssoSettings } = useSSOSettings();
   const { mutateAsync: editSSOSettings, isPending: isEditingSSOSettings } = useEditSSOSettings();
 
@@ -39,12 +41,12 @@ const DeleteSSOSettingsModal: React.FC<DeleteSSOSettingsModalProps> = ({ isVisib
 
     await editSSOSettings(clearSettings, {
       onSuccess: () => {
-        NotificationsManager.success("SSO settings cleared successfully");
+        NotificationsManager.success(t("settings.sso.clearSuccess"));
         onCancel();
         onSuccess();
       },
       onError: (error) => {
-        NotificationsManager.fromBackend("Failed to clear SSO settings: " + parseErrorMessage(error));
+        NotificationsManager.fromBackend(t("settings.sso.clearError", { error: parseErrorMessage(error) }));
       },
     });
   };
@@ -52,12 +54,15 @@ const DeleteSSOSettingsModal: React.FC<DeleteSSOSettingsModalProps> = ({ isVisib
   return (
     <DeleteResourceModal
       isOpen={isVisible}
-      title="Confirm Clear SSO Settings"
-      alertMessage="This action cannot be undone."
-      message="Are you sure you want to clear all SSO settings? Users will no longer be able to login using SSO after this change."
-      resourceInformationTitle="SSO Settings"
+      title={t("settings.sso.modal.clearTitle")}
+      alertMessage={t("settings.sso.modal.clearAlert")}
+      message={t("settings.sso.modal.clearMessage")}
+      resourceInformationTitle={t("settings.sso.modal.resourceTitle")}
       resourceInformation={[
-        { label: "Provider", value: (ssoSettings?.values && detectSSOProvider(ssoSettings?.values)) || "Generic" },
+        {
+          label: t("settings.sso.provider"),
+          value: (ssoSettings?.values && detectSSOProvider(ssoSettings?.values)) || "Generic",
+        },
       ]}
       onCancel={onCancel}
       onOk={handleClearSSO}

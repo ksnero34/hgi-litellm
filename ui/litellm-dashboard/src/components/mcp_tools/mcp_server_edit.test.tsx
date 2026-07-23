@@ -1013,7 +1013,7 @@ describe("MCPServerEdit (interactive OAuth)", () => {
     // The Form.Item inline validator intercepts invalid JSON before handleSave runs,
     // so the inline error message appears and updateMCPServer is never called.
     await waitFor(() => {
-      expect(screen.getByText("Must be valid JSON")).toBeInTheDocument();
+      expect(screen.getByText("Please enter valid JSON")).toBeInTheDocument();
     });
     expect(networking.updateMCPServer).not.toHaveBeenCalled();
   });
@@ -1331,9 +1331,7 @@ describe("MCPServerEdit (OAuth token persistence on save)", () => {
     await waitFor(() => {
       expect(networking.storeMCPOAuthUserCredential).toHaveBeenCalled();
     });
-    expect(NotificationsManager.fromBackend).toHaveBeenCalledWith(
-      "MCP Server updated, but failed to persist OAuth token: write failed",
-    );
+    expect(NotificationsManager.fromBackend).toHaveBeenCalledWith("updated Token Persist Failed: write failed");
     expect(NotificationsManager.success).not.toHaveBeenCalledWith("MCP Server updated successfully");
     expect(onSuccess).not.toHaveBeenCalled();
   });
@@ -1537,7 +1535,7 @@ describe("MCPServerEdit (OAuth token persistence on save)", () => {
     );
 
     // No warning until the upstream changes.
-    expect(screen.queryByText(/registered for the previous upstream/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/saved OAuth app may no longer be valid/)).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText("https://your-mcp-server.com"), {
@@ -1546,7 +1544,7 @@ describe("MCPServerEdit (OAuth token persistence on save)", () => {
     });
 
     // Keep + warn parity with the create form: the stored app is kept, and the banner appears.
-    expect(screen.getByText(/registered for the previous upstream/)).toBeInTheDocument();
+    expect(screen.getByText(/saved OAuth app may no longer be valid/)).toBeInTheDocument();
   });
 
   it("preserves a stored client_id on OAuth-resume restore even when the saved snapshot is token-only", async () => {
@@ -1884,30 +1882,30 @@ describe("MCPServerEdit OAuth flow prefill display", () => {
   it("warns when a server has no OAuth flow set", () => {
     renderEdit({ oauth2_flow: null, token_url: "https://idp.example.com/oauth/token" });
 
-    expect(screen.getByText("This server has no OAuth flow set")).toBeInTheDocument();
+    expect(screen.getByText("OAuth flow is not set")).toBeInTheDocument();
   });
 
   it("does not warn when the flow is already set", () => {
     renderEdit({ oauth2_flow: "client_credentials" });
 
-    expect(screen.queryByText("This server has no OAuth flow set")).not.toBeInTheDocument();
+    expect(screen.queryByText("OAuth flow is not set")).not.toBeInTheDocument();
   });
 
   it("does not warn for a delegate (PKCE passthrough) server even with no flow set", () => {
     renderEdit({ oauth2_flow: null, delegate_auth_to_upstream: true });
 
-    expect(screen.queryByText("This server has no OAuth flow set")).not.toBeInTheDocument();
+    expect(screen.queryByText("OAuth flow is not set")).not.toBeInTheDocument();
   });
 
   it("clears the warning once the admin selects a flow", async () => {
     renderEdit({ oauth2_flow: null, token_url: "https://idp.example.com/oauth/token" });
 
-    expect(screen.getByText("This server has no OAuth flow set")).toBeInTheDocument();
+    expect(screen.getByText("OAuth flow is not set")).toBeInTheDocument();
 
     await selectAntOption("OAuth Flow Type", "Machine-to-Machine (M2M)");
 
     await waitFor(() => {
-      expect(screen.queryByText("This server has no OAuth flow set")).not.toBeInTheDocument();
+      expect(screen.queryByText("OAuth flow is not set")).not.toBeInTheDocument();
     });
   });
 });

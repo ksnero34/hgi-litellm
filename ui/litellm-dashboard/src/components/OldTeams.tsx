@@ -30,6 +30,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import { KeyIcon, LayersIcon, SearchIcon, UsersIcon } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AntDLoadingSpinner } from "@/components/ui/AntDLoadingSpinner";
 import { DateCell, IdCell } from "@/components/shared/table_cells";
 import OrganizationDropdown from "./common_components/OrganizationDropdown";
@@ -162,6 +163,7 @@ const getOrganizationAlias = (
 
 // @deprecated
 const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser = false }) => {
+  const { t } = useTranslation();
   const { data: organizationsData } = useOrganizations();
   const organizations = organizationsData ?? null;
   const [teams, setTeams] = useState<Team[] | null>(null);
@@ -1271,7 +1273,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     help={
                       premiumUser
                         ? "Enter secret manager configuration as a JSON object."
-                        : "현재 구성에서는 시크릿 관리자 설정을 변경할 수 없습니다."
+                        : t("access.teams.restrictions.secretManager")
                     }
                     rules={[
                       {
@@ -1341,12 +1343,8 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                   >
                     <Switch
                       disabled={!premiumUser}
-                      checkedChildren={
-                        premiumUser ? "Yes" : "현재 구성에서는 팀별 전역 가드레일 제외를 변경할 수 없습니다"
-                      }
-                      unCheckedChildren={
-                        premiumUser ? "No" : "현재 구성에서는 팀별 전역 가드레일 제외를 변경할 수 없습니다"
-                      }
+                      checkedChildren={premiumUser ? "Yes" : t("access.teams.restrictions.globalGuardrails")}
+                      unCheckedChildren={premiumUser ? "No" : t("access.teams.restrictions.globalGuardrails")}
                     />
                   </Form.Item>
                   <Form.Item
@@ -1418,7 +1416,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     <Tooltip
                       title={
                         !premiumUser
-                          ? "현재 구성에서는 패스스루 경로를 설정할 수 없습니다"
+                          ? t("access.teams.restrictions.passThroughRoutes")
                           : !isProxyAdminRole(userRole || "")
                             ? "Only proxy admins can set allowed pass through routes"
                             : ""

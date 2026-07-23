@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Button, Checkbox, Form, Input } from "antd";
 import DcrBridgeToggle from "./DcrBridgeToggle";
 import { credentialAuthClass, isClientForwardedTokenMode } from "./types";
@@ -49,40 +50,33 @@ export default function PassthroughAuthorizeSection({
   onRemoveStoredAppChange?: (remove: boolean) => void;
   appMayNotMatchUpstream?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!isClientForwardedTokenMode(authType)) return null;
   const authorizeButtonLabels: Record<string, string> = {
-    authorizing: "Waiting for authorization...",
-    exchanging: "Exchanging authorization code...",
+    authorizing: t("toolsModels.mcp.oauthWaiting"),
+    exchanging: t("toolsModels.mcp.oauthExchanging"),
   };
-  const authorizeButtonLabel = authorizeButtonLabels[oauthFlow.status] ?? "Authorize & Fetch Tools (browser-only)";
+  const authorizeButtonLabel = authorizeButtonLabels[oauthFlow.status] ?? t("toolsModels.mcp.browserOnlyAuthorize");
   // On edit, "keep existing" only holds when the stored credential class is unchanged; a cross-class
   // switch (e.g. oauth2 -> true_passthrough) replaces credentials, so blanks then mean "no app".
   const classUnchanged = isEditing && credentialAuthClass(savedAuthType) === credentialAuthClass(authType);
   const clientIdPlaceholder = classUnchanged
-    ? "Leave blank to keep the currently saved app (if any)"
-    : "Leave blank to use dynamic client registration";
+    ? t("toolsModels.mcp.keepSavedAppPlaceholder")
+    : t("toolsModels.mcp.dynamicRegistrationPlaceholder");
   const clientSecretPlaceholder = classUnchanged
-    ? "Leave blank to keep the currently saved secret (if any)"
-    : "Leave blank for public clients / PKCE";
+    ? t("toolsModels.mcp.keepSavedSecretPlaceholder")
+    : t("toolsModels.mcp.publicClientPlaceholder");
   const clientIdExtra = classUnchanged
-    ? "Set this to make everyone authorize through a specific app; required for upstreams without dynamic client registration (e.g. a pre-registered Slack app)."
-    : "Switching the auth type discards the previously saved app; enter a client ID here or leave blank to use dynamic client registration.";
+    ? t("toolsModels.mcp.savedAppDescription")
+    : t("toolsModels.mcp.switchedAuthAppDescription");
   return (
     <div className="rounded-lg border border-dashed border-gray-300 p-4 space-y-2 mb-4">
-      <p className="text-sm text-gray-600">
-        Callers bring their own upstream token for this auth type, so LiteLLM never stores tokens. To preview tools and
-        configure the tool allowlist, authorize against the upstream here: the token stays in this browser session only
-        and is never saved to LiteLLM. An OAuth app configured below IS saved with the server, so internal users who
-        authorize from the Tools page go through it.
-      </p>
+      <p className="text-sm text-gray-600">{t("toolsModels.mcp.passthroughAuthorizeDescription")}</p>
       {appMayNotMatchUpstream && (
-        <p className="text-sm text-amber-600">
-          You changed the upstream URL or endpoints; the OAuth app entered here was registered for the previous upstream
-          and may not be valid. Update the client ID, or clear it to use dynamic client registration.
-        </p>
+        <p className="text-sm text-amber-600">{t("toolsModels.mcp.upstreamChangedWarning")}</p>
       )}
       <Form.Item
-        label={<span className="text-sm font-medium text-gray-700">OAuth Client ID (optional)</span>}
+        label={<span className="text-sm font-medium text-gray-700">{t("toolsModels.mcp.oauthClientIdOptional")}</span>}
         name={["credentials", "client_id"]}
         extra={clientIdExtra}
       >
@@ -93,7 +87,9 @@ export default function PassthroughAuthorizeSection({
         />
       </Form.Item>
       <Form.Item
-        label={<span className="text-sm font-medium text-gray-700">OAuth Client Secret (optional)</span>}
+        label={
+          <span className="text-sm font-medium text-gray-700">{t("toolsModels.mcp.oauthClientSecretOptional")}</span>
+        }
         name={["credentials", "client_secret"]}
       >
         <Input.Password
@@ -105,9 +101,7 @@ export default function PassthroughAuthorizeSection({
       <DcrBridgeToggle authType={authType} initialChecked={dcrBridgeInitialChecked} />
       {isEditing && onRemoveStoredAppChange && (
         <Checkbox checked={removeStoredApp} onChange={(e) => onRemoveStoredAppChange(e.target.checked)}>
-          <span className="text-sm text-gray-700">
-            Remove the saved OAuth app on save (the server goes back to dynamic client registration)
-          </span>
+          <span className="text-sm text-gray-700">{t("toolsModels.mcp.removeSavedApp")}</span>
         </Checkbox>
       )}
       <Button
@@ -118,10 +112,7 @@ export default function PassthroughAuthorizeSection({
       </Button>
       {oauthFlow.error && <p className="text-sm text-red-500">{oauthFlow.error}</p>}
       {oauthFlow.status === "success" && oauthFlow.tokenResponse?.access_token && (
-        <p className="text-sm text-green-600">
-          Token held for this browser session. Tools can now be previewed and configured; the token was not saved to
-          LiteLLM.
-        </p>
+        <p className="text-sm text-green-600">{t("toolsModels.mcp.browserOnlyTokenHeld")}</p>
       )}
     </div>
   );

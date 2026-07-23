@@ -1,5 +1,6 @@
 import React from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 
 type OnboardingFormBodyProps = {
   variant: "signup" | "reset_password";
@@ -10,6 +11,7 @@ type OnboardingFormBodyProps = {
 };
 
 export function OnboardingFormBody({ variant, userEmail, isPending, claimError, onSubmit }: OnboardingFormBodyProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
 
   React.useEffect(() => {
@@ -22,11 +24,13 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
         <Typography.Title level={5} className="text-center mb-5">
           LLM Gateway
         </Typography.Title>
-        <Typography.Title level={3}>{variant === "reset_password" ? "비밀번호 재설정" : "계정 등록"}</Typography.Title>
+        <Typography.Title level={3}>
+          {variant === "reset_password" ? t("auth.onboarding.resetPassword.title") : t("auth.onboarding.signup.title")}
+        </Typography.Title>
         <Typography.Text>
           {variant === "reset_password"
-            ? "관리자 화면에 접속할 새 비밀번호를 설정하세요."
-            : "관리자 화면에 로그인할 계정을 등록하세요."}
+            ? t("auth.onboarding.resetPassword.subtitle")
+            : t("auth.onboarding.signup.subtitle")}
         </Typography.Text>
 
         <Form
@@ -35,15 +39,24 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
           form={form}
           onFinish={(values) => onSubmit({ password: values.password })}
         >
-          <Form.Item label="이메일 주소" name="user_email">
+          <Form.Item label={t("auth.onboarding.email.label")} name="user_email">
             <Input type="email" disabled />
           </Form.Item>
 
           <Form.Item
-            label="비밀번호"
+            label={t("auth.onboarding.password.label")}
             name="password"
-            rules={[{ required: true, message: "비밀번호를 입력하세요" }]}
-            help={variant === "reset_password" ? "새 비밀번호를 입력하세요" : "계정에 사용할 비밀번호를 입력하세요"}
+            rules={[
+              {
+                required: true,
+                message: t("auth.onboarding.password.required"),
+              },
+            ]}
+            help={
+              variant === "reset_password"
+                ? t("auth.onboarding.resetPassword.passwordHelp")
+                : t("auth.onboarding.signup.passwordHelp")
+            }
           >
             <Input.Password />
           </Form.Item>
@@ -52,7 +65,9 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
 
           <div className="mt-10">
             <Button htmlType="submit" loading={isPending}>
-              {variant === "reset_password" ? "비밀번호 재설정" : "계정 등록"}
+              {variant === "reset_password"
+                ? t("auth.onboarding.resetPassword.submit")
+                : t("auth.onboarding.signup.submit")}
             </Button>
           </div>
         </Form>

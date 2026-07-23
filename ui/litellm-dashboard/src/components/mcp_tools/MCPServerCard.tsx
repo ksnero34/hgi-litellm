@@ -10,6 +10,7 @@ import {
 } from "@ant-design/icons";
 import { AUTH_TYPE, type MCPServer } from "./types";
 import { getMaskedAndFullUrl } from "./utils";
+import { useTranslation } from "react-i18next";
 
 const { Text } = Typography;
 
@@ -48,6 +49,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
   onOpenFillFields,
   onDelete,
 }) => {
+  const { t } = useTranslation();
   const alias = server.alias || server.server_name || "";
   const name = server.server_name || alias || server.server_id;
   // Logo is sourced exclusively from the admin-set `mcp_info.logo_url`.
@@ -110,7 +112,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
   if (onRecheckHealth) {
     menuItems.push({
       key: "test-connection",
-      label: "Test Connection",
+      label: t("toolsModels.mcp.testConnection"),
       icon: <ThunderboltOutlined />,
       disabled: isRechecking,
       onClick: ({ domEvent }) => {
@@ -125,7 +127,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
     }
     menuItems.push({
       key: "delete",
-      label: "Delete",
+      label: t("toolsModels.mcp.delete"),
       icon: <DeleteOutlined />,
       danger: true,
       onClick: ({ domEvent }) => {
@@ -151,7 +153,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
         {logoUrl ? (
           <img
             src={logoUrl}
-            alt={`${name} logo`}
+            alt={t("toolsModels.mcp.serverLogoAlt", { name })}
             className="h-10 w-10 shrink-0 rounded-sm object-contain"
             onError={() => setFailedLogoUrl(logoUrl)}
           />
@@ -178,7 +180,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
               type="button"
               onClick={stop}
               onKeyDown={stop}
-              aria-label="Server actions"
+              aria-label={t("toolsModels.mcp.serverActions")}
               className="-mr-1 -mt-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600"
             >
               <MoreOutlined style={{ fontSize: 20 }} />
@@ -212,11 +214,11 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
         <Tag className="m-0">{displayTransport.toUpperCase()}</Tag>
         <Tag className="m-0">{authType}</Tag>
         {oauthFlowUnset && (
-          <Tooltip title="This OAuth server has no flow set (Machine-to-Machine vs Interactive). Open it and choose an OAuth Flow Type so LiteLLM authenticates it as you intend.">
+          <Tooltip title={t("toolsModels.mcp.oauthFlowUnsetHelp")}>
             <Tag color="warning" className="m-0">
               <span className="inline-flex items-center gap-1">
                 <ExclamationCircleFilled />
-                OAuth flow not set
+                {t("toolsModels.mcp.oauthFlowUnset")}
               </span>
             </Tag>
           </Tooltip>
@@ -224,7 +226,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
         <Tag color={isPublic ? "green" : "orange"} className="m-0">
           <span className="inline-flex items-center gap-1">
             <span className={`h-1.5 w-1.5 rounded-full ${isPublic ? "bg-green-500" : "bg-orange-500"}`} />
-            {isPublic ? "Public" : "Internal"}
+            {isPublic ? t("toolsModels.mcp.public") : t("toolsModels.mcp.internal")}
           </span>
         </Tag>
         {accessGroups.slice(0, 2).map((g) => (
@@ -247,7 +249,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
               <Tooltip
                 title={
                   <div>
-                    <div className="font-semibold mb-1">Missing user fields:</div>
+                    <div className="font-semibold mb-1">{t("toolsModels.mcp.missingUserFields")}</div>
                     <ul className="ml-3">
                       {missing.map((m) => (
                         <li key={m}>• {m}</li>
@@ -258,8 +260,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
               >
                 <span className="inline-flex items-center gap-1 font-semibold text-red-700">
                   <ExclamationCircleFilled />
-                  {missing.length} user field
-                  {missing.length === 1 ? "" : "s"} missing
+                  {t("toolsModels.mcp.userFieldsMissing", { count: missing.length })}
                 </span>
               </Tooltip>
               {onOpenFillFields && (
@@ -271,7 +272,7 @@ const MCPServerCard: FC<MCPServerCardProps> = ({
                   }}
                   className="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors hover:bg-red-700"
                 >
-                  Set
+                  {t("toolsModels.mcp.set")}
                 </button>
               )}
             </div>
@@ -301,28 +302,33 @@ const HealthChip: FC<HealthChipProps> = ({
   error,
   dotClass,
 }) => {
+  const { t } = useTranslation();
   if (isLoadingHealth || isRechecking) {
     return (
       <Tag className="m-0">
         <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300" />
-          Checking
+          {t("toolsModels.mcp.checking")}
         </span>
       </Tag>
     );
   }
   const tooltip = (
     <div className="max-w-xs">
-      <div className="font-semibold mb-1">Health: {status}</div>
-      {lastCheck && <div className="text-xs mb-1">Last check: {new Date(lastCheck).toLocaleString()}</div>}
+      <div className="font-semibold mb-1">{t("toolsModels.mcp.healthStatus", { status })}</div>
+      {lastCheck && (
+        <div className="text-xs mb-1">
+          {t("toolsModels.mcp.lastCheck", { date: new Date(lastCheck).toLocaleString() })}
+        </div>
+      )}
       {error && (
         <div className="text-xs">
-          <div className="font-medium text-red-300 mb-1">Error</div>
+          <div className="font-medium text-red-300 mb-1">{t("toolsModels.mcp.error")}</div>
           <div className="wrap-break-word">{error}</div>
         </div>
       )}
-      {!lastCheck && !error && <div className="text-xs text-gray-400">No health data</div>}
-      {onRecheck && <div className="mt-1 text-xs text-gray-300">Click to recheck</div>}
+      {!lastCheck && !error && <div className="text-xs text-gray-400">{t("toolsModels.mcp.noHealthData")}</div>}
+      {onRecheck && <div className="mt-1 text-xs text-gray-300">{t("toolsModels.mcp.clickToRecheck")}</div>}
     </div>
   );
   return (
@@ -340,7 +346,7 @@ const HealthChip: FC<HealthChipProps> = ({
       >
         <span className="inline-flex items-center gap-1.5">
           <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-          {status.charAt(0).toUpperCase() + status.slice(1)}
+          {t(`toolsModels.mcp.health.${status}`, { defaultValue: status.charAt(0).toUpperCase() + status.slice(1) })}
         </span>
       </Tag>
     </Tooltip>
@@ -353,13 +359,14 @@ interface ByokRowProps {
 }
 
 const ByokRow: FC<ByokRowProps> = ({ connected, onConnect }) => {
+  const { t } = useTranslation();
   if (connected) {
     return (
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-gray-500">BYOK credential</span>
+        <span className="text-gray-500">{t("toolsModels.mcp.byokCredential")}</span>
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-medium text-green-700">
-            <CheckOutlined style={{ fontSize: 10 }} /> Connected
+            <CheckOutlined style={{ fontSize: 10 }} /> {t("toolsModels.mcp.connected")}
           </span>
           {onConnect && (
             <button
@@ -370,7 +377,7 @@ const ByokRow: FC<ByokRowProps> = ({ connected, onConnect }) => {
               }}
               className="text-xs text-gray-400 transition-colors hover:text-blue-600"
             >
-              Update
+              {t("toolsModels.mcp.update")}
             </button>
           )}
         </div>
@@ -379,7 +386,7 @@ const ByokRow: FC<ByokRowProps> = ({ connected, onConnect }) => {
   }
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-gray-500">BYOK credential</span>
+      <span className="text-gray-500">{t("toolsModels.mcp.byokCredential")}</span>
       {onConnect ? (
         <button
           type="button"
@@ -389,7 +396,7 @@ const ByokRow: FC<ByokRowProps> = ({ connected, onConnect }) => {
           }}
           className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors hover:bg-blue-700"
         >
-          Connect
+          {t("toolsModels.mcp.connect")}
         </button>
       ) : (
         <span className="text-gray-400">—</span>

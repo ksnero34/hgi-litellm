@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Form, Modal, Space } from "antd";
+import { useTranslation } from "react-i18next";
 import React, { useEffect } from "react";
 import BaseSSOSettingsForm from "./BaseSSOSettingsForm";
 import NotificationsManager from "@/components/molecules/notifications_manager";
@@ -16,6 +17,7 @@ interface EditSSOSettingsModalProps {
 }
 
 const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, onCancel, onSuccess }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
 
   // Use react-query hooks for SSO settings
@@ -82,16 +84,16 @@ const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, 
 
       await mutateAsync(payload, {
         onSuccess: () => {
-          NotificationsManager.success("SSO settings updated successfully");
+          NotificationsManager.success(t("settings.sso.updateSuccess"));
           onSuccess();
         },
         onError: (error) => {
-          NotificationsManager.fromBackend("Failed to save SSO settings: " + parseErrorMessage(error));
+          NotificationsManager.fromBackend(t("settings.sso.saveError", { error: parseErrorMessage(error) }));
         },
       });
     } catch (error) {
       // Handle processing errors gracefully
-      NotificationsManager.fromBackend("Failed to process SSO settings: " + parseErrorMessage(error));
+      NotificationsManager.fromBackend(t("settings.sso.processError", { error: parseErrorMessage(error) }));
     }
   };
 
@@ -102,16 +104,16 @@ const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, 
 
   return (
     <Modal
-      title="Edit SSO Settings"
+      title={t("settings.sso.modal.editTitle")}
       open={isVisible}
       width={800}
       footer={
         <Space>
           <Button onClick={handleCancel} disabled={isPending}>
-            Cancel
+            {t("settings.sso.modal.cancel")}
           </Button>
           <Button loading={isPending} onClick={() => form.submit()}>
-            {isPending ? "Saving..." : "Save"}
+            {isPending ? t("settings.sso.modal.saving") : t("settings.sso.modal.save")}
           </Button>
         </Space>
       }

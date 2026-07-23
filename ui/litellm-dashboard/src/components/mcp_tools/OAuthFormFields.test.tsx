@@ -150,7 +150,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
       });
     });
 
@@ -172,11 +172,11 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
       });
     });
 
-    it("shows 'Must be valid JSON' error for malformed JSON", async () => {
+    it("shows 'Please enter valid JSON' error for malformed JSON", async () => {
       render(
         <WithForm>
           <OAuthFormFields isM2M={false} />
@@ -194,7 +194,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Must be valid JSON")).toBeInTheDocument();
+        expect(screen.getByText("Please enter valid JSON")).toBeInTheDocument();
       });
     });
 
@@ -219,7 +219,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Must be valid JSON")).toBeInTheDocument();
+        expect(screen.getByText("Please enter valid JSON")).toBeInTheDocument();
       });
     });
 
@@ -242,7 +242,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
       });
     });
   });

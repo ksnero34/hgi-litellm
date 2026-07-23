@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Select, Tooltip, Divider, Switch, Checkbox } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { TextInput } from "@tremor/react";
+import { useTranslation } from "react-i18next";
 
 const { Option } = Select;
 
@@ -26,6 +27,7 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
   neverExpire = false,
   onNeverExpireChange,
 }) => {
+  const { t } = useTranslation();
   // Predefined intervals
   const predefinedIntervals = ["7d", "30d", "90d", "180d", "365d"];
 
@@ -65,12 +67,11 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
     <div className="space-y-6">
       {/* Key Expiry Section */}
       <div className="space-y-4">
-        <span className="text-sm font-medium text-gray-700">키 만료 설정</span>
-
+        <span className="text-sm font-medium text-gray-700">{t("gateway.keyLifecycle.expirySettings")}</span>
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-            <span>키 만료</span>
-            <Tooltip title="키 만료 시점을 설정합니다. 형식: 30s(초), 30m(분), 30h(시간), 30d(일). 현재 값을 유지하려면 비워 두세요.">
+            <span>{t("gateway.keyLifecycle.expireKey")}</span>
+            <Tooltip title={t("gateway.keyLifecycle.expiryTooltip")}>
               <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
             </Tooltip>
             {!isCreateMode && onNeverExpireChange && (
@@ -90,13 +91,15 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
                 }}
                 className="ml-2 text-sm font-normal text-gray-600"
               >
-                만료 없음
+                {t("gateway.keyLifecycle.neverExpire")}
               </Checkbox>
             )}
           </label>
           <TextInput
             name="duration"
-            placeholder={isCreateMode ? "예: 30d, 만료하지 않으려면 비워 두기" : "예: 30d"}
+            placeholder={
+              isCreateMode ? t("gateway.keyLifecycle.createPlaceholder") : t("gateway.keyLifecycle.editPlaceholder")
+            }
             className="w-full"
             value={durationValue}
             onValueChange={handleDurationChange}
@@ -109,13 +112,13 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
 
       {/* Auto-Rotation Section */}
       <div className="space-y-4">
-        <span className="text-sm font-medium text-gray-700">자동 키 회전 설정</span>
+        <span className="text-sm font-medium text-gray-700">{t("gateway.keyLifecycle.autoRotationSettings")}</span>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-              <span>자동 키 회전 사용</span>
-              <Tooltip title="설정한 주기마다 새 가상 키를 자동으로 발급합니다.">
+              <span>{t("gateway.keyLifecycle.enableAutoRotation")}</span>
+              <Tooltip title={t("gateway.keyLifecycle.autoRotationTooltip")}>
                 <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
               </Tooltip>
             </label>
@@ -130,8 +133,8 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
           {autoRotationEnabled && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-                <span>회전 주기</span>
-                <Tooltip title="가상 키를 자동으로 교체할 주기를 선택하세요.">
+                <span>{t("gateway.keyLifecycle.rotationInterval")}</span>
+                <Tooltip title={t("gateway.keyLifecycle.rotationTooltip")}>
                   <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
                 </Tooltip>
               </label>
@@ -140,14 +143,14 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
                   value={showCustomInput ? "custom" : rotationInterval}
                   onChange={handleIntervalChange}
                   className="w-full"
-                  placeholder="주기 선택"
+                  placeholder={t("gateway.keyLifecycle.rotationPlaceholder")}
                 >
-                  <Option value="7d">7일</Option>
-                  <Option value="30d">30일</Option>
-                  <Option value="90d">90일</Option>
-                  <Option value="180d">180일</Option>
-                  <Option value="365d">365일</Option>
-                  <Option value="custom">직접 입력</Option>
+                  <Option value="7d">{t("gateway.keyLifecycle.interval.7d")}</Option>
+                  <Option value="30d">{t("gateway.keyLifecycle.interval.30d")}</Option>
+                  <Option value="90d">{t("gateway.keyLifecycle.interval.90d")}</Option>
+                  <Option value="180d">{t("gateway.keyLifecycle.interval.180d")}</Option>
+                  <Option value="365d">{t("gateway.keyLifecycle.interval.365d")}</Option>
+                  <Option value="custom">{t("gateway.keyLifecycle.interval.custom")}</Option>
                 </Select>
 
                 {showCustomInput && (
@@ -155,9 +158,9 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
                     <TextInput
                       value={customInterval}
                       onChange={handleCustomIntervalChange}
-                      placeholder="예: 1s, 5m, 2h, 14d"
+                      placeholder={t("gateway.keyLifecycle.customPlaceholder")}
                     />
-                    <div className="text-xs text-gray-500">지원 형식: 초(s), 분(m), 시간(h), 일(d)</div>
+                    <div className="text-xs text-gray-500">{t("gateway.keyLifecycle.customHelp")}</div>
                   </div>
                 )}
               </div>
@@ -167,7 +170,7 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
 
         {autoRotationEnabled && (
           <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-700">
-            키가 회전되면 새 키가 발급됩니다. 기존 키는 기본 72시간의 유예 기간이 끝난 뒤 비활성화됩니다.
+            {t("gateway.keyLifecycle.rotationNotice")}
           </div>
         )}
       </div>

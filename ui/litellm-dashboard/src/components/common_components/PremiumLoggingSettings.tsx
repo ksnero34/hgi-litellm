@@ -1,5 +1,6 @@
 import React from "react";
 import { Text } from "@tremor/react";
+import { useTranslation } from "react-i18next";
 import LoggingSettings from "../team/LoggingSettings";
 
 interface PremiumLoggingSettingsProps {
@@ -17,6 +18,8 @@ export function PremiumLoggingSettings({
   disabledCallbacks = [],
   onDisabledCallbacksChange,
 }: PremiumLoggingSettingsProps) {
+  const { t } = useTranslation();
+
   if (!premiumUser) {
     return (
       <div>
@@ -29,9 +32,7 @@ export function PremiumLoggingSettings({
           </div>
         </div>
         <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <Text className="text-sm text-yellow-800">
-            현재 구성에서는 키/팀별 로깅 설정을 변경할 수 없습니다. 전역 로깅 설정을 사용하세요.
-          </Text>
+          <Text className="text-sm text-yellow-800">{t("settings.premiumLogging.upgradeMessage")}</Text>
         </div>
       </div>
     );

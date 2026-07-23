@@ -18,6 +18,7 @@ import { InfoCircleOutlined, SyncOutlined } from "@ant-design/icons";
 import { Button as AntButton, Popover, Skeleton, Typography } from "antd";
 import { DateCell, IdCell, MoneyCell, StatusBadge } from "@/components/shared/table_cells";
 import React, { useDeferredValue, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getModelDisplayName } from "../key_team_helpers/fetch_available_models_team_key";
 import { PaginatedKeyAliasSelect } from "../KeyAliasSelect/PaginatedKeyAliasSelect/PaginatedKeyAliasSelect";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
@@ -55,6 +56,7 @@ const toKeyListFilters = (filters: KeyFilterState): KeyListFilterOptions => ({
 });
 
 export function VirtualKeysTable() {
+  const { t } = useTranslation();
   const { data: fetchedOrganizations, isLoading: isOrgsLoading } = useOrganizations();
   const resolvedOrganizations = useMemo(() => fetchedOrganizations ?? [], [fetchedOrganizations]);
   const [selectedKey, setSelectedKey] = useState<KeyResponse | null>(null);
@@ -132,7 +134,7 @@ export function VirtualKeysTable() {
       {
         id: "token",
         accessorKey: "token",
-        header: "Key ID",
+        header: t("gateway.virtualKeys.keyId"),
         size: 100,
         enableSorting: true,
         cell: (info) => <IdCell value={info.getValue() as string} onClick={() => setSelectedKey(info.row.original)} />,
@@ -140,7 +142,7 @@ export function VirtualKeysTable() {
       {
         id: "key_alias",
         accessorKey: "key_alias",
-        header: "Key Alias",
+        header: t("gateway.virtualKeys.keyAlias"),
         size: 150,
         enableSorting: true,
         cell: (info) => {
@@ -155,27 +157,38 @@ export function VirtualKeysTable() {
       },
       {
         id: "status",
-        header: "Status",
+        header: t("gateway.virtualKeys.status"),
         size: 100,
         enableSorting: false,
         cell: ({ row }) => {
           const key = row.original;
           if (key.blocked !== true) {
-            return <StatusBadge tone="success" label="Active" dataTestId={`key-status-${key.token_id}`} />;
+            return (
+              <StatusBadge
+                tone="success"
+                label={t("gateway.virtualKeys.active")}
+                dataTestId={`key-status-${key.token_id}`}
+              />
+            );
           }
           const isScimBlocked = (key.metadata as Record<string, unknown> | null | undefined)?.scim_blocked === true;
           const reason = isScimBlocked
-            ? "Blocked by SCIM (external identity provider deactivated or deleted the owning user)."
-            : "Blocked. Requests using this key will be rejected with 401.";
+            ? t("gateway.virtualKeys.scimBlockedReason")
+            : t("gateway.virtualKeys.blockedReason");
           return (
-            <StatusBadge tone="error" label="Blocked" tooltip={reason} dataTestId={`key-status-${key.token_id}`} />
+            <StatusBadge
+              tone="error"
+              label={t("gateway.virtualKeys.blocked")}
+              tooltip={reason}
+              dataTestId={`key-status-${key.token_id}`}
+            />
           );
         },
       },
       {
         id: "key_name",
         accessorKey: "key_name",
-        header: "Secret Key",
+        header: t("gateway.virtualKeys.secretKey"),
         size: 120,
         enableSorting: false,
         cell: (info) => <span className="font-mono text-xs">{info.getValue() as string}</span>,
@@ -183,7 +196,7 @@ export function VirtualKeysTable() {
       {
         id: "team_alias",
         accessorKey: "team_id",
-        header: "Team",
+        header: t("gateway.virtualKeys.team"),
         size: 120,
         enableSorting: false,
         cell: (info) => {
@@ -202,7 +215,7 @@ export function VirtualKeysTable() {
       {
         id: "organization_alias",
         accessorKey: "org_id",
-        header: "Organization",
+        header: t("gateway.virtualKeys.organization"),
         size: 140,
         enableSorting: false,
         cell: (info) => {
@@ -223,8 +236,8 @@ export function VirtualKeysTable() {
         accessorKey: "user",
         header: () => (
           <span className="flex items-center gap-1">
-            User
-            <Popover content="Displays the first available value: User Alias, User Email, or User ID." trigger="hover">
+            {t("gateway.virtualKeys.user")}
+            <Popover content={t("gateway.virtualKeys.userHelp")} trigger="hover">
               <InfoCircleOutlined className="text-gray-400 text-xs cursor-help" />
             </Popover>
           </span>
@@ -286,7 +299,7 @@ export function VirtualKeysTable() {
       {
         id: "created_at",
         accessorKey: "created_at",
-        header: "Created At",
+        header: t("gateway.virtualKeys.createdAt"),
         size: 120,
         enableSorting: true,
         cell: (info) => <DateCell value={info.getValue() as string | null} precision="date" />,
@@ -294,7 +307,7 @@ export function VirtualKeysTable() {
       {
         id: "created_by",
         accessorKey: "created_by",
-        header: "Created By",
+        header: t("gateway.virtualKeys.createdBy"),
         size: 160,
         enableSorting: false,
         cell: (info) => {
@@ -354,7 +367,7 @@ export function VirtualKeysTable() {
       {
         id: "updated_at",
         accessorKey: "updated_at",
-        header: "Updated At",
+        header: t("gateway.virtualKeys.updatedAt"),
         size: 120,
         enableSorting: true,
         cell: (info) => <DateCell value={info.getValue() as string | null} precision="date" fallback="Never" />,
@@ -364,11 +377,8 @@ export function VirtualKeysTable() {
         accessorKey: "last_active",
         header: () => (
           <span className="flex items-center gap-1">
-            Last Active
-            <Popover
-              content="This is a new field and is not backfilled. Only new key usage will update this value."
-              trigger="hover"
-            >
+            {t("gateway.virtualKeys.lastActive")}
+            <Popover content={t("gateway.virtualKeys.lastActiveHelp")} trigger="hover">
               <InfoCircleOutlined className="text-gray-400 text-xs cursor-help" />
             </Popover>
           </span>
@@ -380,7 +390,7 @@ export function VirtualKeysTable() {
       {
         id: "expires",
         accessorKey: "expires",
-        header: "Expires",
+        header: t("gateway.virtualKeys.expires"),
         size: 120,
         enableSorting: false,
         cell: (info) => <DateCell value={info.getValue() as string | null} precision="date" fallback="Never" />,
@@ -388,7 +398,7 @@ export function VirtualKeysTable() {
       {
         id: "spend",
         accessorKey: "spend",
-        header: "Spend (USD)",
+        header: t("gateway.virtualKeys.spendUsd"),
         size: 100,
         enableSorting: true,
         cell: (info) => <MoneyCell value={info.getValue() as number} decimals={4} />,
@@ -396,7 +406,7 @@ export function VirtualKeysTable() {
       {
         id: "max_budget",
         accessorKey: "max_budget",
-        header: "Budget (USD)",
+        header: t("gateway.virtualKeys.budgetUsd"),
         size: 110,
         enableSorting: true,
         cell: (info) => {
@@ -409,13 +419,13 @@ export function VirtualKeysTable() {
           if (team?.max_budget != null) {
             return `$${formatNumberWithCommas(team.max_budget)} (Team)`;
           }
-          return "Unlimited";
+          return t("gateway.keyInfoView.unlimited");
         },
       },
       {
         id: "budget_reset_at",
         accessorKey: "budget_reset_at",
-        header: "Budget Reset",
+        header: t("gateway.virtualKeys.budgetReset"),
         size: 130,
         enableSorting: false,
         cell: (info) => <DateCell value={info.getValue() as string | null} fallback="Never" />,
@@ -423,7 +433,7 @@ export function VirtualKeysTable() {
       {
         id: "models",
         accessorKey: "models",
-        header: "Models",
+        header: t("gateway.virtualKeys.models"),
         size: 200,
         enableSorting: false,
         cell: (info) => {
@@ -434,7 +444,7 @@ export function VirtualKeysTable() {
                 <div className="flex flex-col">
                   {models.length === 0 ? (
                     <Badge size={"xs"} className="mb-1" color="red">
-                      <Text>All Proxy Models</Text>
+                      <Text>{t("gateway.virtualKeys.allProxyModels")}</Text>
                     </Badge>
                   ) : (
                     <>
@@ -458,7 +468,7 @@ export function VirtualKeysTable() {
                           {models.slice(0, 3).map((model, index) =>
                             model === "all-proxy-models" ? (
                               <Badge key={index} size={"xs"} color="red">
-                                <Text>All Proxy Models</Text>
+                                <Text>{t("gateway.virtualKeys.allProxyModels")}</Text>
                               </Badge>
                             ) : (
                               <Badge key={index} size={"xs"} color="blue">
@@ -473,7 +483,9 @@ export function VirtualKeysTable() {
                           {models.length > 3 && !expandedAccordions[info.row.id] && (
                             <Badge size={"xs"} color="gray" className="cursor-pointer">
                               <Text>
-                                +{models.length - 3} {models.length - 3 === 1 ? "more model" : "more models"}
+                                {models.length - 3 === 1
+                                  ? t("gateway.virtualKeys.moreModel", { count: models.length - 3 })
+                                  : t("gateway.virtualKeys.moreModels", { count: models.length - 3 })}
                               </Text>
                             </Badge>
                           )}
@@ -482,7 +494,7 @@ export function VirtualKeysTable() {
                               {models.slice(3).map((model, index) =>
                                 model === "all-proxy-models" ? (
                                   <Badge key={index + 3} size={"xs"} color="red">
-                                    <Text>All Proxy Models</Text>
+                                    <Text>{t("gateway.virtualKeys.allProxyModels")}</Text>
                                   </Badge>
                                 ) : (
                                   <Badge key={index + 3} size={"xs"} color="blue">
@@ -508,15 +520,23 @@ export function VirtualKeysTable() {
       },
       {
         id: "rate_limits",
-        header: "Rate Limits",
+        header: t("gateway.virtualKeys.rateLimits"),
         size: 140,
         enableSorting: false,
         cell: ({ row }) => {
           const key = row.original;
           return (
             <div>
-              <div>TPM: {key.tpm_limit !== null ? key.tpm_limit : "Unlimited"}</div>
-              <div>RPM: {key.rpm_limit !== null ? key.rpm_limit : "Unlimited"}</div>
+              <div>
+                {t("gateway.virtualKeys.tpm", {
+                  value: key.tpm_limit !== null ? key.tpm_limit : t("gateway.keyInfoView.unlimited"),
+                })}
+              </div>
+              <div>
+                {t("gateway.virtualKeys.rpm", {
+                  value: key.rpm_limit !== null ? key.rpm_limit : t("gateway.keyInfoView.unlimited"),
+                })}
+              </div>
             </div>
           );
         },
@@ -635,7 +655,7 @@ export function VirtualKeysTable() {
                 <Skeleton.Node active style={{ width: 200, height: 20 }} />
               ) : (
                 <span className="inline-flex text-sm text-gray-700">
-                  Showing {rangeLabel} of {totalCount} results
+                  {t("gateway.virtualKeys.showing", { range: rangeLabel, total: totalCount })}
                 </span>
               )}
 
@@ -644,9 +664,9 @@ export function VirtualKeysTable() {
                 icon={<SyncOutlined spin={isButtonLoading} />}
                 onClick={handleRefresh}
                 disabled={isButtonLoading}
-                title="Fetch data"
+                title={t("gateway.virtualKeys.fetchTitle")}
               >
-                {isButtonLoading ? "Fetching" : "Fetch"}
+                {isButtonLoading ? t("gateway.virtualKeys.fetching") : t("gateway.virtualKeys.fetch")}
               </AntButton>
             </div>
 
@@ -655,7 +675,7 @@ export function VirtualKeysTable() {
                 <Skeleton.Node active style={{ width: 74, height: 20 }} />
               ) : (
                 <span className="text-sm text-gray-700">
-                  Page {pageIndex + 1} of {table.getPageCount()}
+                  {t("gateway.virtualKeys.page", { page: pageIndex + 1, total: table.getPageCount() })}
                 </span>
               )}
 
@@ -667,7 +687,7 @@ export function VirtualKeysTable() {
                   disabled={isLoading || !table.getCanPreviousPage()}
                   className="px-3 py-1 text-sm border rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Previous
+                  {t("gateway.virtualKeys.previous")}
                 </button>
               )}
 
@@ -679,7 +699,7 @@ export function VirtualKeysTable() {
                   disabled={isLoading || !table.getCanNextPage()}
                   className="px-3 py-1 text-sm border rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Next
+                  {t("gateway.virtualKeys.next")}
                 </button>
               )}
             </div>
@@ -766,7 +786,7 @@ export function VirtualKeysTable() {
                       <TableRow>
                         <TableCell colSpan={columns.length} className="h-8 text-center">
                           <div className="text-center text-gray-500">
-                            <p>🚅 Loading keys...</p>
+                            <p>{t("gateway.virtualKeys.loading")}</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -793,7 +813,7 @@ export function VirtualKeysTable() {
                       <TableRow>
                         <TableCell colSpan={columns.length} className="h-8 text-center">
                           <div className="text-center text-gray-500">
-                            <p>No keys found</p>
+                            <p>{t("gateway.virtualKeys.empty")}</p>
                           </div>
                         </TableCell>
                       </TableRow>

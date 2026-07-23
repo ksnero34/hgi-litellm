@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Col, Row, Spin, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getGuardrailsUsageOverview } from "@/components/networking";
 import { type PerformanceRow } from "@/components/GuardrailsMonitor/mockData";
 import { EvaluationSettingsModal } from "./EvaluationSettingsModal";
@@ -25,6 +26,30 @@ const providerColors: Record<string, string> = {
   Custom: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
+const getSortOrder = (activeKey: SortKey, key: SortKey, direction: "asc" | "desc") => {
+  if (activeKey !== key) return null;
+  return direction === "desc" ? ("descend" as const) : ("ascend" as const);
+};
+
+const getRateClassName = (value: number) => {
+  if (value > 15) return "text-red-600";
+  if (value > 5) return "text-amber-600";
+  return "text-green-600";
+};
+
+const getLatencyClassName = (value?: number) => {
+  if (value == null) return "text-gray-400";
+  if (value > 150) return "text-red-600";
+  if (value > 50) return "text-amber-600";
+  return "text-green-600";
+};
+
+const getStatusClassName = (status: string) => {
+  if (status === "healthy") return "bg-green-500";
+  if (status === "warning") return "bg-amber-500";
+  return "bg-red-500";
+};
+
 function computeMetricsFromRows(data: PerformanceRow[]) {
   const totalRequests = data.reduce((sum, r) => sum + r.requestsEvaluated, 0);
   const totalBlocked = data.reduce((sum, r) => sum + Math.round((r.requestsEvaluated * r.failRate) / 100), 0);
@@ -41,9 +66,15 @@ export function GuardrailsOverview({
   endDate,
   onSelectGuardrail,
 }: GuardrailsOverviewProps) {
+  const { t } = useTranslation();
   const [sortBy, setSortBy] = useState<SortKey>("failRate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [evaluationModalOpen, setEvaluationModalOpen] = useState(false);
+  const getStatusLabel = (status: string) => {
+    if (status === "healthy") return t("observability.guardrails.healthy");
+    if (status === "warning") return t("observability.guardrails.warning");
+    return status;
+  };
 
   const {
     data: guardrailsData,
@@ -84,7 +115,7 @@ export function GuardrailsOverview({
 
   const columns: ColumnsType<PerformanceRow> = [
     {
-      title: "Guardrail",
+      title: t("observability.guardrails.guardrail"),
       dataIndex: "name",
       key: "name",
       render: (name: string, row) => (
@@ -98,7 +129,7 @@ export function GuardrailsOverview({
       ),
     },
     {
-      title: "Provider",
+      title: t("observability.guardrails.provider"),
       dataIndex: "provider",
       key: "provider",
       render: (provider: string) => (
@@ -112,58 +143,46 @@ export function GuardrailsOverview({
       ),
     },
     {
-      title: "Requests",
+      title: t("observability.guardrails.requests"),
       dataIndex: "requestsEvaluated",
       key: "requestsEvaluated",
       align: "right",
       sorter: true,
-      sortOrder: sortBy === "requestsEvaluated" ? (sortDir === "desc" ? "descend" : "ascend") : null,
+      sortOrder: getSortOrder(sortBy, "requestsEvaluated", sortDir),
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: "Fail Rate",
+      title: t("observability.guardrails.fail_rate"),
       dataIndex: "failRate",
       key: "failRate",
       align: "right",
       sorter: true,
-      sortOrder: sortBy === "failRate" ? (sortDir === "desc" ? "descend" : "ascend") : null,
+      sortOrder: getSortOrder(sortBy, "failRate", sortDir),
       render: (v: number, row) => (
-        <span className={v > 15 ? "text-red-600" : v > 5 ? "text-amber-600" : "text-green-600"}>
+        <span className={getRateClassName(v)}>
           {v}%{row.trend === "up" && <span className="ml-1 text-xs text-red-400">↑</span>}
           {row.trend === "down" && <span className="ml-1 text-xs text-green-400">↓</span>}
         </span>
       ),
     },
     {
-      title: "Avg. latency added",
+      title: t("observability.guardrails.avg_latency_added"),
       dataIndex: "avgLatency",
       key: "avgLatency",
       align: "right",
       sorter: true,
-      sortOrder: sortBy === "avgLatency" ? (sortDir === "desc" ? "descend" : "ascend") : null,
-      render: (v?: number) => (
-        <span
-          className={
-            v == null ? "text-gray-400" : v > 150 ? "text-red-600" : v > 50 ? "text-amber-600" : "text-green-600"
-          }
-        >
-          {v != null ? `${v}ms` : "—"}
-        </span>
-      ),
+      sortOrder: getSortOrder(sortBy, "avgLatency", sortDir),
+      render: (v?: number) => <span className={getLatencyClassName(v)}>{v != null ? `${v}ms` : "—"}</span>,
     },
     {
-      title: "Status",
+      title: t("observability.guardrails.status"),
       dataIndex: "status",
       key: "status",
       align: "center",
       render: (status: string) => (
         <span className="inline-flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              status === "healthy" ? "bg-green-500" : status === "warning" ? "bg-amber-500" : "bg-red-500"
-            }`}
-          />
-          <span className="text-xs text-gray-600 capitalize">{status}</span>
+          <span className={`w-2 h-2 rounded-full ${getStatusClassName(status)}`} />
+          <span className="text-xs text-gray-600 capitalize">{getStatusLabel(status)}</span>
         </span>
       ),
     },
@@ -184,24 +203,27 @@ export function GuardrailsOverview({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <SafetyOutlined className="text-lg text-indigo-500" />
-            <h1 className="text-xl font-semibold text-gray-900">Guardrails Monitor</h1>
+            <h1 className="text-xl font-semibold text-gray-900">{t("observability.guardrails.title")}</h1>
           </div>
-          <p className="text-sm text-gray-500">Monitor guardrail performance across all requests</p>
+          <p className="text-sm text-gray-500">{t("observability.guardrails.subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button type="default" icon={<DownloadOutlined />} title="Coming soon">
-            Export Data
+          <Button type="default" icon={<DownloadOutlined />} title={t("observability.guardrails.coming_soon")}>
+            {t("observability.guardrails.export_data")}
           </Button>
         </div>
       </div>
 
       <Row gutter={[16, 16]} className="mb-6">
         <Col xs={12} sm={12} md={8} flex="1 0 20%">
-          <MetricCard label="Total Evaluations" value={metrics.totalRequests.toLocaleString()} />
+          <MetricCard
+            label={t("observability.guardrails.total_evaluations")}
+            value={metrics.totalRequests.toLocaleString()}
+          />
         </Col>
         <Col xs={12} sm={12} md={8} flex="1 0 20%">
           <MetricCard
-            label="Blocked Requests"
+            label={t("observability.guardrails.blocked_requests")}
             value={metrics.totalBlocked.toLocaleString()}
             valueColor="text-red-600"
             icon={<WarningOutlined className="text-red-400" />}
@@ -209,7 +231,7 @@ export function GuardrailsOverview({
         </Col>
         <Col xs={12} sm={12} md={8} flex="1 0 20%">
           <MetricCard
-            label="Pass Rate"
+            label={t("observability.guardrails.pass_rate")}
             value={`${metrics.passRate}%`}
             valueColor="text-green-600"
             icon={<RiseOutlined className="text-green-400" />}
@@ -217,15 +239,13 @@ export function GuardrailsOverview({
         </Col>
         <Col xs={12} sm={12} md={8} flex="1 0 20%">
           <MetricCard
-            label="Avg. latency added"
+            label={t("observability.guardrails.avg_latency_added")}
             value={`${metrics.avgLatency}ms`}
-            valueColor={
-              metrics.avgLatency > 150 ? "text-red-600" : metrics.avgLatency > 50 ? "text-amber-600" : "text-green-600"
-            }
+            valueColor={getLatencyClassName(metrics.avgLatency)}
           />
         </Col>
         <Col xs={12} sm={12} md={8} flex="1 0 20%">
-          <MetricCard label="Active Guardrails" value={metrics.count} />
+          <MetricCard label={t("observability.guardrails.active_guardrails")} value={metrics.count} />
         </Col>
       </Row>
 
@@ -237,22 +257,22 @@ export function GuardrailsOverview({
         {(isLoading || error) && (
           <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
             {isLoading && <Spin size="small" />}
-            {error && <span className="text-sm text-red-600">Failed to load data. Try again.</span>}
+            {error && <span className="text-sm text-red-600">{t("observability.guardrails.failed_to_load")}</span>}
           </div>
         )}
         <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
           <div>
             <Typography.Title level={5} className="mb-0! text-gray-900">
-              Guardrail Performance
+              {t("observability.guardrails.performance_title")}
             </Typography.Title>
-            <p className="text-xs text-gray-500 mt-0.5">Click a guardrail to view details, logs, and configuration</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t("observability.guardrails.performance_description")}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
               type="default"
               icon={<SettingOutlined />}
               onClick={() => setEvaluationModalOpen(true)}
-              title="Evaluation settings"
+              title={t("observability.guardrails.evaluation_settings")}
             />
           </div>
         </div>
@@ -263,7 +283,9 @@ export function GuardrailsOverview({
           pagination={false}
           loading={isLoading}
           onChange={handleTableChange}
-          locale={activeData.length === 0 && !isLoading ? { emptyText: "No data for this period" } : undefined}
+          locale={
+            activeData.length === 0 && !isLoading ? { emptyText: t("observability.guardrails.no_data") } : undefined
+          }
           onRow={(row) => ({
             onClick: () => onSelectGuardrail(row.id),
             style: { cursor: "pointer" },

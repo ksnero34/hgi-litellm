@@ -148,7 +148,7 @@ describe("ToolTestPanel defaults", () => {
   it("falls back to a plain input when schema is missing", () => {
     renderPanel("tool_input_schema");
 
-    expect(screen.getByPlaceholderText("Enter input for this tool")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Please enter input for this tool")).toBeInTheDocument();
     expect(screen.queryByText("No parameters required")).not.toBeInTheDocument();
   });
 

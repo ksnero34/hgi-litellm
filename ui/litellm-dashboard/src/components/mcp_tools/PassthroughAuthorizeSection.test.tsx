@@ -40,7 +40,7 @@ describe("PassthroughAuthorizeSection credential-class-aware copy", () => {
     );
     expect(screen.getByPlaceholderText("Leave blank to use dynamic client registration")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Leave blank for public clients / PKCE")).toBeInTheDocument();
-    expect(screen.getByText(/Switching the auth type discards the previously saved app/)).toBeInTheDocument();
+    expect(screen.getByText(/Changing auth type discards the saved app/)).toBeInTheDocument();
   });
 
   it("shows the keep+warn banner when the upstream may no longer match", () => {
@@ -49,6 +49,6 @@ describe("PassthroughAuthorizeSection credential-class-aware copy", () => {
         <PassthroughAuthorizeSection authType="true_passthrough" oauthFlow={noopFlow} appMayNotMatchUpstream />
       </WithForm>,
     );
-    expect(screen.getByText(/registered for the previous upstream/)).toBeInTheDocument();
+    expect(screen.getByText(/saved OAuth app may no longer be valid/)).toBeInTheDocument();
   });
 });

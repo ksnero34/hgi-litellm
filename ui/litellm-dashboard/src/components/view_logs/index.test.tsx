@@ -2,6 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import moment from "moment";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "@/i18n/i18n";
 import SpendLogsTable from "./index";
 import { renderWithProviders } from "../../../tests/test-utils";
 import { uiSpendLogsCall } from "../networking";
@@ -53,6 +54,7 @@ describe("SpendLogsTable", () => {
   };
 
   beforeEach(() => {
+    void i18n.changeLanguage("en");
     vi.clearAllMocks();
     // Clear sessionStorage to avoid isLiveTail state from previous tests
     sessionStorage.clear();

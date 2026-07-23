@@ -68,7 +68,7 @@ describe("MCPConnectionStatus", () => {
       />,
     );
 
-    expect(screen.getByText("Connection Failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Connection Failed")).toHaveLength(2);
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /retry/i }));

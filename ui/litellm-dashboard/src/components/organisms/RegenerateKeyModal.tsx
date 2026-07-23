@@ -3,17 +3,13 @@ import { CheckOutlined, CopyOutlined, SyncOutlined } from "@ant-design/icons";
 import { Alert, Button, Col, Flex, Form, Input, InputNumber, Modal, Row, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { CopyToClipboard } from "react-copy-to-clipboard";
+import { useTranslation } from "react-i18next";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import NotificationManager from "../molecules/notifications_manager";
 import { regenerateKeyCall } from "../networking";
 import { calculateExpiryPreviewFromDuration, formatExpiresUtc, isKeyExpired } from "@/utils/keyExpiryUtils";
 
 const { Text } = Typography;
-
-const DURATION_RULE = {
-  pattern: /^(\d+(s|m|h|d|w|mo))?$/,
-  message: "30s, 30m, 24h, 2d, 1w, 1mo 형식으로 입력하세요",
-};
 
 interface RegenerateKeyModalProps {
   selectedToken: KeyResponse | null;
@@ -23,6 +19,7 @@ interface RegenerateKeyModalProps {
 }
 
 export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdate }: RegenerateKeyModalProps) {
+  const { t } = useTranslation();
   const { accessToken } = useAuthorized();
   const [form] = Form.useForm();
   const [regeneratedKey, setRegeneratedKey] = useState<string | null>(null);
@@ -32,12 +29,16 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
   const keyIsExpired = isKeyExpired(selectedToken?.expires);
   const durationValue = Form.useWatch("duration", form);
+  const durationRule = {
+    pattern: /^(\d+(s|m|h|d|w|mo))?$/,
+    message: t("gateway.regenerate.durationPattern"),
+  };
 
   // Expired keys must get a new duration, otherwise regeneration produces a key
   // that inherits the old (past) expiry and is immediately unusable.
   const durationRules = keyIsExpired
-    ? [{ required: true, message: "만료된 키에는 새 만료 기간이 필요합니다" }, DURATION_RULE]
-    : [DURATION_RULE];
+    ? [{ required: true, message: t("gateway.regenerate.expiredDurationRequired") }, durationRule]
+    : [durationRule];
 
   useEffect(() => {
     if (visible && selectedToken && accessToken) {
@@ -64,7 +65,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
       const response = await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
       setRegeneratedKey(response.key);
       setPreviousKeyRevokeAt(response.previous_key_revoke_at || null);
-      NotificationManager.success("가상 키를 교체했습니다");
+      NotificationManager.success(t("gateway.regenerate.success"));
 
       // Build the update payload. Spread the API response first so any new
       // fields it returns (new token, timestamps, etc.) are captured, then
@@ -115,7 +116,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
   return (
     <Modal
-      title="가상 키 교체"
+      title={t("gateway.regenerate.title")}
       open={visible}
       onCancel={handleClose}
       width={520}
@@ -125,15 +126,15 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
           ? [
               <Space key="footer-actions">
                 <Button onClick={handleClose} aria-label="Close">
-                  닫기
+                  {t("gateway.regenerate.close")}
                 </Button>
                 <CopyToClipboard text={regeneratedKey} onCopy={handleCopyKey}>
                   <Button
                     type="primary"
                     icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-                    aria-label={copied ? "Copied" : "Copy Key"}
+                    aria-label={copied ? t("gateway.regenerate.copied") : t("gateway.regenerate.copy")}
                   >
-                    {copied ? "복사됨" : "키 복사"}
+                    {copied ? t("gateway.regenerate.copied") : t("gateway.regenerate.copy")}
                   </Button>
                 </CopyToClipboard>
               </Space>,
@@ -141,16 +142,16 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
           : [
               <Space key="footer-actions">
                 <Button onClick={handleClose} aria-label="Cancel">
-                  취소
+                  {t("gateway.regenerate.cancel")}
                 </Button>
                 <Button
                   type="primary"
                   icon={<SyncOutlined />}
                   onClick={handleRegenerateKey}
                   loading={isRegenerating}
-                  aria-label="Regenerate"
+                  aria-label={t("gateway.regenerate.issue")}
                 >
-                  새 키 발급
+                  {t("gateway.regenerate.issue")}
                 </Button>
               </Space>,
             ]
@@ -158,28 +159,30 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
     >
       {regeneratedKey ? (
         <Flex vertical gap="middle">
-          <Alert type="warning" showIcon message="이 키는 다시 표시되지 않으므로 지금 안전하게 보관하세요" />
+          <Alert type="warning" showIcon message={t("gateway.regenerate.saveWarning")} />
           {previousKeyRevokeAt ? (
             <Alert
               type="info"
               showIcon
-              message="기존 키 사용 가능 기한"
-              description={`${formatExpiresUtc(previousKeyRevokeAt)}까지`}
+              message={t("gateway.regenerate.previousKeyWindow")}
+              description={t("gateway.regenerate.previousKeyRevokeAt", {
+                value: formatExpiresUtc(previousKeyRevokeAt),
+              })}
             />
           ) : (
-            <Alert type="warning" showIcon message="기존 키는 더 이상 사용할 수 없습니다" />
+            <Alert type="warning" showIcon message={t("gateway.regenerate.previousKeyUnavailable")} />
           )}
 
           <Flex vertical gap={2}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              키 별칭
+              {t("gateway.regenerate.keyAlias")}
             </Text>
-            <Text>{selectedToken?.key_alias || "별칭 없음"}</Text>
+            <Text>{selectedToken?.key_alias || t("gateway.regenerate.noAlias")}</Text>
           </Flex>
 
           <Flex vertical gap={6}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              가상 키
+              {t("gateway.regenerate.virtualKey")}
             </Text>
             <div
               style={{
@@ -199,23 +202,23 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
         </Flex>
       ) : (
         <Form form={form} layout="vertical" style={{ marginTop: 4 }}>
-          <Form.Item name="key_alias" label="키 별칭">
+          <Form.Item name="key_alias" label={t("gateway.regenerate.keyAlias")}>
             <Input disabled aria-label="Key Alias" />
           </Form.Item>
 
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="max_budget" label="Max Budget (USD)">
+              <Form.Item name="max_budget" label={t("gateway.regenerate.maxBudget")}>
                 <InputNumber step={0.01} precision={2} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="tpm_limit" label="TPM Limit">
+              <Form.Item name="tpm_limit" label={t("gateway.regenerate.tpmLimit")}>
                 <InputNumber style={{ width: "100%" }} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="rpm_limit" label="RPM Limit">
+              <Form.Item name="rpm_limit" label={t("gateway.regenerate.rpmLimit")}>
                 <InputNumber style={{ width: "100%" }} />
               </Form.Item>
             </Col>
@@ -225,38 +228,41 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
             <Col span={12}>
               <Form.Item
                 name="duration"
-                label="키 만료"
+                label={t("gateway.regenerate.expireKey")}
                 rules={durationRules}
                 extra={
                   <Flex vertical gap={2}>
                     <Text type={keyIsExpired ? "danger" : "secondary"} style={{ fontSize: 12 }}>
-                      현재 만료: {selectedToken?.expires ? formatExpiresUtc(selectedToken.expires) : "만료 없음"}
-                      {keyIsExpired && " (만료됨)"}
+                      {t("gateway.regenerate.currentExpiry", {
+                        value: selectedToken?.expires
+                          ? formatExpiresUtc(selectedToken.expires)
+                          : t("gateway.regenerate.never"),
+                      })}
+                      {keyIsExpired ? ` ${t("gateway.regenerate.expired")}` : ""}
                     </Text>
                     {newExpiryTime && (
                       <Text type="success" style={{ fontSize: 12 }}>
-                        새 만료: {newExpiryTime}
+                        {t("gateway.regenerate.newExpiry", { value: newExpiryTime })}
                       </Text>
                     )}
                   </Flex>
                 }
               >
-                <Input placeholder="e.g. 30s, 30h, 30d" />
+                <Input placeholder={t("gateway.regenerate.durationPlaceholder")} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
                 name="grace_period"
-                label="유예 기간"
-                tooltip="교체 후에도 기존 키를 이 기간 동안 유지합니다. 비워 두면 기본값 72h가 적용됩니다."
+                label={t("gateway.regenerate.gracePeriod")}
                 extra={
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    기본값: 72h
+                    {t("gateway.regenerate.graceRecommendation")}
                   </Text>
                 }
-                rules={[DURATION_RULE]}
+                rules={[durationRule]}
               >
-                <Input placeholder="e.g. 24h, 2d" />
+                <Input placeholder={t("gateway.regenerate.gracePlaceholder")} />
               </Form.Item>
             </Col>
           </Row>

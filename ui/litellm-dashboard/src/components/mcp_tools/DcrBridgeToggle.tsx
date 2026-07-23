@@ -1,6 +1,7 @@
 import React from "react";
 import { Form, Switch, Tooltip } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { isClientForwardedTokenMode } from "./types";
 
 /**
@@ -19,13 +20,15 @@ export default function DcrBridgeToggle({
   authType?: string | null;
   initialChecked?: boolean;
 }) {
+  const { t } = useTranslation();
+
   if (!isClientForwardedTokenMode(authType)) return null;
   return (
     <Form.Item
       label={
         <span className="text-sm font-medium text-gray-700 flex items-center">
-          Gateway-hosted sign-in (DCR bridge)
-          <Tooltip title="Lets OAuth-only clients like Claude Desktop register and sign in through the gateway. Turn off to relay the upstream server's own OAuth metadata instead (for clients pre-registered with the upstream IdP).">
+          {t("toolsModels.mcp.dcrBridge.label")}
+          <Tooltip title={t("toolsModels.mcp.dcrBridge.tooltip")}>
             <InfoCircleOutlined className="ml-2 text-blue-400 hover:text-blue-600 cursor-help" />
           </Tooltip>
         </span>
