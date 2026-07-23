@@ -11869,8 +11869,10 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
     pre-hashed token ID.
     """
     from litellm.proxy.management_endpoints.key_management_endpoints import (
+        DeprecatedKeyRotationResult,
         _execute_virtual_key_regeneration,
     )
+    from datetime import datetime, timezone
 
     token_hash = "abc123def456"
 
@@ -11912,6 +11914,8 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
         api_key="sk-admin",
         user_id="admin-user",
     )
+    revoke_at = datetime(2026, 7, 26, 5, 30, tzinfo=timezone.utc)
+    ancestor_hash = "ancestor-token-hash"
 
     with (
         patch(
@@ -11922,6 +11926,10 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._insert_deprecated_key",
             new_callable=AsyncMock,
+            return_value=DeprecatedKeyRotationResult(
+                revoke_at=revoke_at,
+                token_hashes=[token_hash, ancestor_hash],
+            ),
         ),
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._delete_cache_key_object",
@@ -11937,7 +11945,7 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
             return_value={},
         ),
     ):
-        await _execute_virtual_key_regeneration(
+        response = await _execute_virtual_key_regeneration(
             prisma_client=mock_prisma_client,
             key_in_db=existing_key,
             hashed_api_key=token_hash,
@@ -11949,10 +11957,118 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
             proxy_logging_obj=mock_proxy_logging_obj,
         )
 
-        mock_delete_cache.assert_called_once()
-        call_kwargs = mock_delete_cache.call_args.kwargs
-        # The token hash should be passed as-is, NOT double-hashed
-        assert call_kwargs["hashed_token"] == token_hash
+        assert mock_delete_cache.await_count == 2
+        deleted_hashes = {
+            call.kwargs["hashed_token"]
+            for call in mock_delete_cache.await_args_list
+        }
+        assert deleted_hashes == {token_hash, ancestor_hash}
+        assert response.previous_key_revoke_at == revoke_at
+
+
+@pytest.mark.asyncio
+async def test_insert_deprecated_key_repoints_unexpired_ancestors():
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        DeprecatedKeyRotationResult,
+        _insert_deprecated_key,
+    )
+
+    prisma_client = MagicMock()
+    table = prisma_client.db.litellm_deprecatedverificationtoken
+    table.find_many = AsyncMock(
+        return_value=[
+            SimpleNamespace(token="oldest-hash"),
+            SimpleNamespace(token="older-hash"),
+        ]
+    )
+    table.upsert = AsyncMock()
+    table.update_many = AsyncMock()
+    before = datetime.now(timezone.utc)
+
+    result = await _insert_deprecated_key(
+        prisma_client=prisma_client,
+        old_token_hash="current-hash",
+        new_token_hash="new-hash",
+        grace_period="72h",
+    )
+
+    assert isinstance(result, DeprecatedKeyRotationResult)
+    assert before + timedelta(hours=72) <= result.revoke_at
+    assert result.revoke_at <= datetime.now(timezone.utc) + timedelta(hours=72)
+    assert result.token_hashes == [
+        "current-hash",
+        "oldest-hash",
+        "older-hash",
+    ]
+    table.find_many.assert_awaited_once()
+    assert (
+        table.find_many.await_args.kwargs["where"]["active_token_id"]
+        == "current-hash"
+    )
+    table.update_many.assert_awaited_once_with(
+        where={"token": {"in": ["oldest-hash", "older-hash"]}},
+        data={"active_token_id": "new-hash"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_virtual_key_regeneration_does_not_repoint_on_update_failure():
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        _execute_virtual_key_regeneration,
+    )
+
+    token_hash = "current-token-hash"
+    existing_key = LiteLLM_VerificationToken(
+        token=token_hash,
+        user_id="user-1",
+        models=[],
+        team_id=None,
+        max_budget=None,
+        tags=None,
+    )
+    prisma_client = AsyncMock()
+    prisma_client.jsonify_object = MagicMock(side_effect=lambda data: data)
+    prisma_client.db.litellm_verificationtoken.update = AsyncMock(
+        side_effect=RuntimeError("update failed")
+    )
+
+    with (
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.get_new_token",
+            new_callable=AsyncMock,
+            return_value="sk-newtoken1234ab12",
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.prepare_key_update_data",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints._insert_deprecated_key",
+            new_callable=AsyncMock,
+        ) as mock_insert_deprecated_key,
+        pytest.raises(RuntimeError, match="update failed"),
+    ):
+        await _execute_virtual_key_regeneration(
+            prisma_client=prisma_client,
+            key_in_db=existing_key,
+            hashed_api_key=token_hash,
+            key=token_hash,
+            data=None,
+            user_api_key_dict=UserAPIKeyAuth(
+                user_role=LitellmUserRoles.PROXY_ADMIN,
+                api_key="sk-admin",
+                user_id="admin-user",
+            ),
+            litellm_changed_by=None,
+            user_api_key_cache=MagicMock(),
+            proxy_logging_obj=MagicMock(),
+        )
+
+    mock_insert_deprecated_key.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

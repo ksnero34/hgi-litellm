@@ -609,7 +609,7 @@ class TestDeprecatedKeyLookupDbE2E:
                 }
             )
 
-            # Request 1 (DB path) + Request 2/3 (cache-hit path)
+            # Every request reads the authoritative deprecated-key mapping.
             r1 = await _lookup_deprecated_key(
                 db=prisma_client.db,
                 hashed_token=old_token_hash,
@@ -627,9 +627,6 @@ class TestDeprecatedKeyLookupDbE2E:
             assert r2 == active_token_hash
             assert r3 == active_token_hash
 
-            cached = _deprecated_key_cache.get(old_token_hash)
-            assert isinstance(cached, tuple)
-            assert len(cached) == 3
         finally:
             # Best-effort cleanup for idempotent reruns.
             try:

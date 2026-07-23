@@ -23638,6 +23638,8 @@ export interface components {
             } | null;
             /** Policies */
             policies?: string[] | null;
+            /** Previous Key Revoke At */
+            previous_key_revoke_at?: string | null;
             /** Project Id */
             project_id?: string | null;
             /** Prompts */
@@ -27798,6 +27800,8 @@ export interface components {
             } | null;
             /** Policies */
             policies?: string[] | null;
+            /** Previous Key Revoke At */
+            previous_key_revoke_at?: string | null;
             /** Project Id */
             project_id?: string | null;
             /** Prompts */

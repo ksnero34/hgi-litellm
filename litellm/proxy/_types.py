@@ -1119,6 +1119,7 @@ class GenerateKeyResponse(KeyRequestBase):
     key: str  # type: ignore
     key_name: Optional[str] = None
     expires: Optional[datetime] = None
+    previous_key_revoke_at: datetime | None = None
     user_id: Optional[str] = None
     token_id: Optional[str] = None
     organization_id: Optional[str] = None

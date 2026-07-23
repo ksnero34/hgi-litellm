@@ -26,6 +26,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
   const { accessToken } = useAuthorized();
   const [form] = Form.useForm();
   const [regeneratedKey, setRegeneratedKey] = useState<string | null>(null);
+  const [previousKeyRevokeAt, setPreviousKeyRevokeAt] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -62,6 +63,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
       const response = await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
       setRegeneratedKey(response.key);
+      setPreviousKeyRevokeAt(response.previous_key_revoke_at || null);
       NotificationManager.success("가상 키를 교체했습니다");
 
       // Build the update payload. Spread the API response first so any new
@@ -100,6 +102,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
   const handleClose = () => {
     setRegeneratedKey(null);
+    setPreviousKeyRevokeAt(null);
     setIsRegenerating(false);
     setCopied(false);
     form.resetFields();
@@ -156,6 +159,16 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
       {regeneratedKey ? (
         <Flex vertical gap="middle">
           <Alert type="warning" showIcon message="이 키는 다시 표시되지 않으므로 지금 안전하게 보관하세요" />
+          {previousKeyRevokeAt ? (
+            <Alert
+              type="info"
+              showIcon
+              message="기존 키 사용 가능 기한"
+              description={`${formatExpiresUtc(previousKeyRevokeAt)}까지`}
+            />
+          ) : (
+            <Alert type="warning" showIcon message="기존 키는 더 이상 사용할 수 없습니다" />
+          )}
 
           <Flex vertical gap={2}>
             <Text type="secondary" style={{ fontSize: 12 }}>

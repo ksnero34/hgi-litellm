@@ -19,7 +19,7 @@ import secrets
 import traceback
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, cast
 
 import fastapi
 import yaml
@@ -4373,12 +4373,17 @@ async def get_new_token(data: Optional[RegenerateKeyRequest]) -> str:
     return new_token
 
 
+class DeprecatedKeyRotationResult(NamedTuple):
+    revoke_at: datetime
+    token_hashes: list[str]
+
+
 async def _insert_deprecated_key(
     prisma_client: "PrismaClient",
     old_token_hash: str,
     new_token_hash: str,
     grace_period: Optional[str],
-) -> None:
+) -> DeprecatedKeyRotationResult | None:
     """
     Insert old key into deprecated table so it remains valid during grace period.
 
@@ -4392,7 +4397,7 @@ async def _insert_deprecated_key(
     """
     grace_period_value = grace_period or LITELLM_KEY_ROTATION_GRACE_PERIOD
     if not grace_period_value:
-        return
+        return None
 
     try:
         grace_seconds = duration_in_seconds(grace_period_value)
@@ -4401,14 +4406,23 @@ async def _insert_deprecated_key(
             "Invalid grace_period format: %s. Expected format like '24h', '2d'.",
             grace_period_value,
         )
-        return
+        return None
 
     if grace_seconds <= 0:
-        return
+        return None
 
     try:
-        revoke_at = datetime.now(timezone.utc) + timedelta(seconds=grace_seconds)
-        await DeprecatedVerificationTokenRepository(prisma_client).table.upsert(
+        now = datetime.now(timezone.utc)
+        revoke_at = now + timedelta(seconds=grace_seconds)
+        deprecated_table = DeprecatedVerificationTokenRepository(prisma_client).table
+        ancestor_rows = await deprecated_table.find_many(
+            where={
+                "active_token_id": old_token_hash,
+                "revoke_at": {"gt": now},
+            }
+        )
+        ancestor_hashes = [row.token for row in ancestor_rows if row.token]
+        await deprecated_table.upsert(
             where={"token": old_token_hash},
             data={
                 "create": {
@@ -4422,16 +4436,26 @@ async def _insert_deprecated_key(
                 },
             },
         )
+        if ancestor_hashes:
+            await deprecated_table.update_many(
+                where={"token": {"in": ancestor_hashes}},
+                data={"active_token_id": new_token_hash},
+            )
         verbose_proxy_logger.debug(
             "Deprecated key retained for %s (revoke_at: %s)",
             grace_period_value,
             revoke_at,
+        )
+        return DeprecatedKeyRotationResult(
+            revoke_at=revoke_at,
+            token_hashes=[old_token_hash, *ancestor_hashes],
         )
     except Exception as deprecated_err:
         verbose_proxy_logger.warning(
             "Failed to insert deprecated key for grace period: %s",
             deprecated_err,
         )
+        return None
 
 
 async def _execute_virtual_key_regeneration(
@@ -4490,25 +4514,29 @@ async def _execute_virtual_key_regeneration(
     update_data.update(non_default_values)
     update_data = prisma_client.jsonify_object(data=update_data)
 
-    # If grace period set, insert deprecated key so old key remains valid
-    await _insert_deprecated_key(
+    updated_token = await VerificationTokenRepository(prisma_client).table.update(
+        where={"token": hashed_api_key},
+        data=update_data,  # type: ignore
+    )
+    deprecated_key_result = await _insert_deprecated_key(
         prisma_client=prisma_client,
         old_token_hash=hashed_api_key,
         new_token_hash=new_token_hash,
         grace_period=data.grace_period if data else None,
     )
-
-    updated_token = await VerificationTokenRepository(prisma_client).table.update(
-        where={"token": hashed_api_key},
-        data=update_data,  # type: ignore
-    )
     updated_token_dict = dict(updated_token) if updated_token is not None else {}
     updated_token_dict["key"] = new_token
     updated_token_dict["token_id"] = updated_token_dict.pop("token")
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        updated_token_dict["previous_key_revoke_at"] = deprecated_key_result.revoke_at
 
-    if hashed_api_key or key:
+    cache_token_hashes = {hashed_api_key}
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        cache_token_hashes.update(deprecated_key_result.token_hashes)
+    cache_token_hashes.discard("")
+    for cache_token_hash in cache_token_hashes:
         await _delete_cache_key_object(
-            hashed_token=_hash_token_if_needed(key),
+            hashed_token=cache_token_hash,
             user_api_key_cache=user_api_key_cache,
             proxy_logging_obj=proxy_logging_obj,
         )

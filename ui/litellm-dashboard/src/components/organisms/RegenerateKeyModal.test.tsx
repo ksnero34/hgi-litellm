@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
 import { RegenerateKeyModal } from "./RegenerateKeyModal";
 import { KeyResponse } from "../key_team_helpers/key_list";
+import { formatExpiresUtc } from "@/utils/keyExpiryUtils";
 
 // Mock the networking call
 const mockRegenerateKeyCall = vi.fn();
@@ -138,6 +139,22 @@ describe("RegenerateKeyModal", () => {
     });
 
     expect(screen.getByText(/다시 표시되지 않으므로/)).toBeInTheDocument();
+  });
+
+  it("should display the exact previous key revoke time after regeneration", async () => {
+    const user = userEvent.setup();
+    const previousKeyRevokeAt = "2026-07-26T05:30:00Z";
+    mockRegenerateKeyCall.mockResolvedValue({
+      key: "sk-new-regenerated-key",
+      token: "new-token-hash",
+      previous_key_revoke_at: previousKeyRevokeAt,
+    });
+
+    renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
+    await user.click(screen.getByRole("button", { name: /Regenerate/ }));
+
+    expect(await screen.findByText("기존 키 사용 가능 기한")).toBeInTheDocument();
+    expect(screen.getByText(`${formatExpiresUtc(previousKeyRevokeAt)}까지`)).toBeInTheDocument();
   });
 
   it("should show Close button after successful regeneration", async () => {

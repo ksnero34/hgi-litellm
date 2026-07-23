@@ -1,22 +1,4 @@
-"""
-Tests for the grace-period key-rotation feature (MLI-6358).
-
-Two bugs are confirmed in LiteLLM v1.83.7-stable (upstream BerriAI/litellm#27193).
-Both live in _lookup_deprecated_key() (litellm/proxy/utils.py):
-
-  Bug 1 — duplicate cache read (cosmetic, no functional impact on its own):
-      The cache is fetched twice in a row with no state change between the calls.
-
-  Bug 2 — cache stores a 2-tuple but unpacks as a 3-tuple:
-      WRITE:  _deprecated_key_cache[hash] = (active_token_id, cache_expires_at_ts)
-      READ:   active_token_id, cache_expires_at_ts, revoke_at_ts = cached   # ValueError!
-      The ValueError is NOT inside the try/except, so it propagates up through
-      PrismaClient.get_data() (which re-raises), killing the auth request.
-
-The local demo script confirmed
-that all three requests with the old key returned HTTP 401 immediately after
-rotation even though the grace-period window was still open.
-"""
+"""Tests for authoritative deprecated-key lookups during rotation grace periods."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -83,32 +65,29 @@ async def test_lookup_deprecated_key_db_hit_returns_active_token_id():
 
 
 @pytest.mark.asyncio
-async def test_lookup_deprecated_key_cache_hit_returns_on_second_call():
+async def test_lookup_deprecated_key_refreshes_mapping_on_second_call():
     """
-    Regression guard: after first call warms the cache with a 3-tuple,
-    second call should return from cache without raising.
+    Every lookup reads the current mapping so rotations are immediately visible
+    across workers.
     """
     from litellm.proxy.utils import _lookup_deprecated_key, _deprecated_key_cache
 
     _deprecated_key_cache.clear()
     db = _make_db(active_token_id=ACTIVE_TOKEN_HASH)
 
-    # First call: cold cache → DB hit → warms cache with 3-tuple → succeeds
     r1 = await _lookup_deprecated_key(db=db, hashed_token=HASHED_TOKEN)
     assert r1 == ACTIVE_TOKEN_HASH, "First call (DB path) must succeed"
 
-    # Second call: cache hit path should succeed without DB access
     r2 = await _lookup_deprecated_key(db=db, hashed_token=HASHED_TOKEN)
     assert r2 == ACTIVE_TOKEN_HASH
 
-    # DB is queried exactly once; the second call never reaches it
-    assert db.litellm_deprecatedverificationtoken.find_first.call_count == 1
+    assert db.litellm_deprecatedverificationtoken.find_first.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_lookup_deprecated_key_pre_warmed_cache_returns():
+async def test_lookup_deprecated_key_ignores_process_local_cache():
     """
-    Pre-warmed 3-tuple cache entry should be served directly from cache.
+    A stale process-local entry must not override the database mapping.
     """
     from litellm.proxy.utils import _lookup_deprecated_key, _deprecated_key_cache
 
@@ -120,12 +99,13 @@ async def test_lookup_deprecated_key_pre_warmed_cache_returns():
         now_ts + 300,
     )
 
-    db = _make_db(active_token_id=ACTIVE_TOKEN_HASH)
+    current_active_hash = f"{ACTIVE_TOKEN_HASH}-rotated"
+    db = _make_db(active_token_id=current_active_hash)
 
     result = await _lookup_deprecated_key(db=db, hashed_token=HASHED_TOKEN)
-    assert result == ACTIVE_TOKEN_HASH
+    assert result == current_active_hash
 
-    db.litellm_deprecatedverificationtoken.find_first.assert_not_called()
+    db.litellm_deprecatedverificationtoken.find_first.assert_called_once()
 
 
 # ── End-to-end reproduction of the demo ──────────────────────────────────────
@@ -136,9 +116,7 @@ async def test_grace_period_three_requests_mirrors_demo():
     """
     Reproduces Step 5 of the local demo script:
 
-      Request 1 (cache miss  — DB lookup)  → succeeds
-      Request 2 (cache hit)                → succeeds
-      Request 3 (cache hit)                → succeeds
+      Requests 1-3 each read the authoritative database mapping and succeed.
     """
     from litellm.proxy.utils import _lookup_deprecated_key, _deprecated_key_cache
 
@@ -153,8 +131,7 @@ async def test_grace_period_three_requests_mirrors_demo():
     assert r2 == ACTIVE_TOKEN_HASH
     assert r3 == ACTIVE_TOKEN_HASH
 
-    # DB hit only once; requests 2 and 3 never reach it
-    assert db.litellm_deprecatedverificationtoken.find_first.call_count == 1
+    assert db.litellm_deprecatedverificationtoken.find_first.call_count == 3
 
 
 @pytest.mark.asyncio
