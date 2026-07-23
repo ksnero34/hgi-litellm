@@ -181,9 +181,13 @@ vi.mock("@/components/shared/errorUtils", () => ({
   parseErrorMessage: vi.fn(),
 }));
 
-vi.mock("../utils", () => ({
-  processSSOSettingsPayload: vi.fn(),
-}));
+vi.mock("../utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils")>();
+  return {
+    ...actual,
+    processSSOSettingsPayload: vi.fn(),
+  };
+});
 
 // Test helpers
 const setupMocks = (

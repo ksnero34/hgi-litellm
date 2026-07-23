@@ -29982,6 +29982,11 @@ export interface components {
              */
             generic_client_secret?: string | null;
             /**
+             * Generic Discovery Url
+             * @description OpenID Connect discovery document URL for the generic OAuth provider
+             */
+            generic_discovery_url?: string | null;
+            /**
              * Generic Token Endpoint
              * @description Token endpoint URL for generic OAuth provider
              */

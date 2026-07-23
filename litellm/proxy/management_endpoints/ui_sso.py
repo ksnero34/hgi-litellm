@@ -92,6 +92,7 @@ from litellm.proxy.common_utils.html_forms.jwt_display_template import (
 )
 from litellm.proxy.common_utils.html_forms.ui_login import build_ui_login_form
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.oidc import resolve_generic_oidc_endpoints
 from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
 from litellm.proxy.management_endpoints.internal_user_endpoints import new_user
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
@@ -1037,12 +1038,13 @@ def generic_response_convertor(
     )
 
 
-def _setup_generic_sso_env_vars(
+async def _setup_generic_sso_env_vars(
     generic_client_id: str, redirect_url: str
 ) -> Tuple[str, List[str], str, str, str, bool]:
     """Setup and validate Generic SSO environment variables."""
     generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
     generic_scope = os.getenv("GENERIC_SCOPE", "openid email profile").split(" ")
+    generic_discovery_url = os.getenv("GENERIC_DISCOVERY_URL", None)
     generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
     generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
     generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
@@ -1056,39 +1058,32 @@ def _setup_generic_sso_env_vars(
             param="GENERIC_CLIENT_SECRET",
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    if generic_authorization_endpoint is None:
-        raise ProxyException(
-            message="GENERIC_AUTHORIZATION_ENDPOINT not set. Set it in .env file",
-            type=ProxyErrorTypes.auth_error,
-            param="GENERIC_AUTHORIZATION_ENDPOINT",
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    try:
+        resolved_endpoints = await resolve_generic_oidc_endpoints(
+            discovery_url=generic_discovery_url,
+            authorization_endpoint=generic_authorization_endpoint,
+            token_endpoint=generic_token_endpoint,
+            userinfo_endpoint=generic_userinfo_endpoint,
         )
-    if generic_token_endpoint is None:
+    except Exception as error:
         raise ProxyException(
-            message="GENERIC_TOKEN_ENDPOINT not set. Set it in .env file",
+            message=f"Invalid generic OIDC configuration: {error}",
             type=ProxyErrorTypes.auth_error,
-            param="GENERIC_TOKEN_ENDPOINT",
+            param="GENERIC_DISCOVERY_URL",
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-    if generic_userinfo_endpoint is None:
-        raise ProxyException(
-            message="GENERIC_USERINFO_ENDPOINT not set. Set it in .env file",
-            type=ProxyErrorTypes.auth_error,
-            param="GENERIC_USERINFO_ENDPOINT",
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        ) from error
 
     verbose_proxy_logger.debug(
-        f"authorization_endpoint: {generic_authorization_endpoint}\ntoken_endpoint: {generic_token_endpoint}\nuserinfo_endpoint: {generic_userinfo_endpoint}"
+        f"authorization_endpoint: {resolved_endpoints.authorization_endpoint}\ntoken_endpoint: {resolved_endpoints.token_endpoint}\nuserinfo_endpoint: {resolved_endpoints.userinfo_endpoint}"
     )
     verbose_proxy_logger.debug(f"GENERIC_REDIRECT_URI: {redirect_url}\nGENERIC_CLIENT_ID: {generic_client_id}\n")
 
     return (
         generic_client_secret,
         generic_scope,
-        generic_authorization_endpoint,
-        generic_token_endpoint,
-        generic_userinfo_endpoint,
+        resolved_endpoints.authorization_endpoint,
+        resolved_endpoints.token_endpoint,
+        resolved_endpoints.userinfo_endpoint,
         generic_include_client_id,
     )
 
@@ -1277,7 +1272,7 @@ async def get_generic_sso_response(
         generic_token_endpoint,
         generic_userinfo_endpoint,
         generic_include_client_id,
-    ) = _setup_generic_sso_env_vars(generic_client_id, redirect_url)
+    ) = await _setup_generic_sso_env_vars(generic_client_id, redirect_url)
 
     discovery = DiscoveryDocument(
         authorization_endpoint=generic_authorization_endpoint,
@@ -2336,16 +2331,17 @@ async def sso_readiness():
 
     elif configured_provider == "generic":
         generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
+        generic_discovery_url = os.getenv("GENERIC_DISCOVERY_URL", None)
         generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
         generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
         generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
         if generic_client_secret is None:
             missing_vars.append("GENERIC_CLIENT_SECRET")
-        if generic_authorization_endpoint is None:
+        if generic_discovery_url is None and generic_authorization_endpoint is None:
             missing_vars.append("GENERIC_AUTHORIZATION_ENDPOINT")
-        if generic_token_endpoint is None:
+        if generic_discovery_url is None and generic_token_endpoint is None:
             missing_vars.append("GENERIC_TOKEN_ENDPOINT")
-        if generic_userinfo_endpoint is None:
+        if generic_discovery_url is None and generic_userinfo_endpoint is None:
             missing_vars.append("GENERIC_USERINFO_ENDPOINT")
 
     # If all required variables are present, return healthy
@@ -2475,45 +2471,14 @@ class SSOAuthenticationHandler:
             from fastapi_sso.sso.base import DiscoveryDocument
             from fastapi_sso.sso.generic import create_provider
 
-            generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
-            generic_scope = os.getenv("GENERIC_SCOPE", "openid email profile").split(" ")
-            generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
-            generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
-            generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
-            if generic_client_secret is None:
-                raise ProxyException(
-                    message="GENERIC_CLIENT_SECRET not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_CLIENT_SECRET",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_authorization_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_AUTHORIZATION_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_AUTHORIZATION_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_token_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_TOKEN_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_TOKEN_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_userinfo_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_USERINFO_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_USERINFO_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            verbose_proxy_logger.debug(
-                f"authorization_endpoint: {generic_authorization_endpoint}\ntoken_endpoint: {generic_token_endpoint}\nuserinfo_endpoint: {generic_userinfo_endpoint}"
-            )
-            verbose_proxy_logger.debug(
-                f"GENERIC_REDIRECT_URI: {redirect_url}\nGENERIC_CLIENT_ID: {generic_client_id}\n"
-            )
+            (
+                generic_client_secret,
+                generic_scope,
+                generic_authorization_endpoint,
+                generic_token_endpoint,
+                generic_userinfo_endpoint,
+                _,
+            ) = await _setup_generic_sso_env_vars(generic_client_id, redirect_url)
             discovery = DiscoveryDocument(
                 authorization_endpoint=generic_authorization_endpoint,
                 token_endpoint=generic_token_endpoint,

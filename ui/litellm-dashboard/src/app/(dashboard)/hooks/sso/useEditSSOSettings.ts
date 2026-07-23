@@ -10,6 +10,7 @@ export interface EditSSOSettingsParams {
   microsoft_tenant?: string | null;
   generic_client_id?: string | null;
   generic_client_secret?: string | null;
+  generic_discovery_url?: string | null;
   generic_authorization_endpoint?: string | null;
   generic_token_endpoint?: string | null;
   generic_userinfo_endpoint?: string | null;

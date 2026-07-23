@@ -99,6 +99,10 @@ export default function SSOSettings() {
           render: (values: SSOSettingsValues) => <RedactableField value={values.generic_client_secret} />,
         },
         {
+          label: "Discovery URL",
+          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_discovery_url),
+        },
+        {
           label: "Authorization Endpoint",
           render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_authorization_endpoint),
         },
@@ -129,6 +133,10 @@ export default function SSOSettings() {
         {
           label: "Client Secret",
           render: (values: SSOSettingsValues) => <RedactableField value={values.generic_client_secret} />,
+        },
+        {
+          label: "Discovery URL",
+          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_discovery_url),
         },
         {
           label: "Authorization Endpoint",

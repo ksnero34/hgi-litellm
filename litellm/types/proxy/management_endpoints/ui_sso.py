@@ -136,6 +136,10 @@ class SSOConfig(LiteLLMPydanticObjectBase):
         default=None,
         description="Generic OAuth Client Secret for SSO authentication",
     )
+    generic_discovery_url: Optional[str] = Field(
+        default=None,
+        description="OpenID Connect discovery document URL for the generic OAuth provider",
+    )
     generic_authorization_endpoint: Optional[str] = Field(
         default=None,
         description="Authorization endpoint URL for generic OAuth provider",

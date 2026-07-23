@@ -459,6 +459,7 @@ describe("SSOModals", () => {
         microsoft_tenant: null,
         generic_client_id: null,
         generic_client_secret: null,
+        generic_discovery_url: null,
         generic_authorization_endpoint: null,
         generic_token_endpoint: null,
         generic_userinfo_endpoint: null,

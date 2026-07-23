@@ -20,11 +20,12 @@ OIDC까지 검증하려면 IdP에 `http://localhost:4000/sso/callback`을 redire
 ```dotenv
 GENERIC_CLIENT_ID=litellm
 GENERIC_CLIENT_SECRET=change-me
-GENERIC_AUTHORIZATION_ENDPOINT=https://idp.example.com/authorize
-GENERIC_TOKEN_ENDPOINT=https://idp.example.com/token
-GENERIC_USERINFO_ENDPOINT=https://idp.example.com/userinfo
+GENERIC_DISCOVERY_URL=https://idp.example.com/.well-known/openid-configuration
 PROXY_ADMIN_ID=admin-user-id
 ```
+
+Discovery를 제공하지 않는 IdP는 `GENERIC_AUTHORIZATION_ENDPOINT`, `GENERIC_TOKEN_ENDPOINT`,
+`GENERIC_USERINFO_ENDPOINT`를 각각 지정한다. Discovery와 개별 endpoint를 함께 설정하면 개별 endpoint가 우선한다.
 
 로컬 이미지를 빌드하고 실행한다.
 
@@ -63,10 +64,12 @@ curl --fail http://localhost:4000/v1/models \
 ```bash
 pytest -q \
   tests/test_litellm/proxy/auth/test_user_api_key_auth.py \
+  tests/test_litellm/proxy/customizations/test_oidc.py \
   tests/test_litellm/proxy/common_utils/test_key_rotation_manager.py \
   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_microsoft_purview.py \
   tests/test_litellm/proxy/management_endpoints/test_key_management_endpoints.py \
   tests/test_litellm/proxy/management_endpoints/test_ui_sso.py \
+  tests/test_litellm/proxy/ui_crud_endpoints/test_proxy_setting_endpoints.py \
   tests/hgi/test_sync_upstream.py
 
 cd ui/litellm-dashboard

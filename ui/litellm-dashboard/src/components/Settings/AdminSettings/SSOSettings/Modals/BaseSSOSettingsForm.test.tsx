@@ -285,12 +285,12 @@ describe("renderProviderFields", () => {
   it("should return fields for okta provider", () => {
     const result = renderProviderFields("okta");
     expect(result).not.toBeNull();
-    expect(result?.length).toBe(5);
+    expect(result?.length).toBe(6);
   });
 
   it("should return fields for generic provider", () => {
     const result = renderProviderFields("generic");
     expect(result).not.toBeNull();
-    expect(result?.length).toBe(5);
+    expect(result?.length).toBe(6);
   });
 });

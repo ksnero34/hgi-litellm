@@ -13,6 +13,10 @@ from litellm._logging import verbose_proxy_logger
 from litellm.litellm_core_utils.sensitive_data_masker import mask_sensitive_keys
 from litellm.proxy._types import *
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.customizations.oidc import (
+    get_sso_environment_fallbacks,
+    preserve_masked_sso_secrets,
+)
 from litellm.repositories.config_repository import ConfigRepository
 from litellm.repositories.table_repositories import (
     SSOConfigRepository,
@@ -758,23 +762,28 @@ async def get_sso_settings():
     decrypted_sso_settings_dict = proxy_config._decrypt_and_set_db_env_variables(
         environment_variables=sso_settings_dict
     )
+    resolved_sso_settings_dict = {
+        **decrypted_sso_settings_dict,
+        **get_sso_environment_fallbacks(decrypted_sso_settings_dict),
+    }
 
     # Build SSO config with database values or environment fallback
 
     sso_config = SSOConfig(
-        google_client_id=decrypted_sso_settings_dict.get("google_client_id", None),
-        google_client_secret=decrypted_sso_settings_dict.get("google_client_secret", None),
-        microsoft_client_id=decrypted_sso_settings_dict.get("microsoft_client_id", None),
-        microsoft_client_secret=decrypted_sso_settings_dict.get("microsoft_client_secret", None),
-        microsoft_tenant=decrypted_sso_settings_dict.get("microsoft_tenant", None),
-        generic_client_id=decrypted_sso_settings_dict.get("generic_client_id", None),
-        generic_client_secret=decrypted_sso_settings_dict.get("generic_client_secret", None),
-        generic_authorization_endpoint=decrypted_sso_settings_dict.get("generic_authorization_endpoint", None),
-        generic_token_endpoint=decrypted_sso_settings_dict.get("generic_token_endpoint", None),
-        generic_userinfo_endpoint=decrypted_sso_settings_dict.get("generic_userinfo_endpoint", None),
-        proxy_base_url=decrypted_sso_settings_dict.get("proxy_base_url", None),
-        user_email=decrypted_sso_settings_dict.get("user_email"),
-        ui_access_mode=decrypted_sso_settings_dict.get("ui_access_mode"),
+        google_client_id=resolved_sso_settings_dict.get("google_client_id", None),
+        google_client_secret=resolved_sso_settings_dict.get("google_client_secret", None),
+        microsoft_client_id=resolved_sso_settings_dict.get("microsoft_client_id", None),
+        microsoft_client_secret=resolved_sso_settings_dict.get("microsoft_client_secret", None),
+        microsoft_tenant=resolved_sso_settings_dict.get("microsoft_tenant", None),
+        generic_client_id=resolved_sso_settings_dict.get("generic_client_id", None),
+        generic_client_secret=resolved_sso_settings_dict.get("generic_client_secret", None),
+        generic_discovery_url=resolved_sso_settings_dict.get("generic_discovery_url", None),
+        generic_authorization_endpoint=resolved_sso_settings_dict.get("generic_authorization_endpoint", None),
+        generic_token_endpoint=resolved_sso_settings_dict.get("generic_token_endpoint", None),
+        generic_userinfo_endpoint=resolved_sso_settings_dict.get("generic_userinfo_endpoint", None),
+        proxy_base_url=resolved_sso_settings_dict.get("proxy_base_url", None),
+        user_email=resolved_sso_settings_dict.get("user_email"),
+        ui_access_mode=resolved_sso_settings_dict.get("ui_access_mode"),
         role_mappings=role_mappings,
         team_mappings=team_mappings,
     )
@@ -850,6 +859,7 @@ async def update_sso_settings(
         "microsoft_tenant": "MICROSOFT_TENANT",
         "generic_client_id": "GENERIC_CLIENT_ID",
         "generic_client_secret": "GENERIC_CLIENT_SECRET",
+        "generic_discovery_url": "GENERIC_DISCOVERY_URL",
         "generic_authorization_endpoint": "GENERIC_AUTHORIZATION_ENDPOINT",
         "generic_token_endpoint": "GENERIC_TOKEN_ENDPOINT",
         "generic_userinfo_endpoint": "GENERIC_USERINFO_ENDPOINT",
@@ -882,7 +892,10 @@ async def update_sso_settings(
         config["general_settings"] = {}
 
     # Update environment variables in config and in memory
-    sso_data = sso_config.model_dump()
+    sso_data = preserve_masked_sso_secrets(
+        incoming_settings=sso_config.model_dump(),
+        database_settings=before_sso_data or {},
+    )
     for field_name, value in sso_data.items():
         if field_name in env_var_mapping:
             env_var_name = env_var_mapping[field_name]

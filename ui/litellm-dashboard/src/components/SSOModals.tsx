@@ -4,6 +4,7 @@ import { Text, TextInput } from "@tremor/react";
 import { getSSOSettings, updateSSOSettings } from "./networking";
 import NotificationsManager from "./molecules/notifications_manager";
 import { parseErrorMessage } from "./shared/errorUtils";
+import { detectSSOProvider } from "./Settings/AdminSettings/SSOSettings/utils";
 
 interface SSOModalsProps {
   isAddSSOModalVisible: boolean;
@@ -32,6 +33,7 @@ interface SSOProviderConfig {
     label: string;
     name: string;
     placeholder?: string;
+    required?: boolean;
   }>;
 }
 
@@ -63,6 +65,7 @@ const ssoProviderConfigs: Record<string, SSOProviderConfig> = {
     envVarMap: {
       generic_client_id: "GENERIC_CLIENT_ID",
       generic_client_secret: "GENERIC_CLIENT_SECRET",
+      generic_discovery_url: "GENERIC_DISCOVERY_URL",
       generic_authorization_endpoint: "GENERIC_AUTHORIZATION_ENDPOINT",
       generic_token_endpoint: "GENERIC_TOKEN_ENDPOINT",
       generic_userinfo_endpoint: "GENERIC_USERINFO_ENDPOINT",
@@ -71,15 +74,28 @@ const ssoProviderConfigs: Record<string, SSOProviderConfig> = {
       { label: "Generic Client ID", name: "generic_client_id" },
       { label: "Generic Client Secret", name: "generic_client_secret" },
       {
+        label: "Discovery URL",
+        name: "generic_discovery_url",
+        placeholder: "https://your-domain/.well-known/openid-configuration",
+        required: false,
+      },
+      {
         label: "Authorization Endpoint",
         name: "generic_authorization_endpoint",
         placeholder: "https://your-domain/authorize",
+        required: false,
       },
-      { label: "Token Endpoint", name: "generic_token_endpoint", placeholder: "https://your-domain/token" },
+      {
+        label: "Token Endpoint",
+        name: "generic_token_endpoint",
+        placeholder: "https://your-domain/token",
+        required: false,
+      },
       {
         label: "Userinfo Endpoint",
         name: "generic_userinfo_endpoint",
         placeholder: "https://your-domain/userinfo",
+        required: false,
       },
     ],
   },
@@ -87,6 +103,7 @@ const ssoProviderConfigs: Record<string, SSOProviderConfig> = {
     envVarMap: {
       generic_client_id: "GENERIC_CLIENT_ID",
       generic_client_secret: "GENERIC_CLIENT_SECRET",
+      generic_discovery_url: "GENERIC_DISCOVERY_URL",
       generic_authorization_endpoint: "GENERIC_AUTHORIZATION_ENDPOINT",
       generic_token_endpoint: "GENERIC_TOKEN_ENDPOINT",
       generic_userinfo_endpoint: "GENERIC_USERINFO_ENDPOINT",
@@ -94,9 +111,15 @@ const ssoProviderConfigs: Record<string, SSOProviderConfig> = {
     fields: [
       { label: "Generic Client ID", name: "generic_client_id" },
       { label: "Generic Client Secret", name: "generic_client_secret" },
-      { label: "Authorization Endpoint", name: "generic_authorization_endpoint" },
-      { label: "Token Endpoint", name: "generic_token_endpoint" },
-      { label: "Userinfo Endpoint", name: "generic_userinfo_endpoint" },
+      {
+        label: "Discovery URL",
+        name: "generic_discovery_url",
+        placeholder: "https://your-domain/.well-known/openid-configuration",
+        required: false,
+      },
+      { label: "Authorization Endpoint", name: "generic_authorization_endpoint", required: false },
+      { label: "Token Endpoint", name: "generic_token_endpoint", required: false },
+      { label: "Userinfo Endpoint", name: "generic_userinfo_endpoint", required: false },
     ],
   },
 };
@@ -122,23 +145,7 @@ const SSOModals: React.FC<SSOModalsProps> = ({
         try {
           const ssoData = await getSSOSettings(accessToken);
           if (ssoData && ssoData.values) {
-            // Determine which SSO provider is configured
-            let selectedProvider = null;
-            if (ssoData.values.google_client_id) {
-              selectedProvider = "google";
-            } else if (ssoData.values.microsoft_client_id) {
-              selectedProvider = "microsoft";
-            } else if (ssoData.values.generic_client_id) {
-              // Check if it looks like Okta based on endpoints
-              if (
-                ssoData.values.generic_authorization_endpoint?.includes("okta") ||
-                ssoData.values.generic_authorization_endpoint?.includes("auth0")
-              ) {
-                selectedProvider = "okta";
-              } else {
-                selectedProvider = "generic";
-              }
-            }
+            const selectedProvider = detectSSOProvider(ssoData.values);
 
             // Extract role mappings if they exist
             let roleMappingFields = {};
@@ -268,6 +275,7 @@ const SSOModals: React.FC<SSOModalsProps> = ({
         microsoft_tenant: null,
         generic_client_id: null,
         generic_client_secret: null,
+        generic_discovery_url: null,
         generic_authorization_endpoint: null,
         generic_token_endpoint: null,
         generic_userinfo_endpoint: null,
@@ -305,7 +313,7 @@ const SSOModals: React.FC<SSOModalsProps> = ({
         key={field.name}
         label={field.label}
         name={field.name}
-        rules={[{ required: true, message: `Please enter the ${field.label.toLowerCase()}` }]}
+        rules={[{ required: field.required !== false, message: `Please enter the ${field.label.toLowerCase()}` }]}
       >
         {field.name.includes("client") ? <Input.Password /> : <TextInput placeholder={field.placeholder} />}
       </Form.Item>

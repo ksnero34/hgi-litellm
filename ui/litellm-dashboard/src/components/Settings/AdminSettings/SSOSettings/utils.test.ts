@@ -1,4 +1,5 @@
-import { processSSOSettingsPayload } from "./utils";
+import type { SSOSettingsValues } from "@/app/(dashboard)/hooks/sso/useSSOSettings";
+import { detectSSOProvider, processSSOSettingsPayload } from "./utils";
 import { describe, it, expect } from "vitest";
 
 describe("processSSOSettingsPayload", () => {
@@ -426,5 +427,30 @@ describe("processSSOSettingsPayload", () => {
         array_field: [1, 2, 3],
       });
     });
+  });
+});
+
+describe("detectSSOProvider", () => {
+  it("detects Okta from a discovery-only configuration", () => {
+    const values: SSOSettingsValues = {
+      google_client_id: null,
+      google_client_secret: null,
+      microsoft_client_id: null,
+      microsoft_client_secret: null,
+      microsoft_tenant: null,
+      generic_client_id: "client-id",
+      generic_client_secret: "masked-secret",
+      generic_discovery_url: "https://tenant.okta.com/.well-known/openid-configuration",
+      generic_authorization_endpoint: null,
+      generic_token_endpoint: null,
+      generic_userinfo_endpoint: null,
+      proxy_base_url: "https://proxy.example.com",
+      user_email: "admin@example.com",
+      ui_access_mode: null,
+      role_mappings: null,
+      team_mappings: null,
+    };
+
+    expect(detectSSOProvider(values)).toBe("okta");
   });
 });

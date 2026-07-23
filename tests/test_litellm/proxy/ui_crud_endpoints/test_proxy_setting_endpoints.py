@@ -1616,6 +1616,40 @@ class TestProxySettingEndpoints:
         assert values.get("microsoft_client_id") is None
         assert values.get("role_mappings") is None
 
+    def test_get_sso_settings_uses_masked_environment_fallbacks(
+        self, mock_proxy_config, mock_auth, monkeypatch
+    ):
+        from unittest.mock import AsyncMock, MagicMock
+
+        monkeypatch.setenv("GENERIC_CLIENT_ID", "environment-client")
+        monkeypatch.setenv("GENERIC_CLIENT_SECRET", "environment-secret")
+        monkeypatch.setenv(
+            "GENERIC_DISCOVERY_URL",
+            "https://idp.example.com/.well-known/openid-configuration",
+        )
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_ssoconfig.find_unique = AsyncMock(return_value=None)
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", mock_prisma)
+
+        from litellm.proxy.proxy_server import proxy_config
+
+        monkeypatch.setattr(
+            proxy_config,
+            "_decrypt_and_set_db_env_variables",
+            lambda environment_variables: environment_variables,
+        )
+
+        response = client.get("/get/sso_settings")
+
+        assert response.status_code == 200
+        values = response.json()["values"]
+        assert values["generic_client_id"] == "environment-client"
+        assert values["generic_client_secret"] != "environment-secret"
+        assert "*" in values["generic_client_secret"]
+        assert values["generic_discovery_url"] == (
+            "https://idp.example.com/.well-known/openid-configuration"
+        )
+
     def test_update_sso_settings_no_database_connection(
         self, mock_proxy_config, mock_auth, monkeypatch
     ):
