@@ -197,11 +197,19 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
             )
         finally:
             end_time = datetime.now()
+            enforcement_mode = "enforce" if block_on_violation else "observe"
+            usage_action = (
+                "passed"
+                if status == "success"
+                else ("blocked" if status == "guardrail_intervened" and block_on_violation else "flagged")
+            )
             self.add_standard_logging_guardrail_information_to_request_data(
                 guardrail_provider=self.guardrail_provider,
                 guardrail_json_response=response,
                 request_data=request_data,
                 guardrail_status=status,
+                enforcement_mode=enforcement_mode,
+                usage_action=usage_action,
                 start_time=start_time.timestamp(),
                 end_time=end_time.timestamp(),
                 duration=(end_time - start_time).total_seconds(),

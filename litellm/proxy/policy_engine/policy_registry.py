@@ -73,6 +73,7 @@ class PolicyRegistry:
     def __init__(self):
         self._policies: Dict[str, Policy] = {}
         self._policies_by_id: Dict[str, Tuple[str, Policy]] = {}
+        self._policy_ids_by_name: dict[str, str] = {}
         self._initialized: bool = False
 
     def load_policies(self, policies_config: Dict[str, Any]) -> None:
@@ -85,6 +86,7 @@ class PolicyRegistry:
         """
         self._policies = {}
         self._policies_by_id = {}
+        self._policy_ids_by_name = {}
 
         for policy_name, policy_data in policies_config.items():
             try:
@@ -146,6 +148,8 @@ class PolicyRegistry:
             return None
 
         steps_data = pipeline_data.get("steps", [])
+        if not steps_data:
+            return None
         steps = [PipelineStep(**step_data) if isinstance(step_data, dict) else step_data for step_data in steps_data]
 
         return GuardrailPipeline(
@@ -209,9 +213,11 @@ class PolicyRegistry:
         Clear all policies from the registry.
         """
         self._policies = {}
+        self._policies_by_id = {}
+        self._policy_ids_by_name = {}
         self._initialized = False
 
-    def add_policy(self, policy_name: str, policy: Policy) -> None:
+    def add_policy(self, policy_name: str, policy: Policy, policy_id: str | None = None) -> None:
         """
         Add or update a single policy.
 
@@ -220,6 +226,12 @@ class PolicyRegistry:
             policy: Policy object to add
         """
         self._policies[policy_name] = policy
+        if policy_id is not None:
+            previous_id = self._policy_ids_by_name.get(policy_name)
+            if previous_id is not None and previous_id != policy_id:
+                self._policies_by_id.pop(previous_id, None)
+            self._policy_ids_by_name[policy_name] = policy_id
+            self._policies_by_id[policy_id] = (policy_name, policy)
         self._initialized = True
         verbose_proxy_logger.debug(f"Added/updated policy: {policy_name}")
 
@@ -235,6 +247,9 @@ class PolicyRegistry:
         """
         if policy_name in self._policies:
             del self._policies[policy_name]
+            production_id = self._policy_ids_by_name.pop(policy_name, None)
+            if production_id is not None:
+                self._policies_by_id.pop(production_id, None)
             verbose_proxy_logger.debug(f"Removed policy: {policy_name}")
             return True
         return False
@@ -305,7 +320,7 @@ class PolicyRegistry:
                     "pipeline": policy_request.pipeline,
                 },
             )
-            self.add_policy(policy_request.policy_name, policy)
+            self.add_policy(policy_request.policy_name, policy, policy_id=created_policy.policy_id)
 
             return _row_to_policy_db_response(created_policy)
         except Exception as e:
@@ -369,7 +384,20 @@ class PolicyRegistry:
                 data=update_data,
             )
 
-            # Do NOT update in-memory registry: drafts are not loaded into memory.
+            cached_policy = self._parse_policy(
+                updated_policy.policy_name,
+                {
+                    "inherit": updated_policy.inherit,
+                    "description": updated_policy.description,
+                    "guardrails": {
+                        "add": updated_policy.guardrails_add or [],
+                        "remove": updated_policy.guardrails_remove or [],
+                    },
+                    "condition": updated_policy.condition,
+                    "pipeline": updated_policy.pipeline,
+                },
+            )
+            self._policies_by_id[policy_id] = (updated_policy.policy_name, cached_policy)
 
             return _row_to_policy_db_response(updated_policy)
         except Exception as e:
@@ -415,6 +443,8 @@ class PolicyRegistry:
                     "Production version was deleted. No other version was promoted. "
                     "Promote another version to production if this policy should remain active."
                 )
+            else:
+                self._policies_by_id.pop(policy_id, None)
 
             return result
         except Exception as e:
@@ -463,6 +493,9 @@ class PolicyRegistry:
         """
         return self._policies_by_id.get(policy_id)
 
+    def get_production_policy_id(self, policy_name: str) -> str | None:
+        return self._policy_ids_by_name.get(policy_name)
+
     async def get_all_policies_from_db(
         self,
         prisma_client: "PrismaClient",
@@ -506,6 +539,8 @@ class PolicyRegistry:
         """
         try:
             self._policies = {}
+            self._policies_by_id = {}
+            self._policy_ids_by_name = {}
             production = await self.get_all_policies_from_db(prisma_client, version_status="production")
             for policy_response in production:
                 policy = self._parse_policy(
@@ -521,9 +556,8 @@ class PolicyRegistry:
                         "pipeline": policy_response.pipeline,
                     },
                 )
-                self.add_policy(policy_response.policy_name, policy)
+                self.add_policy(policy_response.policy_name, policy, policy_id=policy_response.policy_id)
 
-            self._policies_by_id = {}
             non_production = await PolicyRepository(prisma_client).table.find_many(
                 where={"version_status": {"in": ["draft", "published"]}},
                 order={"created_at": "desc"},
@@ -715,6 +749,20 @@ class PolicyRegistry:
                 data["pipeline"] = json.dumps(source.pipeline) if isinstance(source.pipeline, dict) else source.pipeline
 
             created = await PolicyRepository(prisma_client).table.create(data=data)
+            cached_policy = self._parse_policy(
+                created.policy_name,
+                {
+                    "inherit": created.inherit,
+                    "description": created.description,
+                    "guardrails": {
+                        "add": created.guardrails_add or [],
+                        "remove": created.guardrails_remove or [],
+                    },
+                    "condition": created.condition,
+                    "pipeline": created.pipeline,
+                },
+            )
+            self._policies_by_id[created.policy_id] = (created.policy_name, cached_policy)
             return _row_to_policy_db_response(created)
         except Exception as e:
             verbose_proxy_logger.exception(f"Error creating new version: {e}")
@@ -818,7 +866,7 @@ class PolicyRegistry:
                     "pipeline": updated.pipeline,
                 },
             )
-            self.add_policy(policy_name, policy)
+            self.add_policy(policy_name, policy, policy_id=updated.policy_id)
 
             return _row_to_policy_db_response(updated)
         except Exception as e:
@@ -896,6 +944,9 @@ class PolicyRegistry:
         try:
             await PolicyRepository(prisma_client).table.delete_many(where={"policy_name": policy_name})
             self.remove_policy(policy_name)
+            self._policies_by_id = {
+                policy_id: value for policy_id, value in self._policies_by_id.items() if value[0] != policy_name
+            }
             return {"message": f"All versions of policy '{policy_name}' deleted successfully"}
         except Exception as e:
             verbose_proxy_logger.exception(f"Error deleting all versions: {e}")

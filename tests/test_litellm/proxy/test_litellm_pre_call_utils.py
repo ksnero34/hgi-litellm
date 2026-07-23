@@ -15,6 +15,7 @@ from litellm.proxy._types import AddTeamCallback, TeamCallbackMetadata, UserAPIK
 from litellm.proxy.litellm_pre_call_utils import (
     KeyAndTeamLoggingSettings,
     LiteLLMProxyRequestSetup,
+    _add_guardrails_from_policies_in_metadata,
     _apply_credential_overrides_from_model_config,
     _extract_credential_from_entry,
     _get_dynamic_logging_metadata,
@@ -3336,6 +3337,96 @@ async def test_add_guardrails_from_policy_engine_policy_version_by_id():
     # Clean up
     policy_registry._policies = {}
     policy_registry._initialized = False
+
+
+def test_metadata_policies_execute_without_premium_and_only_report_matches():
+    from litellm.proxy.policy_engine.policy_registry import get_policy_registry
+    from litellm.types.proxy.policy_engine import Policy, PolicyCondition, PolicyGuardrails
+
+    registry = get_policy_registry()
+    original_policies = registry._policies
+    original_initialized = registry._initialized
+    data = {"model": "gpt-4", "metadata": {}}
+    registry._policies = {
+        "matching": Policy(guardrails=PolicyGuardrails(add=["shared"])),
+        "condition-failed": Policy(
+            guardrails=PolicyGuardrails(add=["never"]),
+            condition=PolicyCondition(model="claude-*"),
+        ),
+    }
+    registry._initialized = True
+
+    try:
+        with patch("litellm.proxy.proxy_server.premium_user", False):
+            _add_guardrails_from_policies_in_metadata(
+                key_metadata={"policies": ["matching", "matching", "missing"]},
+                team_metadata={"policies": ["matching", "condition-failed"]},
+                data=data,
+                metadata_variable_name="metadata",
+            )
+
+        assert data["metadata"]["guardrails"] == ["shared"]
+        assert data["metadata"]["applied_policies"] == ["matching"]
+        assert data["metadata"]["policy_sources"] == {"matching": "team_metadata"}
+        assert data["metadata"]["policy_information"] == [
+            {"policy_name": "matching", "source": "team_metadata"}
+        ]
+    finally:
+        registry._policies = original_policies
+        registry._initialized = original_initialized
+
+
+@pytest.mark.asyncio
+async def test_policy_attribution_supports_multiple_policies_and_pipelines():
+    from litellm.proxy.policy_engine.attachment_registry import get_attachment_registry
+    from litellm.proxy.policy_engine.policy_registry import get_policy_registry
+    from litellm.types.proxy.policy_engine import GuardrailPipeline, PipelineStep, Policy, PolicyGuardrails
+
+    registry = get_policy_registry()
+    attachments = get_attachment_registry()
+    original_policies = registry._policies
+    original_ids = registry._policies_by_id
+    original_production_ids = registry._policy_ids_by_name
+    original_initialized = registry._initialized
+    original_attachments = attachments._attachments
+    original_attachments_initialized = attachments._initialized
+    registry.clear()
+    registry.add_policy("one", Policy(guardrails=PolicyGuardrails(add=["shared"])), policy_id="id-one")
+    registry.add_policy(
+        "two",
+        Policy(
+            guardrails=PolicyGuardrails(add=["shared"]),
+            pipeline=GuardrailPipeline(
+                mode="pre_call",
+                steps=[PipelineStep(guardrail="pipeline-rail", on_pass="allow", on_fail="block")],
+            ),
+        ),
+        policy_id="id-two",
+    )
+    attachments._attachments = []
+    attachments._initialized = True
+    data = {"model": "gpt-4", "policies": ["one", "two", "one"], "metadata": {}}
+
+    try:
+        await add_guardrails_from_policy_engine(data, "metadata", UserAPIKeyAuth(api_key="key"))
+
+        assert set(data["metadata"]["applied_policies"]) == {"one", "two"}
+        assert {entry["policy_id"] for entry in data["metadata"]["policy_information"]} == {
+            "id-one",
+            "id-two",
+        }
+        shared_owners = data["metadata"]["_guardrail_policy_map"]["shared"]
+        assert {entry["policy_name"] for entry in shared_owners} == {"one", "two"}
+        assert data["metadata"]["_guardrail_policy_map"]["pipeline-rail"] == [
+            {"policy_name": "two", "policy_id": "id-two", "source": "request"}
+        ]
+    finally:
+        registry._policies = original_policies
+        registry._policies_by_id = original_ids
+        registry._policy_ids_by_name = original_production_ids
+        registry._initialized = original_initialized
+        attachments._attachments = original_attachments
+        attachments._initialized = original_attachments_initialized
 
 
 @pytest.mark.asyncio

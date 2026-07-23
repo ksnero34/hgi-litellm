@@ -2693,6 +2693,8 @@ class GuardrailMode(TypedDict, total=False):
 
 
 GuardrailStatus = Literal["success", "guardrail_intervened", "guardrail_failed_to_respond", "not_run"]
+GuardrailUsageAction = Literal["passed", "flagged", "blocked"]
+GuardrailEnforcementMode = Literal["enforce", "observe"]
 
 
 class StandardLoggingGuardrailInformation(TypedDict, total=False):
@@ -2702,6 +2704,12 @@ class StandardLoggingGuardrailInformation(TypedDict, total=False):
     guardrail_request: Optional[Union[str, dict]]
     guardrail_response: Optional[Union[dict, str, List[dict]]]
     guardrail_status: GuardrailStatus
+    usage_action: GuardrailUsageAction
+    enforcement_mode: GuardrailEnforcementMode
+    policy_ids: List[str]
+    policy_names: List[str]
+    policy_id: Optional[str]
+    policy_name: Optional[str]
     start_time: Optional[float]
     end_time: Optional[float]
     duration: Optional[float]

@@ -34,6 +34,7 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _redact_prompt_leaks_in_error_string,
     _sanitize_error_information_for_spend_logs,
     _sanitize_guardrail_information_for_spend_logs,
+    _sanitize_policy_information,
     _sanitize_request_body_for_spend_logs_payload,
     _should_store_prompts_and_responses_in_spend_logs,
     get_logging_payload,
@@ -2571,3 +2572,25 @@ def test_get_logging_payload_hashes_bearer_prefixed_api_key():
     assert not metadata_dict["user_api_key"].startswith("sk-"), (
         f"metadata user_api_key contains unhashed key: {metadata_dict['user_api_key']}"
     )
+
+
+def test_sanitize_policy_information_only_persists_safe_identity_fields():
+    policy_information = [
+        {
+            "policy_name": "safe-policy",
+            "policy_id": "policy-1",
+            "source": "request",
+            "prompt": "secret",
+            "conditions": {"input": "secret"},
+            "provider_payload": {"raw": "secret"},
+        },
+        {"policy_name": 1, "prompt": "ignored"},
+    ]
+
+    assert _sanitize_policy_information(policy_information) == [
+        {
+            "policy_name": "safe-policy",
+            "policy_id": "policy-1",
+            "source": "request",
+        }
+    ]

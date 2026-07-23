@@ -3191,6 +3191,12 @@ class AllCallbacks(LiteLLMPydanticObjectBase):
     )
 
 
+class SpendLogsPolicyInformation(TypedDict):
+    policy_name: str
+    policy_id: NotRequired[str]
+    source: NotRequired[str]
+
+
 class SpendLogsMetadata(TypedDict):
     """
     Specific metadata k,v pairs logged to spendlogs for easier cost tracking
@@ -3209,6 +3215,9 @@ class SpendLogsMetadata(TypedDict):
     requester_ip_address: Optional[str]
     litellm_call_id: Optional[str]
     applied_guardrails: Optional[List[str]]
+    applied_policies: list[str] | None
+    policy_sources: dict[str, str] | None
+    policy_information: list[SpendLogsPolicyInformation] | None
     mcp_tool_call_metadata: Optional[StandardLoggingMCPToolCall]
     vector_store_request_metadata: Optional[List[StandardLoggingVectorStoreRequest]]
     guardrail_information: Optional[List[StandardLoggingGuardrailInformation]]

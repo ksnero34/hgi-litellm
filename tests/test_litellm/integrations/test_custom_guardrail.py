@@ -1614,3 +1614,33 @@ class TestGuardrailInterventionClassification:
 
         slg = request_data["metadata"]["standard_logging_guardrail_information"][0]
         assert slg["guardrail_status"] == "guardrail_intervened"
+def test_standard_guardrail_information_includes_policy_owners_and_usage_semantics():
+    guardrail = CustomGuardrail(guardrail_name="shared")
+    request_data = {
+        "metadata": {
+            "_guardrail_policy_map": {
+                "shared": [
+                    {"policy_name": "one", "policy_id": "id-one"},
+                    {"policy_name": "two", "policy_id": "id-two"},
+                    {"policy_name": "one", "policy_id": "id-one"},
+                ]
+            }
+        }
+    }
+
+    guardrail.add_standard_logging_guardrail_information_to_request_data(
+        guardrail_json_response="observed",
+        request_data=request_data,
+        guardrail_status="guardrail_intervened",
+        usage_action="flagged",
+        enforcement_mode="observe",
+    )
+
+    information = request_data["metadata"]["standard_logging_guardrail_information"][0]
+    assert information["policy_names"] == ["one", "two"]
+    assert information["policy_ids"] == ["id-one", "id-two"]
+    assert information["policy_name"] == "one"
+    assert information["policy_id"] == "id-one"
+    assert information["guardrail_status"] == "guardrail_intervened"
+    assert information["usage_action"] == "flagged"
+    assert information["enforcement_mode"] == "observe"

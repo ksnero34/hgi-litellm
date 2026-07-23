@@ -6,13 +6,15 @@ insert into SpendLogGuardrailIndex when spend logs are written.
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from litellm._logging import verbose_proxy_logger
 from litellm.proxy.utils import PrismaClient
 from litellm.repositories.table_repositories import (
     DailyGuardrailMetricsRepository,
+    DailyPolicyMetricsRepository,
     SpendLogGuardrailIndexRepository,
+    SpendLogPolicyIndexRepository,
 )
 
 
@@ -28,22 +30,84 @@ def _guardrail_status_to_action(status: Optional[str]) -> str:
     return "passed"
 
 
-def _parse_guardrail_info_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Extract guardrail_information from spend log payload metadata."""
-    meta = payload.get("metadata")
-    if not meta:
-        return []
-    if isinstance(meta, str):
+def _usage_action(entry: dict[str, Any]) -> str:
+    explicit_action = entry.get("usage_action")
+    if isinstance(explicit_action, str) and explicit_action.lower() in {"passed", "blocked", "flagged"}:
+        return explicit_action.lower()
+    status = entry.get("guardrail_status")
+    return _guardrail_status_to_action(status if isinstance(status, str) else None)
+
+
+def _parse_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.get("metadata")
+    if isinstance(metadata, str):
         try:
-            meta = json.loads(meta)
+            parsed = json.loads(metadata)
         except (json.JSONDecodeError, TypeError):
-            return []
-    if not isinstance(meta, dict):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _policy_usage_from_payload(
+    payload: dict[str, Any], guardrail_entries: list[dict[str, Any]]
+) -> list[tuple[str, str]]:
+    metadata = _parse_metadata(payload)
+    raw_information = metadata.get("policy_information")
+    information = raw_information if isinstance(raw_information, list) else []
+    raw_applied = metadata.get("applied_policies")
+    applied = raw_applied if isinstance(raw_applied, list) else []
+    identities = {
+        identity: (name, "passed")
+        for entry in information
+        if isinstance(entry, dict)
+        and isinstance((name := entry.get("policy_name")), str)
+        and name
+        and isinstance((identity := entry.get("policy_id") or name), str)
+        and identity
+    }
+    identities.update(
+        {
+            name: (name, "passed")
+            for name in applied
+            if isinstance(name, str) and name and name not in {known_name for known_name, _ in identities.values()}
+        }
+    )
+    precedence = {"passed": 0, "flagged": 1, "blocked": 2}
+    for guardrail_entry in guardrail_entries:
+        raw_ids = guardrail_entry.get("policy_ids")
+        raw_names = guardrail_entry.get("policy_names")
+        policy_ids = raw_ids if isinstance(raw_ids, list) else []
+        policy_names = raw_names if isinstance(raw_names, list) else []
+        legacy_id = guardrail_entry.get("policy_id")
+        legacy_name = guardrail_entry.get("policy_name")
+        references = {
+            reference
+            for reference in (*policy_ids, *policy_names, legacy_id, legacy_name)
+            if isinstance(reference, str) and reference
+        }
+        action = _usage_action(guardrail_entry)
+        for identity, (name, previous_action) in tuple(identities.items()):
+            if identity in references or name in references:
+                identities[identity] = (
+                    name,
+                    action if precedence[action] > precedence[previous_action] else previous_action,
+                )
+        for reference in references:
+            if reference not in identities and legacy_id == reference:
+                identities[reference] = (reference, action)
+    return [(identity, action) for identity, (_, action) in identities.items()]
+
+
+def _parse_guardrail_info_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract guardrail_information from spend log payload metadata."""
+    meta = _parse_metadata(payload)
+    if not meta:
         return []
     info = meta.get("guardrail_information") or meta.get("standard_logging_guardrail_information")
     if not isinstance(info, list):
         return []
-    return info
+    return [entry for entry in info if isinstance(entry, dict)]
 
 
 def _date_str(dt: datetime) -> str:
@@ -53,9 +117,9 @@ def _date_str(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
-async def process_spend_logs_guardrail_usage(
+async def process_spend_logs_guardrail_usage(  # noqa: C901  # Aggregation keeps guardrail and policy writes in one batch.
     prisma_client: PrismaClient,
-    logs_to_process: List[Dict[str, Any]],
+    logs_to_process: list[dict[str, Any]],
 ) -> None:
     """
     After spend logs are written: update DailyGuardrailMetrics and insert
@@ -64,7 +128,7 @@ async def process_spend_logs_guardrail_usage(
     if not logs_to_process:
         return
     # Aggregate daily metrics by (guardrail_id, date). Latency/score metrics dropped.
-    daily_guardrail: Dict[tuple, Dict[str, Any]] = defaultdict(
+    daily_guardrail: dict[tuple, dict[str, Any]] = defaultdict(
         lambda: {
             "requests_evaluated": 0,
             "passed_count": 0,
@@ -72,7 +136,17 @@ async def process_spend_logs_guardrail_usage(
             "flagged_count": 0,
         }
     )
-    index_rows: List[Dict[str, Any]] = []
+    index_rows: list[dict[str, Any]] = []
+    daily_policy: dict[tuple, dict[str, int]] = defaultdict(
+        lambda: {
+            "requests_evaluated": 0,
+            "passed_count": 0,
+            "blocked_count": 0,
+            "flagged_count": 0,
+        }
+    )
+    policy_index_rows: list[dict[str, Any]] = []
+    seen_request_policies: set[tuple[str, str]] = set()
 
     for payload in logs_to_process:
         request_id = payload.get("request_id")
@@ -86,13 +160,14 @@ async def process_spend_logs_guardrail_usage(
                 continue
         date_key = _date_str(start_time)
 
-        for entry in _parse_guardrail_info_from_payload(payload):
+        guardrail_entries = _parse_guardrail_info_from_payload(payload)
+        for entry in guardrail_entries:
             guardrail_id = entry.get("guardrail_id") or entry.get("guardrail_name") or ""
             if not guardrail_id:
                 continue
             key = (guardrail_id, date_key)
             daily_guardrail[key]["requests_evaluated"] += 1
-            action = _guardrail_status_to_action(entry.get("guardrail_status"))
+            action = _usage_action(entry)
             if action == "passed":
                 daily_guardrail[key]["passed_count"] += 1
             elif action == "blocked":
@@ -100,6 +175,14 @@ async def process_spend_logs_guardrail_usage(
             else:
                 daily_guardrail[key]["flagged_count"] += 1
             policy_id = entry.get("policy_id")
+            if not isinstance(policy_id, str):
+                policy_ids = entry.get("policy_ids")
+                policy_id = policy_ids[0] if isinstance(policy_ids, list) and policy_ids else None
+            if not isinstance(policy_id, str):
+                policy_id = entry.get("policy_name")
+            if not isinstance(policy_id, str):
+                policy_names = entry.get("policy_names")
+                policy_id = policy_names[0] if isinstance(policy_names, list) and policy_names else None
             index_rows.append(
                 {
                     "request_id": request_id,
@@ -109,7 +192,23 @@ async def process_spend_logs_guardrail_usage(
                 }
             )
 
-    if not daily_guardrail and not index_rows:
+        for policy_id, action in _policy_usage_from_payload(payload, guardrail_entries):
+            request_policy = (str(request_id), policy_id)
+            if request_policy in seen_request_policies:
+                continue
+            seen_request_policies.add(request_policy)
+            aggregate = daily_policy[(policy_id, date_key)]
+            aggregate["requests_evaluated"] += 1
+            aggregate[f"{action}_count"] += 1
+            policy_index_rows.append(
+                {
+                    "request_id": request_id,
+                    "policy_id": policy_id,
+                    "start_time": start_time,
+                }
+            )
+
+    if not daily_guardrail and not index_rows and not daily_policy and not policy_index_rows:
         return
 
     try:
@@ -138,6 +237,15 @@ async def process_spend_logs_guardrail_usage(
                 )
             except Exception as e:
                 verbose_proxy_logger.debug("Guardrail usage tracking: index create_many skipped: %s", e)
+
+        if policy_index_rows:
+            try:
+                await SpendLogPolicyIndexRepository(prisma_client).table.create_many(
+                    data=policy_index_rows,
+                    skip_duplicates=True,
+                )
+            except Exception as e:  # noqa: BLE001  # Policy index writes are non-fatal during rolling migrations.
+                verbose_proxy_logger.debug("Policy usage tracking: index create_many skipped: %s", e)
 
         # Upsert daily guardrail metrics (counts only; latency/score dropped)
         for (guardrail_id, date_key), agg in daily_guardrail.items():
@@ -168,5 +276,23 @@ async def process_spend_logs_guardrail_usage(
                     },
                 },
             )
+        for (policy_id, date_key), aggregate in daily_policy.items():
+            requests_evaluated = aggregate["requests_evaluated"]
+            await DailyPolicyMetricsRepository(prisma_client).table.upsert(
+                where={"policy_id_date": {"policy_id": policy_id, "date": date_key}},
+                data={
+                    "create": {
+                        "policy_id": policy_id,
+                        "date": date_key,
+                        **aggregate,
+                    },
+                    "update": {
+                        "requests_evaluated": {"increment": requests_evaluated},
+                        "passed_count": {"increment": aggregate["passed_count"]},
+                        "blocked_count": {"increment": aggregate["blocked_count"]},
+                        "flagged_count": {"increment": aggregate["flagged_count"]},
+                    },
+                },
+            )
     except Exception as e:
-        verbose_proxy_logger.warning("Guardrail usage tracking failed (non-fatal): %s", e)
+        verbose_proxy_logger.warning("Guardrail and policy usage tracking failed (non-fatal): %s", e)

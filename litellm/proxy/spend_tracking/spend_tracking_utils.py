@@ -3,9 +3,8 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from datetime import datetime as dt
-from datetime import timezone
 from typing import Any, List, Literal, Optional, cast
 
 from pydantic import BaseModel
@@ -15,17 +14,17 @@ from litellm._logging import verbose_proxy_logger
 from litellm.constants import (
     LITELLM_TRUNCATED_PAYLOAD_FIELD,
     LITELLM_TRUNCATION_DB_SAFEGUARD_NOTE,
+    REDACTED_BY_LITELM_STRING,
 )
 from litellm.constants import (
     MAX_STRING_LENGTH_PROMPT_IN_DB as DEFAULT_MAX_STRING_LENGTH_PROMPT_IN_DB,
 )
-from litellm.constants import REDACTED_BY_LITELM_STRING
 from litellm.litellm_core_utils.core_helpers import (
     get_litellm_metadata_from_kwargs,
     reconstruct_model_name,
 )
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps, strip_null_bytes
-from litellm.proxy._types import SpendLogsMetadata, SpendLogsPayload
+from litellm.proxy._types import SpendLogsMetadata, SpendLogsPayload, SpendLogsPolicyInformation
 from litellm.proxy.spend_tracking.spend_log_error_logger import spend_log_error
 from litellm.proxy.utils import PrismaClient, hash_token
 from litellm.types.utils import (
@@ -72,12 +71,44 @@ def _is_master_key(api_key: Optional[str], _master_key: Optional[str]) -> bool:
     return secrets.compare_digest(api_key, _master_key)
 
 
+def _sanitize_applied_policies(value: object) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    return list(dict.fromkeys(item for item in value if isinstance(item, str) and item))
+
+
+def _sanitize_policy_sources(value: object) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    return {key: source for key, source in value.items() if isinstance(key, str) and isinstance(source, str)}
+
+
+def _sanitize_policy_information(value: object) -> list[SpendLogsPolicyInformation] | None:
+    if not isinstance(value, list):
+        return None
+    entries = tuple(item for item in value if isinstance(item, dict))
+    return [
+        SpendLogsPolicyInformation(
+            policy_name=policy_name,
+            **({"policy_id": policy_id} if isinstance(policy_id, str) and policy_id else {}),
+            **({"source": source} if isinstance(source, str) and source else {}),
+        )
+        for item in entries
+        if isinstance((policy_name := item.get("policy_name")), str) and policy_name
+        for policy_id in (item.get("policy_id"),)
+        for source in (item.get("source"),)
+    ]
+
+
 def _get_spend_logs_metadata(
-    metadata: Optional[dict],
-    applied_guardrails: Optional[List[str]] = None,
-    batch_models: Optional[List[str]] = None,
-    mcp_tool_call_metadata: Optional[StandardLoggingMCPToolCall] = None,
-    vector_store_request_metadata: Optional[List[StandardLoggingVectorStoreRequest]] = None,
+    metadata: dict | None,
+    applied_guardrails: list[str] | None = None,
+    applied_policies: list[str] | None = None,
+    policy_sources: object = None,
+    policy_information: object = None,
+    batch_models: list[str] | None = None,
+    mcp_tool_call_metadata: StandardLoggingMCPToolCall | None = None,
+    vector_store_request_metadata: list[StandardLoggingVectorStoreRequest] | None = None,
     guardrail_information: Optional[List[StandardLoggingGuardrailInformation]] = None,
     usage_object: Optional[dict] = None,
     model_map_information: Optional[StandardLoggingModelInformation] = None,
@@ -100,6 +131,9 @@ def _get_spend_logs_metadata(
             requester_ip_address=None,
             additional_usage_values=None,
             applied_guardrails=None,
+            applied_policies=None,
+            policy_sources=None,
+            policy_information=None,
             status=None or "success",
             error_information=None,
             proxy_server_request=None,
@@ -131,6 +165,9 @@ def _get_spend_logs_metadata(
     if raw_user_api_key is not None and isinstance(raw_user_api_key, str):
         clean_metadata["user_api_key"] = _hash_api_key_for_spend_log(raw_user_api_key)
     clean_metadata["applied_guardrails"] = applied_guardrails
+    clean_metadata["applied_policies"] = _sanitize_applied_policies(applied_policies)
+    clean_metadata["policy_sources"] = _sanitize_policy_sources(policy_sources)
+    clean_metadata["policy_information"] = _sanitize_policy_information(policy_information)
     clean_metadata["batch_models"] = batch_models
     clean_metadata["mcp_tool_call_metadata"] = mcp_tool_call_metadata
     clean_metadata["vector_store_request_metadata"] = _get_vector_store_request_for_spend_logs_payload(
@@ -322,6 +359,21 @@ def get_logging_payload(kwargs, response_obj, start_time, end_time) -> SpendLogs
             standard_logging_payload["metadata"].get("applied_guardrails", None)
             if standard_logging_payload is not None
             else None
+        ),
+        applied_policies=(
+            standard_logging_payload["metadata"].get("applied_policies")
+            if standard_logging_payload is not None
+            else metadata.get("applied_policies")
+        ),
+        policy_sources=(
+            standard_logging_payload["metadata"].get("policy_sources")
+            if standard_logging_payload is not None
+            else metadata.get("policy_sources")
+        ),
+        policy_information=(
+            standard_logging_payload["metadata"].get("policy_information")
+            if standard_logging_payload is not None
+            else metadata.get("policy_information")
         ),
         batch_models=(
             standard_logging_payload.get("hidden_params", {}).get("batch_models", None)

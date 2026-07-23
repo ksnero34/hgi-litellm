@@ -75,6 +75,7 @@ class PipelineExecutor:
                 data=working_data,
                 user_api_key_dict=user_api_key_dict,
                 call_type=call_type,
+                policy_name=policy_name,
             )
 
             duration = time.perf_counter() - start_time
@@ -138,6 +139,7 @@ class PipelineExecutor:
         data: dict,
         user_api_key_dict: Any,
         call_type: str,
+        policy_name: str,
     ) -> tuple[
         Literal["pass", "fail", "error"],
         Optional[dict],
@@ -162,10 +164,28 @@ class PipelineExecutor:
             return ("error", None, f"Guardrail '{step.guardrail}' not found", None)
 
         try:
+            from litellm.proxy.policy_engine.policy_registry import get_policy_registry
+
             # Inject guardrail name into metadata so should_run_guardrail() allows it
             if "metadata" not in data:
                 data["metadata"] = {}
             data["metadata"]["guardrails"] = [step.guardrail]
+            policy_id = get_policy_registry().get_production_policy_id(policy_name)
+            policy_entry = {"policy_name": policy_name}
+            if policy_id is not None:
+                policy_entry["policy_id"] = policy_id
+            policy_map = data["metadata"].get("_guardrail_policy_map", {})
+            if not isinstance(policy_map, dict):
+                policy_map = {}
+            existing_entries = policy_map.get(step.guardrail, [])
+            if not isinstance(existing_entries, list):
+                existing_entries = []
+            if not any(
+                isinstance(entry, dict) and entry.get("policy_name") == policy_name for entry in existing_entries
+            ):
+                existing_entries.append(policy_entry)
+            policy_map[step.guardrail] = existing_entries
+            data["metadata"]["_guardrail_policy_map"] = policy_map
 
             # Use unified_guardrail path if callback implements apply_guardrail
             target: CustomLogger = callback
