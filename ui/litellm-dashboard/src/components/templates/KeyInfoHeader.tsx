@@ -167,18 +167,23 @@ export function KeyInfoHeader({
           <Space>
             <Tooltip title={regenerateTooltip || ""}>
               <span>
-                <Button icon={<SyncOutlined />} onClick={onRegenerate} disabled={regenerateDisabled}>
-                  Regenerate Key
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={onRegenerate}
+                  disabled={regenerateDisabled}
+                  aria-label="Regenerate Key"
+                >
+                  키 교체
                 </Button>
               </span>
             </Tooltip>
             {onResetSpend && (
-              <Button danger icon={<TransactionOutlined />} onClick={onResetSpend}>
-                Reset Spend
+              <Button danger icon={<TransactionOutlined />} onClick={onResetSpend} aria-label="Reset Spend">
+                사용량 초기화
               </Button>
             )}
-            <Button danger icon={<DeleteOutlined />} onClick={onDelete}>
-              Delete Key
+            <Button danger icon={<DeleteOutlined />} onClick={onDelete} aria-label="Delete Key">
+              키 삭제
             </Button>
           </Space>
         )}

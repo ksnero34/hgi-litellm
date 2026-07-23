@@ -12,7 +12,7 @@ const { Text } = Typography;
 
 const DURATION_RULE = {
   pattern: /^(\d+(s|m|h|d|w|mo))?$/,
-  message: "Must be a duration like 30s, 30m, 24h, 2d, 1w, or 1mo",
+  message: "30s, 30m, 24h, 2d, 1w, 1mo 형식으로 입력하세요",
 };
 
 interface RegenerateKeyModalProps {
@@ -35,7 +35,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
   // Expired keys must get a new duration, otherwise regeneration produces a key
   // that inherits the old (past) expiry and is immediately unusable.
   const durationRules = keyIsExpired
-    ? [{ required: true, message: "Expiration is required for expired keys" }, DURATION_RULE]
+    ? [{ required: true, message: "만료된 키에는 새 만료 기간이 필요합니다" }, DURATION_RULE]
     : [DURATION_RULE];
 
   useEffect(() => {
@@ -62,7 +62,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
       const response = await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
       setRegeneratedKey(response.key);
-      NotificationManager.success("Virtual Key regenerated successfully");
+      NotificationManager.success("가상 키를 교체했습니다");
 
       // Build the update payload. Spread the API response first so any new
       // fields it returns (new token, timestamps, etc.) are captured, then
@@ -112,7 +112,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
   return (
     <Modal
-      title="Regenerate Virtual Key"
+      title="가상 키 교체"
       open={visible}
       onCancel={handleClose}
       width={520}
@@ -121,19 +121,33 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
         regeneratedKey
           ? [
               <Space key="footer-actions">
-                <Button onClick={handleClose}>Close</Button>
+                <Button onClick={handleClose} aria-label="Close">
+                  닫기
+                </Button>
                 <CopyToClipboard text={regeneratedKey} onCopy={handleCopyKey}>
-                  <Button type="primary" icon={copied ? <CheckOutlined /> : <CopyOutlined />}>
-                    {copied ? "Copied" : "Copy Key"}
+                  <Button
+                    type="primary"
+                    icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                    aria-label={copied ? "Copied" : "Copy Key"}
+                  >
+                    {copied ? "복사됨" : "키 복사"}
                   </Button>
                 </CopyToClipboard>
               </Space>,
             ]
           : [
               <Space key="footer-actions">
-                <Button onClick={handleClose}>Cancel</Button>
-                <Button type="primary" icon={<SyncOutlined />} onClick={handleRegenerateKey} loading={isRegenerating}>
-                  Regenerate
+                <Button onClick={handleClose} aria-label="Cancel">
+                  취소
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  onClick={handleRegenerateKey}
+                  loading={isRegenerating}
+                  aria-label="Regenerate"
+                >
+                  새 키 발급
                 </Button>
               </Space>,
             ]
@@ -141,18 +155,18 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
     >
       {regeneratedKey ? (
         <Flex vertical gap="middle">
-          <Alert type="warning" showIcon message="Save it now, you will not see it again" />
+          <Alert type="warning" showIcon message="이 키는 다시 표시되지 않으므로 지금 안전하게 보관하세요" />
 
           <Flex vertical gap={2}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              Key Alias
+              키 별칭
             </Text>
-            <Text>{selectedToken?.key_alias || "No alias set"}</Text>
+            <Text>{selectedToken?.key_alias || "별칭 없음"}</Text>
           </Flex>
 
           <Flex vertical gap={6}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              Virtual Key
+              가상 키
             </Text>
             <div
               style={{
@@ -172,8 +186,8 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
         </Flex>
       ) : (
         <Form form={form} layout="vertical" style={{ marginTop: 4 }}>
-          <Form.Item name="key_alias" label="Key Alias">
-            <Input disabled />
+          <Form.Item name="key_alias" label="키 별칭">
+            <Input disabled aria-label="Key Alias" />
           </Form.Item>
 
           <Row gutter={12}>
@@ -198,17 +212,17 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
             <Col span={12}>
               <Form.Item
                 name="duration"
-                label="Expire Key"
+                label="키 만료"
                 rules={durationRules}
                 extra={
                   <Flex vertical gap={2}>
                     <Text type={keyIsExpired ? "danger" : "secondary"} style={{ fontSize: 12 }}>
-                      Current expiry: {selectedToken?.expires ? formatExpiresUtc(selectedToken.expires) : "Never"}
-                      {keyIsExpired && " (expired)"}
+                      현재 만료: {selectedToken?.expires ? formatExpiresUtc(selectedToken.expires) : "만료 없음"}
+                      {keyIsExpired && " (만료됨)"}
                     </Text>
                     {newExpiryTime && (
                       <Text type="success" style={{ fontSize: 12 }}>
-                        New expiry: {newExpiryTime}
+                        새 만료: {newExpiryTime}
                       </Text>
                     )}
                   </Flex>
@@ -220,11 +234,11 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
             <Col span={12}>
               <Form.Item
                 name="grace_period"
-                label="Grace Period"
-                tooltip="Keep the old key valid for this duration after rotation. Both keys work during this period for seamless cutover. Empty = immediate revoke."
+                label="유예 기간"
+                tooltip="교체 후에도 기존 키를 이 기간 동안 유지합니다. 비워 두면 즉시 폐기됩니다."
                 extra={
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    Recommended: 24h to 72h for production keys
+                    운영 키 권장값: 24h~72h
                   </Text>
                 }
                 rules={[DURATION_RULE]}

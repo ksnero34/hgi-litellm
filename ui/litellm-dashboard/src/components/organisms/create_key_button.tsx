@@ -14,14 +14,11 @@ import debounce from "lodash/debounce";
 import React, { useCallback, useEffect, useState } from "react";
 import { rolesWithWriteAccess } from "../../utils/roles";
 import AgentSelector from "../agent_management/AgentSelector";
-import { mapDisplayToInternalNames } from "../callback_info_helpers";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import BudgetDurationDropdown from "../common_components/budget_duration_dropdown";
 import SchemaFormFields from "../common_components/check_openapi_schema";
 import KeyLifecycleSettings from "../common_components/KeyLifecycleSettings";
 import ModelAliasManager from "../common_components/ModelAliasManager";
-import PassThroughRoutesSelector from "../common_components/PassThroughRoutesSelector";
-import PremiumLoggingSettings from "../common_components/PremiumLoggingSettings";
 import RateLimitTypeFormItem from "../common_components/RateLimitTypeFormItem";
 import RouterSettingsAccordion, { RouterSettingsAccordionValue } from "../common_components/RouterSettingsAccordion";
 import TeamDropdown from "../common_components/team_dropdown";
@@ -46,7 +43,6 @@ import {
   getGuardrailsList,
   getPoliciesList,
   getPossibleUserRoles,
-  getPromptsList,
   keyCreateCall,
   keyCreateServiceAccountCall,
   modelAvailableCall,
@@ -164,8 +160,8 @@ export const fetchUserModels = async (
  * ─────────────────────────────────────────────────────────────────────────
  */
 const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOpenCreate, prefillData }) => {
-  const { accessToken, userId: userID, userRole, premiumUser } = useAuthorized();
-  const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
+  const { accessToken, userId: userID, userRole } = useAuthorized();
+  const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
   const { data: organizations, isLoading: isOrganizationsLoading } = useOrganizations();
   const { data: projects, isLoading: isProjectsLoading } = useProjects();
   const { data: uiSettingsData } = useUISettings();
@@ -185,8 +181,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [pendingPrefillModels, setPendingPrefillModels] = useState<string[] | null>(null);
   const [guardrailsList, setGuardrailsList] = useState<string[]>([]);
   const [policiesList, setPoliciesList] = useState<string[]>([]);
-  const [promptsList, setPromptsList] = useState<string[]>([]);
-  const [loggingSettings, setLoggingSettings] = useState<any[]>([]);
   const [selectedCreateKeyTeam, setSelectedCreateKeyTeam] = useState<Team | null>(team);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -196,7 +190,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState<boolean>(false);
   const [mcpAccessGroups, setMcpAccessGroups] = useState<string[]>([]);
-  const [disabledCallbacks, setDisabledCallbacks] = useState<string[]>([]);
   const [keyType, setKeyType] = useState<string>("llm_api");
   const [modelAliases, setModelAliases] = useState<{ [key: string]: string }>({});
   const [autoRotationEnabled, setAutoRotationEnabled] = useState<boolean>(false);
@@ -213,8 +206,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const handleOk = () => {
     setIsModalVisible(false);
     form.resetFields();
-    setLoggingSettings([]);
-    setDisabledCallbacks([]);
     setKeyType("llm_api");
     setModelAliases({});
     setAutoRotationEnabled(false);
@@ -235,8 +226,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     setApiKey(null);
     setSelectedCreateKeyTeam(null);
     form.resetFields();
-    setLoggingSettings([]);
-    setDisabledCallbacks([]);
     setKeyType("llm_api");
     setModelAliases({});
     setAutoRotationEnabled(false);
@@ -287,18 +276,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       }
     };
 
-    const fetchPrompts = async () => {
-      try {
-        const response = await getPromptsList(accessToken);
-        setPromptsList(response.prompts.map((prompt) => prompt.prompt_id));
-      } catch (error) {
-        console.error("Failed to fetch prompts:", error);
-      }
-    };
-
     fetchGuardrails();
     fetchPolicies();
-    fetchPrompts();
   }, [accessToken]);
 
   // Fetch possible user roles when component mounts
@@ -416,24 +395,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
         metadata["service_account_id"] = formValues.key_alias;
       }
 
-      // Add logging settings to the metadata
-      if (loggingSettings.length > 0) {
-        metadata = {
-          ...metadata,
-          logging: loggingSettings.filter((config) => config.callback_name),
-        };
-      }
-
-      // Add disabled callbacks to the metadata
-      if (disabledCallbacks.length > 0) {
-        // Map display names to internal callback values
-        const mappedDisabledCallbacks = mapDisplayToInternalNames(disabledCallbacks);
-        metadata = {
-          ...metadata,
-          litellm_disabled_callbacks: mappedDisabledCallbacks,
-        };
-      }
-
       // Add auto-rotation settings as top-level fields
       if (autoRotationEnabled) {
         formValues.auto_rotate = true;
@@ -448,8 +409,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       // Update the formValues with the final metadata
       formValues.metadata = JSON.stringify(metadata);
 
-      // disable_global_guardrails is premium-gated server-side; only send it when enabled
-      // so non-premium key creation isn't blocked by that gate.
       if (!formValues.disable_global_guardrails) {
         delete formValues.disable_global_guardrails;
       }
@@ -1219,132 +1178,59 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                   <Form.Item
                     label={
                       <span>
-                        Guardrails{" "}
-                        <Tooltip title="Apply safety guardrails to this key to filter content or enforce policies">
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/guardrails/quick_start"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
+                        가드레일{" "}
+                        <Tooltip title="이 키에 안전 가드레일을 적용합니다">
+                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
                     }
                     name="guardrails"
                     className="mt-4"
-                    help={
-                      canEditGuardrails
-                        ? "Select existing guardrails or enter new ones"
-                        : "Premium feature - Upgrade to set guardrails by key"
-                    }
+                    help="적용할 가드레일을 선택하거나 입력하세요"
                   >
                     <Select
                       mode="tags"
                       style={{ width: "100%" }}
                       disabled={!canEditGuardrails}
-                      placeholder={
-                        !canEditGuardrails
-                          ? "Premium feature - Upgrade to set guardrails by key"
-                          : "Select or enter guardrails"
-                      }
+                      placeholder="가드레일 선택 또는 입력"
                       options={guardrailsList.map((name) => ({ value: name, label: name }))}
                     />
                   </Form.Item>
                   <Form.Item
                     label={
                       <span>
-                        Disable Global Guardrails{" "}
-                        <Tooltip title="When enabled, this key will bypass any guardrails configured to run on every request (global guardrails)">
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/guardrails/quick_start"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
+                        전역 가드레일 제외{" "}
+                        <Tooltip title="이 키가 모든 요청에 적용되는 전역 가드레일을 우회하도록 설정합니다">
+                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
                     }
                     name="disable_global_guardrails"
                     className="mt-4"
                     valuePropName="checked"
-                    help={
-                      canEditGuardrails
-                        ? "Bypass global guardrails for this key"
-                        : "Premium feature - Upgrade to disable global guardrails by key"
-                    }
+                    help="이 키에서 전역 가드레일을 적용하지 않습니다"
                   >
-                    <Switch disabled={!canEditGuardrails} checkedChildren="Yes" unCheckedChildren="No" />
+                    <Switch disabled={!canEditGuardrails} checkedChildren="예" unCheckedChildren="아니요" />
                   </Form.Item>
                   <Form.Item
                     label={
                       <span>
-                        Policies{" "}
-                        <Tooltip title="Apply policies to this key to control guardrails and other settings">
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/guardrails/guardrail_policies"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
+                        정책{" "}
+                        <Tooltip title="이 키에 가드레일 정책을 적용합니다">
+                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </span>
                     }
                     name="policies"
                     className="mt-4"
-                    help={
-                      premiumUser
-                        ? "Select existing policies or enter new ones"
-                        : "Premium feature - Upgrade to set policies by key"
-                    }
+                    help="적용할 정책을 선택하거나 입력하세요"
                   >
                     <Select
                       mode="tags"
                       style={{ width: "100%" }}
-                      disabled={!premiumUser}
-                      placeholder={
-                        !premiumUser ? "Premium feature - Upgrade to set policies by key" : "Select or enter policies"
-                      }
+                      disabled={!canEditGuardrails}
+                      placeholder="정책 선택 또는 입력"
                       options={policiesList.map((name) => ({ value: name, label: name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    label={
-                      <span>
-                        Prompts{" "}
-                        <Tooltip title="Allow this key to use specific prompt templates">
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/prompt_management"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
-                        </Tooltip>
-                      </span>
-                    }
-                    name="prompts"
-                    className="mt-4"
-                    help={
-                      premiumUser
-                        ? "Select existing prompts or enter new ones"
-                        : "Premium feature - Upgrade to set prompts by key"
-                    }
-                  >
-                    <Select
-                      mode="tags"
-                      style={{ width: "100%" }}
-                      disabled={!premiumUser}
-                      placeholder={
-                        !premiumUser ? "Premium feature - Upgrade to set prompts by key" : "Select or enter prompts"
-                      }
-                      options={promptsList.map((name) => ({ value: name, label: name }))}
                     />
                   </Form.Item>
                   <Form.Item
@@ -1361,43 +1247,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     help="Select access groups to assign to this key"
                   >
                     <AccessGroupSelector placeholder="Select access groups (optional)" />
-                  </Form.Item>
-                  <Form.Item
-                    label={
-                      <span>
-                        Allowed Pass Through Routes{" "}
-                        <Tooltip title="Allow this key to use specific pass through routes">
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/pass_through"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
-                        </Tooltip>
-                      </span>
-                    }
-                    name="allowed_passthrough_routes"
-                    className="mt-4"
-                    help={
-                      premiumUser
-                        ? "Select existing pass through routes or enter new ones"
-                        : "Premium feature - Upgrade to set pass through routes by key"
-                    }
-                  >
-                    <PassThroughRoutesSelector
-                      onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
-                      value={form.getFieldValue("allowed_passthrough_routes")}
-                      accessToken={accessToken}
-                      placeholder={
-                        !premiumUser
-                          ? "Premium feature - Upgrade to set pass through routes by key"
-                          : "Select or enter pass through routes"
-                      }
-                      disabled={!premiumUser}
-                      teamId={selectedCreateKeyTeam ? selectedCreateKeyTeam.team_id : null}
-                    />
                   </Form.Item>
                   <Form.Item
                     label={
@@ -1535,59 +1384,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                       </Form.Item>
                     </AccordionBody>
                   </Accordion>
-
-                  {premiumUser ? (
-                    <Accordion className="mt-4 mb-4">
-                      <AccordionHeader>
-                        <b>Logging Settings</b>
-                      </AccordionHeader>
-                      <AccordionBody>
-                        <div className="mt-4">
-                          <PremiumLoggingSettings
-                            value={loggingSettings}
-                            onChange={setLoggingSettings}
-                            premiumUser={true}
-                            disabledCallbacks={disabledCallbacks}
-                            onDisabledCallbacksChange={setDisabledCallbacks}
-                          />
-                        </div>
-                      </AccordionBody>
-                    </Accordion>
-                  ) : (
-                    <Tooltip
-                      title={
-                        <span>
-                          Key-level logging settings is an enterprise feature, get in touch -
-                          <a href="https://www.litellm.ai/enterprise" target="_blank">
-                            https://www.litellm.ai/enterprise
-                          </a>
-                        </span>
-                      }
-                      placement="top"
-                    >
-                      <div style={{ position: "relative" }}>
-                        <div style={{ opacity: 0.5 }}>
-                          <Accordion className="mt-4 mb-4">
-                            <AccordionHeader>
-                              <b>Logging Settings</b>
-                            </AccordionHeader>
-                            <AccordionBody>
-                              <div className="mt-4">
-                                <PremiumLoggingSettings
-                                  value={loggingSettings}
-                                  onChange={setLoggingSettings}
-                                  premiumUser={false}
-                                  disabledCallbacks={disabledCallbacks}
-                                  onDisabledCallbacksChange={setDisabledCallbacks}
-                                />
-                              </div>
-                            </AccordionBody>
-                          </Accordion>
-                        </div>
-                        <div style={{ position: "absolute", inset: 0, cursor: "not-allowed" }} />
-                      </div>
-                    </Tooltip>
-                  )}
 
                   <Accordion key={`router-settings-accordion-${routerSettingsKey}`} className="mt-4 mb-4">
                     <AccordionHeader>

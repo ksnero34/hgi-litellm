@@ -150,16 +150,15 @@ function LoginPageContent() {
         <Card className="w-full max-w-lg shadow-md">
           <Space direction="vertical" size="middle" className="w-full">
             <div className="text-center">
-              <Title level={2}>🚅 LiteLLM</Title>
+              <Title level={2}>LLM Gateway</Title>
             </div>
 
             <Alert
-              message="Admin UI Disabled"
+              message="관리자 화면 비활성화"
               description={
                 <>
                   <Paragraph className="text-sm">
-                    The Admin UI has been disabled by the administrator. To re-enable it, please update the following
-                    environment variable:
+                    관리자가 관리자 화면을 비활성화했습니다. 다시 사용하려면 다음 환경 변수를 설정하세요.
                   </Paragraph>
                   <Paragraph className="text-sm">
                     <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">DISABLE_ADMIN_UI=False</code>
@@ -180,30 +179,23 @@ function LoginPageContent() {
       <Card className="w-full max-w-lg shadow-md">
         <Space direction="vertical" size="middle" className="w-full">
           <div className="text-center">
-            <Title level={2}>🚅 LiteLLM</Title>
+            <Title level={2}>LLM Gateway</Title>
           </div>
 
           <div className="text-center">
-            <Title level={3}>Login</Title>
-            <Text type="secondary">Access your LiteLLM Admin UI.</Text>
+            <Title level={3}>로그인</Title>
+            <Text type="secondary">사내 LLM 게이트웨이 관리자 화면에 접속합니다.</Text>
           </div>
 
           {!uiConfig?.hide_default_credentials_hint && (
             <Alert
-              message="Default Credentials"
+              message="기본 로그인 정보"
               description={
                 <>
                   <Paragraph className="text-sm">
-                    By default, Username is <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">admin</code>{" "}
-                    and Password is your set LiteLLM Proxy
+                    기본 사용자 이름은 <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">admin</code>이며,
+                    비밀번호는 프록시에 설정한{" "}
                     <code className="bg-gray-100 px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
-                  </Paragraph>
-                  <Paragraph className="text-sm">
-                    Need to set UI credentials or SSO?{" "}
-                    <a href="https://docs.litellm.ai/docs/proxy/ui" target="_blank" rel="noopener noreferrer">
-                      Check the documentation
-                    </a>
-                    .
                   </Paragraph>
                 </>
               }
@@ -217,11 +209,11 @@ function LoginPageContent() {
 
           <Form onFinish={handleSubmit} layout="vertical" requiredMark={false}>
             {uiConfig?.is_control_plane && workers.length > 0 && (
-              <Form.Item label="Worker" style={{ marginBottom: 16 }}>
+              <Form.Item label="워커" style={{ marginBottom: 16 }}>
                 <Select
                   value={selectedWorkerId || undefined}
                   onChange={(value) => setSelectedWorkerId(value)}
-                  placeholder="Choose a worker to connect to"
+                  placeholder="접속할 워커 선택"
                   size="large"
                   suffixIcon={<CloudServerOutlined />}
                   options={workers.map((w) => ({
@@ -233,12 +225,12 @@ function LoginPageContent() {
             )}
 
             <Form.Item
-              label="Username"
+              label="사용자 이름"
               name="username"
-              rules={[{ required: true, message: "Please enter your username" }]}
+              rules={[{ required: true, message: "사용자 이름을 입력하세요" }]}
             >
               <Input
-                placeholder="Enter your username"
+                placeholder="사용자 이름 입력"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -248,13 +240,9 @@ function LoginPageContent() {
               />
             </Form.Item>
 
-            <Form.Item
-              label="Password"
-              name="password"
-              rules={[{ required: true, message: "Please enter your password" }]}
-            >
+            <Form.Item label="비밀번호" name="password" rules={[{ required: true, message: "비밀번호를 입력하세요" }]}>
               <Input.Password
-                placeholder="Enter your password"
+                placeholder="비밀번호 입력"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -272,14 +260,14 @@ function LoginPageContent() {
                 block
                 size="large"
               >
-                {isLoginLoading ? "Logging in..." : "Login"}
+                {isLoginLoading ? "로그인 중..." : "로그인"}
               </Button>
             </Form.Item>
             <Form.Item>
               {!uiConfig?.sso_configured ? (
-                <Popover content="Please configure SSO to log in with SSO." trigger="hover">
+                <Popover content="SSO 로그인을 사용하려면 SSO를 먼저 구성하세요." trigger="hover">
                   <Button disabled block size="large">
-                    Login with SSO
+                    SSO로 로그인
                   </Button>
                 </Popover>
               ) : (
@@ -301,7 +289,7 @@ function LoginPageContent() {
                   block
                   size="large"
                 >
-                  Login with SSO
+                  SSO로 로그인
                 </Button>
               )}
             </Form.Item>
@@ -314,9 +302,8 @@ function LoginPageContent() {
             closable
             message={
               <Text>
-                Single Sign-On (SSO) is enabled. LiteLLM no longer automatically redirects to the SSO login flow upon
-                loading this page. To re-enable auto-redirect-to-SSO, set{" "}
-                <Text code>AUTO_REDIRECT_UI_LOGIN_TO_SSO=true</Text> in your environment configuration.
+                SSO가 활성화되어 있습니다. 이 화면에서는 SSO 로그인으로 자동 이동하지 않습니다. 자동 이동을 사용하려면
+                환경 변수에 <Text code>AUTO_REDIRECT_UI_LOGIN_TO_SSO=true</Text>를 설정하세요.
               </Text>
             }
           />

@@ -279,20 +279,13 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                   <div className="grow border-t border-gray-200"></div>
                 </div>
                 {/* Team-only Model Switch - Only show for proxy admins, not team admins */}
-                {(isAdmin || !isTeamAdmin) && (
+                {(isAdmin || !isTeamAdmin) && premiumUser && (
                   <Form.Item
                     label="Team-BYOK Model"
                     tooltip="Only use this model + credential combination for this team. Useful when teams want to onboard their own OpenAI keys."
                     className="mb-4"
                   >
-                    <Tooltip
-                      title={
-                        !premiumUser
-                          ? "This is an enterprise-only feature. Upgrade to premium to restrict model+credential combinations to a specific team."
-                          : ""
-                      }
-                      placement="top"
-                    >
+                    <Tooltip title="" placement="top">
                       <Switch
                         checked={isTeamOnly}
                         onChange={(checked) => {

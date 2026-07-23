@@ -168,6 +168,12 @@ export const GUARDRAIL_PRESETS: Record<string, GuardrailPreset> = {
     mode: "pre_call",
     defaultOn: false,
   },
+  microsoft_purview: {
+    provider: "MicrosoftPurview",
+    guardrailNameSuggestion: "Microsoft Purview DLP",
+    mode: "pre_call",
+    defaultOn: false,
+  },
   bedrock: {
     provider: "Bedrock",
     guardrailNameSuggestion: "Bedrock Guardrail",

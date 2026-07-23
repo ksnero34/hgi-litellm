@@ -426,7 +426,7 @@ describe("KeyEditView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Guardrails")).toBeInTheDocument();
+      expect(screen.getByText("가드레일")).toBeInTheDocument();
     });
   });
 

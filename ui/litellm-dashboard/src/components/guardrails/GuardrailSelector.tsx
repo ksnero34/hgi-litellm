@@ -44,7 +44,7 @@ const GuardrailSelector: React.FC<GuardrailSelectorProps> = ({ onChange, value, 
       <Select
         mode="multiple"
         disabled={disabled}
-        placeholder={disabled ? "Setting guardrails is a premium feature." : "Select guardrails"}
+        placeholder={disabled ? "가드레일을 변경할 권한이 없습니다" : "가드레일 선택"}
         onChange={handleGuardrailChange}
         value={value}
         loading={loading}

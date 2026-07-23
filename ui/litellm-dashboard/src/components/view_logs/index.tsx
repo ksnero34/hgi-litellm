@@ -8,7 +8,6 @@ import { KeyResponse } from "../key_team_helpers/key_list";
 import FilterComponent from "../molecules/filter";
 import { keyInfoV1Call } from "../networking";
 import KeyInfoView from "../templates/key_info_view";
-import AuditLogs from "./audit_logs";
 import { createColumns, LogEntry, type LogsSortField } from "./columns";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
 import { getLogFilterOptions } from "./filter_options";
@@ -26,7 +25,7 @@ interface SpendLogsTableProps {
   premiumUser: boolean;
 }
 
-export default function SpendLogsTable({ accessToken, token, userRole, userID, premiumUser }: SpendLogsTableProps) {
+export default function SpendLogsTable({ accessToken, token, userRole, userID }: SpendLogsTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
@@ -237,10 +236,9 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
     <div className="w-full p-6 overflow-x-hidden box-border">
       <TabGroup defaultIndex={0} onIndexChange={(index) => setActiveTab(index === 0 ? "request logs" : "audit logs")}>
         <TabList>
-          <Tab>Request Logs</Tab>
-          <Tab>Audit Logs</Tab>
-          <Tab>Deleted Keys</Tab>
-          <Tab>Deleted Teams</Tab>
+          <Tab>요청 로그</Tab>
+          <Tab>삭제된 키</Tab>
+          <Tab>삭제된 팀</Tab>
         </TabList>
         <TabPanels>
           <TabPanel>
@@ -294,16 +292,6 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
                 </div>
               </>
             )}
-          </TabPanel>
-          <TabPanel>
-            <AuditLogs
-              userID={userID}
-              userRole={userRole}
-              token={token}
-              accessToken={accessToken}
-              isActive={activeTab === "audit logs"}
-              premiumUser={premiumUser}
-            />
           </TabPanel>
           <TabPanel>
             <DeletedKeysPage />

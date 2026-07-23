@@ -1862,17 +1862,23 @@ async def test_prepare_key_update_data_disable_global_guardrails_false_no_premiu
 
 
 @pytest.mark.asyncio
-async def test_prepare_key_update_data_disable_global_guardrails_true_requires_premium(
+async def test_prepare_key_update_data_guardrails_and_policies_without_license(
     monkeypatch,
 ):
-    """Control: enabling the premium feature (True) without a license still 403s."""
     monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", False)
-    data = UpdateKeyRequest(key="sk-1", disable_global_guardrails=True)
+    data = UpdateKeyRequest(
+        key="sk-1",
+        disable_global_guardrails=True,
+        guardrails=["pii-filter"],
+        policies=["internal-policy"],
+    )
     existing_key = LiteLLM_VerificationToken(token="hashed")
 
-    with pytest.raises(HTTPException) as exc_info:
-        await prepare_key_update_data(data=data, existing_key_row=existing_key)
-    assert exc_info.value.status_code == 403
+    result = await prepare_key_update_data(data=data, existing_key_row=existing_key)
+
+    assert result["metadata"]["disable_global_guardrails"] is True
+    assert result["metadata"]["guardrails"] == ["pii-filter"]
+    assert result["metadata"]["policies"] == ["internal-policy"]
 
 
 @pytest.mark.asyncio
@@ -11543,11 +11549,7 @@ class TestAllowedRoutesCallerPermission:
         assert "allowed_routes" in str(exc_info.value.message)
 
     @pytest.mark.asyncio
-    async def test_non_admin_regenerate_key_allowed_routes_rejected_before_enterprise_gate(self):
-        """`regenerate_key_fn` runs `_check_allowed_routes_caller_permission`
-        before the `premium_user` check, so a non-premium proxy still returns
-        the allowed_routes rejection (403) rather than the enterprise-license
-        error (500) when a non-admin sends `allowed_routes`."""
+    async def test_non_admin_regenerate_key_allowed_routes_rejected(self):
         from litellm.proxy._types import RegenerateKeyRequest
         from litellm.proxy.management_endpoints.key_management_endpoints import (
             regenerate_key_fn,
@@ -12635,31 +12637,6 @@ async def test_regenerate_user_id_rebind_guard(
 
 
 @pytest.mark.asyncio
-async def test_regenerate_premium_gate_requires_actual_master_key():
-    # ``regenerate_key_fn``'s decorator wraps the underlying ValueError
-    # into a ProxyException with empty ``message``. The exception type
-    # alone confirms the premium gate fired.
-    from litellm.proxy._types import RegenerateKeyRequest
-    from litellm.proxy.management_endpoints.key_management_endpoints import (
-        regenerate_key_fn,
-    )
-
-    data = RegenerateKeyRequest(key="sk-not-master", new_master_key="anything")
-
-    with (
-        patch("litellm.proxy.proxy_server.premium_user", False),
-        patch("litellm.proxy.proxy_server.master_key", "sk-the-real-master-key"),
-        patch("litellm.proxy.proxy_server.prisma_client", AsyncMock()),
-        pytest.raises((ValueError, HTTPException, ProxyException)),
-    ):
-        await regenerate_key_fn(
-            key="sk-not-master",
-            data=data,
-            user_api_key_dict=_non_admin_user_api_key_dict(),
-        )
-
-
-@pytest.mark.asyncio
 async def test_regenerate_premium_gate_allows_actual_master_key_holder():
     from litellm.proxy._types import RegenerateKeyRequest
     from litellm.proxy.management_endpoints.key_management_endpoints import (
@@ -12692,7 +12669,7 @@ async def test_regenerate_premium_gate_allows_actual_master_key_holder():
 
 
 @pytest.mark.asyncio
-async def test_regenerate_applies_normalized_mcp_object_permission():
+async def test_regenerate_without_license_applies_normalized_mcp_object_permission():
     from litellm.proxy._types import (
         LiteLLM_ObjectPermissionBase,
         RegenerateKeyRequest,
@@ -12712,7 +12689,7 @@ async def test_regenerate_applies_normalized_mcp_object_permission():
     execute_mock = AsyncMock(return_value=MagicMock())
 
     with (
-        patch("litellm.proxy.proxy_server.premium_user", True),
+        patch("litellm.proxy.proxy_server.premium_user", False),
         patch("litellm.proxy.proxy_server.master_key", None),
         patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
         patch("litellm.proxy.proxy_server.proxy_logging_obj", MagicMock()),

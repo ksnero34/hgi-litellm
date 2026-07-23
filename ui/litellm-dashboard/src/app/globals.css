@@ -205,6 +205,15 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family:
+      Pretendard,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      "Noto Sans KR",
+      "Apple SD Gothic Neo",
+      Arial,
+      sans-serif;
   }
 }
 
@@ -215,4 +224,13 @@
 
 .custom-border {
   border: 1px solid var(--neutral-border);
+}
+
+a[href^="https://docs.litellm.ai"],
+a[href^="https://www.litellm.ai"],
+a[href^="https://litellm.ai"],
+a[href^="https://enterprise.litellm.ai"],
+a[href^="https://github.com/BerriAI/litellm"]
+{
+  display: none !important;
 }

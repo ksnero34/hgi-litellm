@@ -127,6 +127,17 @@ from litellm.types.utils import (
     TeamUIKeyGenerationConfig,
 )
 
+OSS_VIRTUAL_KEY_METADATA_FIELDS = frozenset({"disable_global_guardrails", "guardrails", "policies"})
+
+
+def _set_virtual_key_metadata_field(object_data: Any, field_name: str, value: Any) -> None:
+    if field_name not in OSS_VIRTUAL_KEY_METADATA_FIELDS:
+        _set_object_metadata_field(object_data=object_data, field_name=field_name, value=value)
+        return
+
+    object_data.metadata = object_data.metadata or {}
+    object_data.metadata[field_name] = value
+
 
 async def _check_custom_key_allowed(custom_key_value: Optional[str]) -> None:
     """Raise 403 if custom API keys are disabled and a custom key was provided."""
@@ -895,7 +906,7 @@ async def _common_key_generation_helper(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -1850,9 +1861,9 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
                 else:
                     casted_metadata[k] = v
             if k in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
-                from litellm.proxy.utils import _premium_user_check
+                if k not in {"disable_global_guardrails", "guardrails", "policies"} and v:
+                    from litellm.proxy.utils import _premium_user_check
 
-                if v:
                     _premium_user_check(k)
                 casted_metadata[k] = v
 
@@ -1887,7 +1898,7 @@ async def prepare_key_update_data(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -4583,13 +4594,11 @@ async def regenerate_key_fn(
     }'
     ```
 
-    Note: This is an Enterprise feature. It requires a premium license to use.
     """
     try:
         from litellm.proxy.proxy_server import (
             hash_token,
             master_key,
-            premium_user,
             prisma_client,
             proxy_logging_obj,
             user_api_key_cache,
@@ -4622,25 +4631,6 @@ async def regenerate_key_fn(
                 allowed_routes=handle_key_type(data, {}).get("allowed_routes"),
                 user_api_key_dict=user_api_key_dict,
                 allow_safe_presets=True,
-            )
-
-        # Premium-gate bypass for master-key rotation must verify the
-        # caller actually holds the master key, not just that the request
-        # body has a ``new_master_key`` field. A presence-only check let
-        # any non-premium caller skip the enterprise gate by sending any
-        # value in that field.
-        regenerate_target_key = data.key if data and data.key else key
-        is_master_key_regeneration = (
-            data is not None
-            and data.new_master_key is not None
-            and _is_master_key(api_key=regenerate_target_key, _master_key=master_key)
-        )
-
-        if (
-            premium_user is not True and not is_master_key_regeneration
-        ):  # allow master key regeneration for non-premium users
-            raise ValueError(
-                f"Regenerating Virtual Keys is an Enterprise feature, {CommonProxyErrors.not_premium_user.value}"
             )
 
         # Check if key exists, raise exception if key is not in the DB

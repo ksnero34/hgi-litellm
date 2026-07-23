@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,13 +9,10 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { getBreadcrumb } from "@/components/leftnav";
-import { BlogDropdown } from "@/components/Navbar/BlogDropdown/BlogDropdown";
-import { CommunityEngagementButtons } from "@/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons";
 import { NotificationsBell } from "@/components/Navbar/NotificationsBell/NotificationsBell";
 import ViewSwitcher from "@/components/Navbar/ViewSwitcher";
 import WorkerDropdown from "@/components/Navbar/WorkerDropdown/WorkerDropdown";
 import { useWorker } from "@/hooks/useWorker";
-import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
 import { clearTokenCookies } from "@/utils/cookieUtils";
 import { clearStoredReturnUrl } from "@/utils/returnUrlUtils";
 
@@ -30,7 +26,6 @@ export function DashboardHeader({ page }: DashboardHeaderProps) {
   const { title } = getBreadcrumb(page);
   const { isControlPlane, selectedWorker } = useWorker();
   const showWorkerSwitch = isControlPlane && selectedWorker !== null;
-  const hideCommunityLinks = useDisableShowPrompts();
 
   const handleWorkerSwitch = (workerId: string) => {
     clearTokenCookies();
@@ -61,18 +56,6 @@ export function DashboardHeader({ page }: DashboardHeaderProps) {
             <Separator orientation="vertical" className="mx-1.5 h-5" />
           </>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          nativeButton={false}
-          render={<a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer" />}
-          className="text-muted-foreground"
-        >
-          Docs
-        </Button>
-        <BlogDropdown />
-        {!hideCommunityLinks && <CommunityEngagementButtons />}
-        <Separator orientation="vertical" className="mx-1.5 h-5" />
         <NotificationsBell />
       </div>
     </header>

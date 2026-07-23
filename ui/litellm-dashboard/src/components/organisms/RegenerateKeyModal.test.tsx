@@ -50,12 +50,12 @@ describe("RegenerateKeyModal", () => {
 
   it("should render the modal with correct title", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText("Regenerate Virtual Key")).toBeInTheDocument();
+    expect(screen.getByText("가상 키 교체")).toBeInTheDocument();
   });
 
   it("should not render the modal when visible is false", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} visible={false} />);
-    expect(screen.queryByText("Regenerate Virtual Key")).not.toBeInTheDocument();
+    expect(screen.queryByText("가상 키 교체")).not.toBeInTheDocument();
   });
 
   it("should display the form with pre-filled values", () => {
@@ -68,12 +68,12 @@ describe("RegenerateKeyModal", () => {
 
   it("should display the current expiry when token has expires", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText(/Current expiry:/)).toBeInTheDocument();
+    expect(screen.getByText(/현재 만료:/)).toBeInTheDocument();
   });
 
   it("should display 'Never' when token has no expires", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} selectedToken={makeToken({ expires: undefined })} />);
-    expect(screen.getByText("Current expiry: Never")).toBeInTheDocument();
+    expect(screen.getByText("현재 만료: 만료 없음")).toBeInTheDocument();
   });
 
   it("should show Cancel and Regenerate buttons in form view", () => {
@@ -109,13 +109,13 @@ describe("RegenerateKeyModal", () => {
   it("should render duration and grace period fields", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
 
-    expect(screen.getByText("Expire Key")).toBeInTheDocument();
-    expect(screen.getByText("Grace Period")).toBeInTheDocument();
+    expect(screen.getByText("키 만료")).toBeInTheDocument();
+    expect(screen.getByText("유예 기간")).toBeInTheDocument();
   });
 
   it("should display grace period recommendation text", () => {
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
-    expect(screen.getByText("Recommended: 24h to 72h for production keys")).toBeInTheDocument();
+    expect(screen.getByText("운영 키 권장값: 24h~72h")).toBeInTheDocument();
   });
 
   it("should call regenerateKeyCall and show success view on successful regeneration", async () => {
@@ -137,7 +137,7 @@ describe("RegenerateKeyModal", () => {
       expect(screen.getByText("sk-new-regenerated-key")).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/will not see it again/)).toBeInTheDocument();
+    expect(screen.getByText(/다시 표시되지 않으므로/)).toBeInTheDocument();
   });
 
   it("should show Close button after successful regeneration", async () => {
@@ -206,7 +206,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Regenerate/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("Virtual Key")).toBeInTheDocument();
+      expect(screen.getByText("가상 키")).toBeInTheDocument();
     });
   });
 
@@ -229,12 +229,12 @@ describe("RegenerateKeyModal", () => {
   });
 
   it.each([
-    ["30s", /New expiry:/],
-    ["15m", /New expiry:/],
-    ["2h", /New expiry:/],
-    ["7d", /New expiry:/],
-    ["2w", /New expiry:/],
-    ["1mo", /New expiry:/],
+    ["30s", /새 만료:/],
+    ["15m", /새 만료:/],
+    ["2h", /새 만료:/],
+    ["7d", /새 만료:/],
+    ["2w", /새 만료:/],
+    ["1mo", /새 만료:/],
   ])("should compute a new expiry preview for duration '%s'", async (durationInput, expected) => {
     const user = userEvent.setup();
     renderWithProviders(<RegenerateKeyModal {...defaultProps} />);
@@ -303,7 +303,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Regenerate/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("Must be a duration like 30s, 30m, 24h, 2d, 1w, or 1mo")).toBeInTheDocument();
+      expect(screen.getByText("30s, 30m, 24h, 2d, 1w, 1mo 형식으로 입력하세요")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     expect(mockNotificationFromBackend).not.toHaveBeenCalled();
@@ -363,7 +363,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Regenerate/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("No alias set")).toBeInTheDocument();
+      expect(screen.getByText("별칭 없음")).toBeInTheDocument();
     });
   });
 
@@ -390,7 +390,7 @@ describe("RegenerateKeyModal", () => {
       />,
     );
 
-    expect(screen.getByText(/\(expired\)/)).toBeInTheDocument();
+    expect(screen.getByText(/\(만료됨\)/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. 30s, 30h, 30d")).toHaveValue("");
   });
 
@@ -408,7 +408,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Regenerate/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("Expiration is required for expired keys")).toBeInTheDocument();
+      expect(screen.getByText("만료된 키에는 새 만료 기간이 필요합니다")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     // Form validation rejections must not surface a backend-style toast.

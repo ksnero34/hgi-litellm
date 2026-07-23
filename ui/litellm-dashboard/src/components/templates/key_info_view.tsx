@@ -36,16 +36,7 @@ interface KeyInfoViewProps {
   backButtonText?: string;
 }
 
-// Premium fields (from LiteLLM_ManagementEndpoint_MetadataFields_Premium in
-// litellm/proxy/_types.py) that the key-edit form submits as arrays/strings, where
-// "empty" means "unset". The loop below drops them when they're empty-and-were-empty
-// so a non-premium edit of unrelated fields doesn't trip the server's premium gate.
-//
-// Boolean premium fields (e.g. disable_global_guardrails) do NOT belong here: false is
-// a real value, not "empty", so isEmptyValue(false) is false and the loop would never
-// drop it — we'd resend false on every edit and trip the gate. Booleans get their own
-// "send only when changed" guard instead (see disable_global_guardrails below).
-const PREMIUM_METADATA_FIELDS = ["policies", "guardrails", "prompts", "tags", "allowed_passthrough_routes"] as const;
+const LICENSED_METADATA_FIELDS = ["prompts", "tags", "allowed_passthrough_routes"] as const;
 
 const isEmptyValue = (v: unknown): boolean =>
   v == null || (Array.isArray(v) && v.length === 0) || (typeof v === "string" && v.trim() === "");
@@ -65,9 +56,9 @@ export default function KeyInfoView({
   onDelete,
   backButtonText = "Back to Keys",
 }: KeyInfoViewProps) {
-  const { accessToken, userId: userID, userRole, premiumUser } = useAuthorized();
+  const { accessToken, userId: userID, userRole } = useAuthorized();
   const queryClient = useQueryClient();
-  const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
+  const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
   const { teams: teamsData } = useTeams();
   const { data: projects } = useProjects();
   const { data: uiSettingsData } = useUISettings();
@@ -157,17 +148,13 @@ export default function KeyInfoView({
       const currentKey = formValues.token;
       formValues.key = currentKey;
 
-      // Guard premium features
       if (!canEditGuardrails) {
         delete formValues.guardrails;
-        delete formValues.prompts;
+        delete formValues.policies;
+        delete formValues.disable_global_guardrails;
       }
 
-      // Drop premium metadata fields that are empty AND were empty before.
-      // The /key/update response echoes defaults like `policies: []` back into
-      // state; without this, the next save resends `[]` and trips the premium
-      // gate in prepare_metadata_fields for non-premium users.
-      for (const field of PREMIUM_METADATA_FIELDS) {
+      for (const field of LICENSED_METADATA_FIELDS) {
         const previousValue =
           (currentKeyData.metadata as Record<string, unknown> | undefined)?.[field] ??
           (currentKeyData as unknown as Record<string, unknown>)[field];
@@ -176,8 +163,6 @@ export default function KeyInfoView({
         }
       }
 
-      // disable_global_guardrails is premium-gated server-side; only send it when it
-      // changed so a non-premium edit of unrelated fields isn't blocked by that gate.
       const previousDisableGlobalGuardrails = Boolean(
         (currentKeyData.metadata as Record<string, unknown> | undefined)?.disable_global_guardrails,
       );
@@ -449,10 +434,6 @@ export default function KeyInfoView({
         onResetSpend={canResetSpend ? () => setIsResetSpendModalOpen(true) : undefined}
         canModifyKey={canModifyKey}
         backButtonText={backButtonText}
-        regenerateDisabled={!premiumUser}
-        regenerateTooltip={
-          !premiumUser ? "This is a LiteLLM Enterprise feature, and requires a valid key to use." : undefined
-        }
       />
 
       {/* Add RegenerateKeyModal */}
@@ -660,7 +641,6 @@ export default function KeyInfoView({
                   accessToken={accessToken}
                   userID={userID}
                   userRole={userRole}
-                  premiumUser={premiumUser}
                 />
               ) : (
                 <div className="space-y-4">

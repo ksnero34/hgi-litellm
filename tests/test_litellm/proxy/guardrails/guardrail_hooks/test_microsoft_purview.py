@@ -2657,3 +2657,16 @@ class TestRegistration:
             guardrail_class_registry["microsoft_purview"]
             is MicrosoftPurviewDLPGuardrail
         )
+
+    def test_config_model_exposes_ui_fields(self):
+        config_model = MicrosoftPurviewDLPGuardrail.get_config_model()
+
+        assert config_model is not None
+        assert config_model.ui_friendly_name() == "Microsoft Purview"
+        assert set(config_model.model_fields) >= {
+            "tenant_id",
+            "client_id",
+            "client_secret",
+            "purview_app_name",
+            "user_id_field",
+        }

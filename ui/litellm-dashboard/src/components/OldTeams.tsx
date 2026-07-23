@@ -1271,7 +1271,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     help={
                       premiumUser
                         ? "Enter secret manager configuration as a JSON object."
-                        : "Premium feature - Upgrade to manage secret manager settings."
+                        : "현재 구성에서는 시크릿 관리자 설정을 변경할 수 없습니다."
                     }
                     rules={[
                       {
@@ -1342,10 +1342,10 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     <Switch
                       disabled={!premiumUser}
                       checkedChildren={
-                        premiumUser ? "Yes" : "Premium feature - Upgrade to disable global guardrails by team"
+                        premiumUser ? "Yes" : "현재 구성에서는 팀별 전역 가드레일 제외를 변경할 수 없습니다"
                       }
                       unCheckedChildren={
-                        premiumUser ? "No" : "Premium feature - Upgrade to disable global guardrails by team"
+                        premiumUser ? "No" : "현재 구성에서는 팀별 전역 가드레일 제외를 변경할 수 없습니다"
                       }
                     />
                   </Form.Item>
@@ -1418,7 +1418,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     <Tooltip
                       title={
                         !premiumUser
-                          ? "Premium feature - Upgrade to set allowed pass through routes"
+                          ? "현재 구성에서는 패스스루 경로를 설정할 수 없습니다"
                           : !isProxyAdminRole(userRole || "")
                             ? "Only proxy admins can set allowed pass through routes"
                             : ""

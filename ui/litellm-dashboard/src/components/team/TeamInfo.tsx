@@ -365,7 +365,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
       let errMsg = "Failed to add team member";
 
       if (error?.raw?.detail?.error?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = "현재 구성에서는 팀 관리자를 지정할 수 없습니다.";
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -407,7 +407,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
     } catch (error: any) {
       let errMsg = "Failed to update team member";
       if (error?.raw?.detail?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = "현재 구성에서는 팀 관리자를 지정할 수 없습니다.";
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -1333,7 +1333,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       <Tooltip
                         title={
                           !premiumUser
-                            ? "Premium feature - Upgrade to set allowed pass through routes"
+                            ? "현재 구성에서는 패스스루 경로를 설정할 수 없습니다"
                             : !is_proxy_admin
                               ? "Only proxy admins can set allowed pass through routes"
                               : ""
@@ -1439,7 +1439,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       help={
                         premiumUser
                           ? "Enter secret manager configuration as a JSON object."
-                          : "Premium feature - Upgrade to manage secret manager settings."
+                          : "현재 구성에서는 시크릿 관리자 설정을 변경할 수 없습니다."
                       }
                       rules={[
                         {

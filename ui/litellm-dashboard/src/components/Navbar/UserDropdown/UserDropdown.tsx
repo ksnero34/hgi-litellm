@@ -1,6 +1,4 @@
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
-import { useDisableBlogPosts } from "@/app/(dashboard)/hooks/useDisableBlogPosts";
-import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
 import { useDisableUsageIndicator } from "@/app/(dashboard)/hooks/useDisableUsageIndicator";
 import {
@@ -10,16 +8,9 @@ import {
   setLocalStorageItem,
 } from "@/utils/localStorageUtils";
 import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
-import {
-  CrownOutlined,
-  DownOutlined,
-  LogoutOutlined,
-  MailOutlined,
-  SafetyOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { DownOutlined, LogoutOutlined, MailOutlined, SafetyOutlined, UserOutlined } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { Button, Divider, Dropdown, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { Button, Divider, Dropdown, Space, Switch, Tag, Typography } from "antd";
 import { ChevronsUpDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/cva.config";
@@ -70,11 +61,9 @@ interface UserDropdownProps {
 }
 
 const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
-  const { userId, userEmail, userRole, premiumUser } = useAuthorized();
+  const { userId, userEmail, userRole } = useAuthorized();
   const disableShowPrompts = useDisableShowPrompts();
   const disableUsageIndicator = useDisableUsageIndicator();
-  const disableBlogPosts = useDisableBlogPosts();
-  const disableBouncingIcon = useDisableBouncingIcon();
   const [disableShowNewBadge, setDisableShowNewBadge] = useState(false);
 
   useEffect(() => {
@@ -88,7 +77,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
       label: (
         <Space>
           <LogoutOutlined />
-          Logout
+          로그아웃
         </Space>
       ),
       onClick: onLogout,
@@ -102,21 +91,13 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
           <MailOutlined />
           <Text type="secondary">{userEmail || "-"}</Text>
         </Space>
-        {premiumUser ? (
-          <Tag icon={<CrownOutlined />} color="gold">
-            Premium
-          </Tag>
-        ) : (
-          <Tooltip title="Upgrade to Premium for advanced features" placement="left">
-            <Tag icon={<CrownOutlined />}>Standard</Tag>
-          </Tooltip>
-        )}
+        <Tag>계정</Tag>
       </Space>
       <Divider style={{ margin: "8px 0" }} />
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Space>
           <UserOutlined />
-          <Text type="secondary">User ID</Text>
+          <Text type="secondary">사용자 ID</Text>
         </Space>
         <Text copyable ellipsis style={{ maxWidth: "150px" }} title={userId || "-"}>
           {userId || "-"}
@@ -125,13 +106,13 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Space>
           <SafetyOutlined />
-          <Text type="secondary">Role</Text>
+          <Text type="secondary">역할</Text>
         </Space>
         <Text>{userRole}</Text>
       </Space>
       <Divider style={{ margin: "8px 0" }} />
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide New Feature Indicators</Text>
+        <Text type="secondary">새 기능 표시 숨기기</Text>
         <Switch
           size="small"
           checked={disableShowNewBadge}
@@ -149,7 +130,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
         />
       </Space>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide All Prompts</Text>
+        <Text type="secondary">프롬프트 메뉴 숨기기</Text>
         <Switch
           size="small"
           checked={disableShowPrompts}
@@ -166,7 +147,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
         />
       </Space>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide Usage Indicator</Text>
+        <Text type="secondary">사용량 표시 숨기기</Text>
         <Switch
           size="small"
           checked={disableUsageIndicator}
@@ -180,40 +161,6 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
             }
           }}
           aria-label="Toggle hide usage indicator"
-        />
-      </Space>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide Blog Posts</Text>
-        <Switch
-          size="small"
-          checked={disableBlogPosts}
-          onChange={(checked) => {
-            if (checked) {
-              setLocalStorageItem("disableBlogPosts", "true");
-              emitLocalStorageChange("disableBlogPosts");
-            } else {
-              removeLocalStorageItem("disableBlogPosts");
-              emitLocalStorageChange("disableBlogPosts");
-            }
-          }}
-          aria-label="Toggle hide blog posts"
-        />
-      </Space>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide Bouncing Icon</Text>
-        <Switch
-          size="small"
-          checked={disableBouncingIcon}
-          onChange={(checked) => {
-            if (checked) {
-              setLocalStorageItem("disableBouncingIcon", "true");
-              emitLocalStorageChange("disableBouncingIcon");
-            } else {
-              removeLocalStorageItem("disableBouncingIcon");
-              emitLocalStorageChange("disableBouncingIcon");
-            }
-          }}
-          aria-label="Toggle hide bouncing icon"
         />
       </Space>
     </Space>

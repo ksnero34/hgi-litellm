@@ -20,31 +20,14 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
     <div className="mx-auto w-full max-w-md mt-10">
       <Card>
         <Typography.Title level={5} className="text-center mb-5">
-          🚅 LiteLLM
+          LLM Gateway
         </Typography.Title>
-        <Typography.Title level={3}>{variant === "reset_password" ? "Reset Password" : "Sign Up"}</Typography.Title>
+        <Typography.Title level={3}>{variant === "reset_password" ? "비밀번호 재설정" : "계정 등록"}</Typography.Title>
         <Typography.Text>
           {variant === "reset_password"
-            ? "Reset your password to access Admin UI."
-            : "Claim your user account to login to Admin UI."}
+            ? "관리자 화면에 접속할 새 비밀번호를 설정하세요."
+            : "관리자 화면에 로그인할 계정을 등록하세요."}
         </Typography.Text>
-
-        {variant === "signup" && (
-          <Alert
-            className="mt-4"
-            type="info"
-            message="SSO"
-            description={
-              <div className="flex justify-between items-center">
-                <span>SSO is under the Enterprise Tier.</span>
-                <Button type="primary" size="small" href="https://forms.gle/W3U4PZpJGFHWtHyA9" target="_blank">
-                  Get Free Trial
-                </Button>
-              </div>
-            }
-            showIcon
-          />
-        )}
 
         <Form
           className="mt-10 mb-5"
@@ -52,15 +35,15 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
           form={form}
           onFinish={(values) => onSubmit({ password: values.password })}
         >
-          <Form.Item label="Email Address" name="user_email">
+          <Form.Item label="이메일 주소" name="user_email">
             <Input type="email" disabled />
           </Form.Item>
 
           <Form.Item
-            label="Password"
+            label="비밀번호"
             name="password"
-            rules={[{ required: true, message: "password required to sign up" }]}
-            help={variant === "reset_password" ? "Enter your new password" : "Create a password for your account"}
+            rules={[{ required: true, message: "비밀번호를 입력하세요" }]}
+            help={variant === "reset_password" ? "새 비밀번호를 입력하세요" : "계정에 사용할 비밀번호를 입력하세요"}
           >
             <Input.Password />
           </Form.Item>
@@ -69,7 +52,7 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
 
           <div className="mt-10">
             <Button htmlType="submit" loading={isPending}>
-              {variant === "reset_password" ? "Reset Password" : "Sign Up"}
+              {variant === "reset_password" ? "비밀번호 재설정" : "계정 등록"}
             </Button>
           </div>
         </Form>

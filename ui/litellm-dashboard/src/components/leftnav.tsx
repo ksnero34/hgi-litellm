@@ -27,8 +27,6 @@ import {
   Bell,
   Blocks,
   Bot,
-  BookOpen,
-  Building2,
   Boxes,
   ChevronRight,
   Code2,
@@ -75,7 +73,6 @@ import {
 import NewBadge from "./common_components/NewBadge";
 import type { Organization } from "./networking";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
-import SidebarUsageCard from "./SidebarUsageCard";
 import { MIGRATED_PAGES, migratedHref, legacyPageHref } from "@/utils/migratedPages";
 
 const ICON = { strokeWidth: 1.75 } as const;
@@ -219,13 +216,6 @@ const menuGroups: MenuGroup[] = [
       },
       { key: "users", page: "users", label: "Internal Users", icon: <User {...ICON} />, roles: all_admin_roles },
       {
-        key: "organizations",
-        page: "organizations",
-        label: "Organizations",
-        icon: <Building2 {...ICON} />,
-        roles: all_admin_roles,
-      },
-      {
         key: "access-groups",
         page: "access-groups",
         label: "Access Groups",
@@ -240,13 +230,6 @@ const menuGroups: MenuGroup[] = [
     items: [
       { key: "api_ref", page: "api_ref", label: "API Reference", icon: <Code2 {...ICON} /> },
       { key: "model-hub-table", page: "model-hub-table", label: "AI Hub", icon: <LayoutGrid {...ICON} /> },
-      {
-        key: "learning-resources",
-        page: "learning-resources",
-        label: "Learning Resources",
-        icon: <BookOpen {...ICON} />,
-        external_url: "https://models.litellm.ai/cookbook",
-      },
       {
         key: "experimental",
         page: "experimental",
@@ -351,14 +334,56 @@ const findMenuItemKey = (page: string): string => {
   return "api-keys";
 };
 
-const labelText = (item: MenuItem): string => (typeof item.label === "string" ? item.label : item.key);
+const NAV_LABELS: Record<string, string> = {
+  "api-keys": "가상 키",
+  "llm-playground": "플레이그라운드",
+  chat: "채팅",
+  models: "모델 및 엔드포인트",
+  agentic: "에이전트",
+  agents: "에이전트",
+  workflows: "워크플로 실행",
+  memory: "메모리",
+  "mcp-servers": "MCP 서버",
+  skills: "스킬",
+  guardrails: "가드레일",
+  policies: "정책",
+  tools: "도구",
+  "search-tools": "검색 도구",
+  "vector-stores": "벡터 저장소",
+  "tool-policies": "도구 정책",
+  new_usage: "사용량",
+  logs: "로그",
+  "guardrails-monitor": "가드레일 모니터링",
+  teams: "팀",
+  projects: "프로젝트",
+  users: "사용자",
+  "access-groups": "접근 그룹",
+  budgets: "예산",
+  api_ref: "API 참조",
+  "model-hub-table": "AI 허브",
+  experimental: "실험 기능",
+  caching: "캐시",
+  prompts: "프롬프트",
+  "transform-request": "API 테스트",
+  "tag-management": "태그 관리",
+  "4": "이전 사용량",
+  settings: "설정",
+  "router-settings": "라우터 설정",
+  "logging-and-alerts": "로깅 및 알림",
+  "admin-panel": "관리자 설정",
+  "cost-tracking": "비용 추적",
+  "ui-theme": "화면 테마",
+};
+
+const labelText = (item: MenuItem): string =>
+  NAV_LABELS[item.key] ?? (typeof item.label === "string" ? item.label : item.key);
 
 const SECTION_DISPLAY: Record<string, string> = {
-  "AI GATEWAY": "AI Gateway",
-  OBSERVABILITY: "Observability",
-  "ACCESS CONTROL": "Access Control",
-  "DEVELOPER TOOLS": "Developer Tools",
-  SETTINGS: "Settings",
+  "AI GATEWAY": "AI 게이트웨이",
+  OBSERVABILITY: "관측 및 분석",
+  "ACCESS CONTROL": "접근 제어",
+  "DEVELOPER TOOLS": "개발자 도구",
+  SETTINGS: "설정",
 };
 
 const prettify = (key: string): string =>
@@ -372,10 +397,9 @@ export const getBreadcrumb = (page: string): { section: string | null; title: st
   for (const group of menuGroups) {
     for (const item of group.items) {
       const section = SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel;
-      if (item.page === page)
-        return { section, title: typeof item.label === "string" ? item.label : prettify(item.key) };
+      if (item.page === page) return { section, title: labelText(item) };
       const child = item.children?.find((c) => c.page === page);
-      if (child) return { section, title: typeof child.label === "string" ? child.label : prettify(child.key) };
+      if (child) return { section, title: labelText(child) };
     }
   }
   return { section: null, title: prettify(page) };
@@ -499,7 +523,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const renderLeaf = (item: MenuItem, isChild: boolean) => {
     const active = selectedKey === item.key;
     const size = isChild ? "sub" : "default";
-    const label = <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{item.label}</span>;
+    const label = <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>;
 
     if (item.external_url) {
       return (
@@ -551,7 +575,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
           title={collapsed ? labelText(item) : undefined}
         >
           {item.icon}
-          <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{item.label}</span>
+          <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>
           <ChevronRight
             className={cn(
               "size-4 shrink-0 transition-transform group-data-[collapsed=true]/sidebar:hidden",
@@ -587,7 +611,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
             {version && (
               <Badge
                 variant="outline"
-                render={<a href="https://docs.litellm.ai/release_notes" target="_blank" rel="noopener noreferrer" />}
                 className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
               >
                 v{version}
@@ -612,20 +635,13 @@ const Sidebar_: React.FC<SidebarProps> = ({
         {visibleGroups.map((group, gi) => (
           <SidebarGroup key={group.groupLabel}>
             {gi > 0 && <SidebarSeparator className="hidden group-data-[collapsed=true]/sidebar:block" />}
-            <SidebarGroupLabel>{group.groupLabel}</SidebarGroupLabel>
+            <SidebarGroupLabel>{SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel}</SidebarGroupLabel>
             <SidebarMenu>{group.items.map((item) => renderItem(item))}</SidebarMenu>
           </SidebarGroup>
         ))}
       </SidebarContent>
 
       <SidebarFooter>
-        {isAdminRole(userRole) && (
-          <SidebarUsageCard
-            accessToken={accessToken}
-            collapsed={collapsed}
-            onExpandRail={() => onToggleCollapsed?.()}
-          />
-        )}
         <SidebarAccountMenu onLogout={logout} collapsed={collapsed} />
       </SidebarFooter>
     </Sidebar>

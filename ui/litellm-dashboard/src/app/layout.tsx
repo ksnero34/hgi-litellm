@@ -1,16 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
 import AntdGlobalProvider from "@/contexts/AntdGlobalProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ReactQueryProvider from "@/contexts/ReactQueryProvider";
 
-const inter = Inter({ subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: "LiteLLM Dashboard",
-  description: "LiteLLM Proxy Admin UI",
+  title: "사내 LLM Gateway",
+  description: "사내 LLM Gateway 관리 화면",
   icons: { icon: "/get_favicon" },
 };
 
@@ -20,8 +17,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="ko">
+      <body>
         <ReactQueryProvider>
           <AntdGlobalProvider>
             <AuthProvider>{children}</AuthProvider>

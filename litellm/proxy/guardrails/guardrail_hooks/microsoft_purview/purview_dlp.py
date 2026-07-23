@@ -71,7 +71,7 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
         tenant_id: str,
         client_id: str,
         client_secret: str,
-        purview_app_name: str = "LiteLLM",
+        purview_app_name: str = "LLM Gateway",
         user_id_field: str = "user_id",
         **kwargs: Any,
     ):
@@ -93,7 +93,11 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
 
     @staticmethod
     def get_config_model() -> Optional[Type["GuardrailConfigModel"]]:
-        return None  # Config model can be added later for UI support
+        from litellm.types.proxy.guardrails.guardrail_hooks.microsoft_purview import (
+            MicrosoftPurviewGuardrailConfigModel,
+        )
+
+        return MicrosoftPurviewGuardrailConfigModel
 
     @classmethod
     def get_supported_event_hooks(cls) -> List[GuardrailEventHooks]:

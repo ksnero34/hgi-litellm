@@ -84,9 +84,7 @@ const PolicySelector: React.FC<PolicySelectorProps> = ({
       <Select
         mode="multiple"
         disabled={disabled}
-        placeholder={
-          disabled ? "Setting policies is a premium feature." : "Select policies (production or published versions)"
-        }
+        placeholder={disabled ? "정책을 변경할 권한이 없습니다" : "정책 선택"}
         onChange={handlePolicyChange}
         value={value}
         loading={loading}

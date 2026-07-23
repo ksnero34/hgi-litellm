@@ -36,15 +36,11 @@ const PassThroughSecuritySection: React.FC<PassThroughSecuritySectionProps> = ({
         <div>
           <div className="flex items-center mb-3">
             <Switch disabled checked={false} style={{ outline: "2px solid #d1d5db", outlineOffset: "2px" }} />
-            <span className="ml-2 text-sm text-gray-400">Authentication (Premium)</span>
+            <span className="ml-2 text-sm text-gray-400">인증</span>
           </div>
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <Text className="text-sm text-yellow-800">
-              Setting authentication for pass-through endpoints is a LiteLLM Enterprise feature. Get a trial key{" "}
-              <a href="https://www.litellm.ai/#pricing" target="_blank" rel="noopener noreferrer" className="underline">
-                here
-              </a>
-              .
+              현재 구성에서는 패스스루 엔드포인트 인증을 설정할 수 없습니다.
             </Text>
           </div>
         </div>

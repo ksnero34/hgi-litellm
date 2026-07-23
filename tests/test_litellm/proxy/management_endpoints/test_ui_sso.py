@@ -37,6 +37,16 @@ from litellm.types.proxy.management_endpoints.ui_sso import (
 )
 
 
+def _get_enterprise_custom_sso_handler():
+    try:
+        from litellm_enterprise.proxy.auth.custom_sso_handler import (
+            EnterpriseCustomSSOHandler,
+        )
+    except ModuleNotFoundError:
+        pytest.skip("litellm_enterprise package is not available in the OSS fork")
+    return EnterpriseCustomSSOHandler
+
+
 def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     # Arrange
     # Create a mock response similar to what Microsoft SSO would return
@@ -1914,11 +1924,9 @@ class TestCustomUISSO:
     async def test_handle_custom_ui_sso_sign_in_success(self):
         """Test successful custom UI SSO sign-in with valid headers"""
         from fastapi_sso.sso.base import OpenID
-
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         # Mock request with custom headers
         mock_request = MagicMock(spec=Request)
@@ -1990,10 +1998,9 @@ class TestCustomUISSO:
     @pytest.mark.asyncio
     async def test_handle_custom_ui_sso_sign_in_rejects_untrusted_proxy(self):
         """Custom UI SSO rejects spoofed identity headers from direct clients."""
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         mock_request = MagicMock(spec=Request)
         mock_request.headers = {
@@ -2029,11 +2036,9 @@ class TestCustomUISSO:
         and its methods are called with the correct parameters
         """
         from fastapi_sso.sso.base import OpenID
-
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         # Create a real custom handler class instance
         class TestCustomSSOHandler(CustomSSOLoginHandler):
@@ -7159,6 +7164,50 @@ async def _render_legacy_login_page(env_overrides, general_settings):
             os.environ.pop(var, None)
         os.environ.update(env_overrides)
         return await google_login(request=mock_request)
+
+
+@pytest.mark.asyncio
+async def test_oidc_login_has_no_user_count_limit():
+    from litellm.proxy.management_endpoints.ui_sso import google_login
+
+    mock_request = MagicMock(spec=Request)
+    mock_request.base_url = "http://proxy.example.com/"
+    expected_response = MagicMock()
+
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "GENERIC_CLIENT_ID": "client-id",
+                "GENERIC_CLIENT_SECRET": "client-secret",
+                "GENERIC_AUTHORIZATION_ENDPOINT": "https://idp.example.com/authorize",
+                "GENERIC_TOKEN_ENDPOINT": "https://idp.example.com/token",
+                "GENERIC_USERINFO_ENDPOINT": "https://idp.example.com/userinfo",
+            },
+            clear=True,
+        ),
+        patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
+        patch("litellm.proxy.proxy_server.general_settings", {}),
+        patch("litellm.proxy.proxy_server.user_api_key_cache", MagicMock()),
+        patch("litellm.proxy.proxy_server.user_custom_ui_sso_sign_in_handler", None),
+        patch(
+            "litellm.proxy.management_endpoints.ui_sso.show_missing_vars_in_env",
+            return_value=None,
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.ui_sso.UserRepository",
+            side_effect=AssertionError("OIDC login must not query a licensed-user limit"),
+        ),
+        patch.object(
+            SSOAuthenticationHandler,
+            "get_sso_login_redirect",
+            new=AsyncMock(return_value=expected_response),
+        ) as redirect,
+    ):
+        response = await google_login(request=mock_request)
+
+    assert response is expected_response
+    redirect.assert_awaited_once()
 
 
 @pytest.mark.asyncio

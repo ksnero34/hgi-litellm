@@ -10,12 +10,10 @@ import { useEffect, useState } from "react";
 import { rolesWithWriteAccess } from "../../utils/roles";
 import AgentSelector from "../agent_management/AgentSelector";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
-import { mapInternalToDisplayNames } from "../callback_info_helpers";
 import KeyLifecycleSettings from "../common_components/KeyLifecycleSettings";
-import PassThroughRoutesSelector from "../common_components/PassThroughRoutesSelector";
 import RateLimitTypeFormItem from "../common_components/RateLimitTypeFormItem";
 import OrganizationDropdown from "../common_components/OrganizationDropdown";
-import { extractLoggingSettings, formatMetadataForDisplay, stripTagsFromMetadata } from "../key_info_utils";
+import { formatMetadataForDisplay, stripTagsFromMetadata } from "../key_info_utils";
 import { BudgetFallbacksEditor } from "../key_team_helpers/BudgetFallbacksEditor";
 import { BudgetWindowEntry, BudgetWindowsEditor } from "../key_team_helpers/BudgetWindowsEditor";
 import {
@@ -30,11 +28,10 @@ import MCPServerSelector from "../mcp_server_management/MCPServerSelector";
 import { NO_MCP_SERVERS_SENTINEL } from "../mcp_tools/constants";
 import MCPToolPermissions from "../mcp_server_management/MCPToolPermissions";
 import NotificationsManager from "../molecules/notifications_manager";
-import { getPromptsList, modelAvailableCall, tagListCall } from "../networking";
+import { modelAvailableCall, tagListCall } from "../networking";
 import { fetchTeamModels } from "../organisms/create_key_button";
 import NumericalInput from "../shared/numerical_input";
 import { Tag } from "../tag_management/types";
-import EditLoggingSettings from "../team/EditLoggingSettings";
 import VectorStoreSelector from "../vector_store_management/VectorStoreSelector";
 
 interface KeyEditViewProps {
@@ -87,27 +84,12 @@ const getKeyTypeFromRoutes = (allowedRoutes: string[] | null | undefined): strin
   return "default";
 };
 
-export function KeyEditView({
-  keyData,
-  onCancel,
-  onSubmit,
-  teams,
-  accessToken,
-  userID,
-  userRole,
-  premiumUser = false,
-}: KeyEditViewProps) {
-  const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
+export function KeyEditView({ keyData, onCancel, onSubmit, teams, accessToken, userID, userRole }: KeyEditViewProps) {
+  const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
   const [form] = Form.useForm();
-  const [promptsList, setPromptsList] = useState<string[]>([]);
   const [tagsList, setTagsList] = useState<Record<string, Tag>>({});
   const team = teams?.find((team) => team.team_id === keyData.team_id);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [disabledCallbacks, setDisabledCallbacks] = useState<string[]>(
-    Array.isArray(keyData.metadata?.litellm_disabled_callbacks)
-      ? mapInternalToDisplayNames(keyData.metadata.litellm_disabled_callbacks)
-      : [],
-  );
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(keyData.organization_id || null);
   const [autoRotationEnabled, setAutoRotationEnabled] = useState<boolean>(keyData.auto_rotate || false);
   const [rotationInterval, setRotationInterval] = useState<string>(keyData.rotation_interval || "");
@@ -153,24 +135,8 @@ export function KeyEditView({
       }
     };
 
-    const fetchPrompts = async () => {
-      if (!accessToken) return;
-      try {
-        const response = await getPromptsList(accessToken);
-        setPromptsList(response.prompts.map((prompt) => prompt.prompt_id));
-      } catch (error) {
-        console.error("Failed to fetch prompts:", error);
-      }
-    };
-
-    fetchPrompts();
     fetchModels();
   }, [userID, userRole, accessToken, team, keyData.team_id]);
-
-  // Sync disabled callbacks with form when component mounts
-  useEffect(() => {
-    form.setFieldValue("disabled_callbacks", disabledCallbacks);
-  }, [form, disabledCallbacks]);
 
   // Convert API budget duration to form format
   const getBudgetDuration = (duration: string | null) => {
@@ -192,7 +158,6 @@ export function KeyEditView({
     guardrails: keyData.metadata?.guardrails,
     disable_global_guardrails: keyData.metadata?.disable_global_guardrails || false,
     throttle_on_budget_exceeded: keyData.metadata?.throttle_on_budget_exceeded || false,
-    prompts: keyData.metadata?.prompts,
     tags: keyData.metadata?.tags,
     vector_stores: keyData.object_permission?.vector_stores || [],
     mcp_servers_and_groups: {
@@ -204,10 +169,6 @@ export function KeyEditView({
       agents: keyData.object_permission?.agents || [],
       accessGroups: keyData.object_permission?.agent_access_groups || [],
     },
-    logging_settings: extractLoggingSettings(keyData.metadata),
-    disabled_callbacks: Array.isArray(keyData.metadata?.litellm_disabled_callbacks)
-      ? mapInternalToDisplayNames(keyData.metadata.litellm_disabled_callbacks)
-      : [],
     access_group_ids: keyData.access_group_ids || [],
     auto_rotate: keyData.auto_rotate || false,
     ...(keyData.rotation_interval && { rotation_interval: keyData.rotation_interval }),
@@ -225,7 +186,6 @@ export function KeyEditView({
       metadata: formatMetadataForDisplay(stripTagsFromMetadata(keyData.metadata)),
       guardrails: keyData.metadata?.guardrails,
       disable_global_guardrails: keyData.metadata?.disable_global_guardrails || false,
-      prompts: keyData.metadata?.prompts,
       tags: keyData.metadata?.tags,
       vector_stores: keyData.object_permission?.vector_stores || [],
       mcp_servers_and_groups: {
@@ -234,10 +194,6 @@ export function KeyEditView({
       },
       mcp_tool_permissions: keyData.object_permission?.mcp_tool_permissions || {},
       throttle_on_budget_exceeded: keyData.metadata?.throttle_on_budget_exceeded || false,
-      logging_settings: extractLoggingSettings(keyData.metadata),
-      disabled_callbacks: Array.isArray(keyData.metadata?.litellm_disabled_callbacks)
-        ? mapInternalToDisplayNames(keyData.metadata.litellm_disabled_callbacks)
-        : [],
       access_group_ids: keyData.access_group_ids || [],
       auto_rotate: keyData.auto_rotate || false,
       ...(keyData.rotation_interval && { rotation_interval: keyData.rotation_interval }),
@@ -580,7 +536,7 @@ export function KeyEditView({
         <TagRateLimitEditor value={tagRateLimits} onChange={setTagRateLimits} />
       </Form.Item>
 
-      <Form.Item label="Guardrails" name="guardrails">
+      <Form.Item label="가드레일" name="guardrails">
         {accessToken && (
           <GuardrailSelector
             onChange={(v) => {
@@ -595,8 +551,8 @@ export function KeyEditView({
       <Form.Item
         label={
           <span>
-            Disable Global Guardrails{" "}
-            <Tooltip title="When enabled, this key will bypass any guardrails configured to run on every request (global guardrails)">
+            전역 가드레일 제외{" "}
+            <Tooltip title="이 키가 모든 요청에 적용되는 전역 가드레일을 우회하도록 설정합니다">
               <InfoCircleOutlined style={{ marginLeft: "4px" }} />
             </Tooltip>
           </span>
@@ -604,14 +560,14 @@ export function KeyEditView({
         name="disable_global_guardrails"
         valuePropName="checked"
       >
-        <Switch disabled={!canEditGuardrails} checkedChildren="Yes" unCheckedChildren="No" />
+        <Switch disabled={!canEditGuardrails} checkedChildren="예" unCheckedChildren="아니요" />
       </Form.Item>
 
       <Form.Item
         label={
           <span>
-            Policies{" "}
-            <Tooltip title="Apply policies to this key to control guardrails and other settings">
+            정책{" "}
+            <Tooltip title="이 키에 가드레일 정책을 적용합니다">
               <InfoCircleOutlined style={{ marginLeft: "4px" }} />
             </Tooltip>
           </span>
@@ -624,7 +580,7 @@ export function KeyEditView({
               form.setFieldValue("policies", v);
             }}
             accessToken={accessToken}
-            disabled={!premiumUser}
+            disabled={!canEditGuardrails}
           />
         )}
       </Form.Item>
@@ -642,24 +598,6 @@ export function KeyEditView({
         />
       </Form.Item>
 
-      <Form.Item label="Prompts" name="prompts">
-        <Tooltip title={!premiumUser ? "Setting prompts by key is a premium feature" : ""} placement="top">
-          <Select
-            mode="tags"
-            style={{ width: "100%" }}
-            disabled={!premiumUser}
-            placeholder={
-              !premiumUser
-                ? "Premium feature - Upgrade to set prompts by key"
-                : Array.isArray(keyData.metadata?.prompts) && keyData.metadata.prompts.length > 0
-                  ? `Current: ${keyData.metadata.prompts.join(", ")}`
-                  : "Select or enter prompts"
-            }
-            options={promptsList.map((name) => ({ value: name, label: name }))}
-          />
-        </Tooltip>
-      </Form.Item>
-
       <Form.Item
         label={
           <span>
@@ -672,28 +610,6 @@ export function KeyEditView({
         name="access_group_ids"
       >
         <AccessGroupSelector placeholder="Select access groups (optional)" />
-      </Form.Item>
-
-      <Form.Item label="Allowed Pass Through Routes" name="allowed_passthrough_routes">
-        <Tooltip
-          title={!premiumUser ? "Setting allowed pass through routes by key is a premium feature" : ""}
-          placement="top"
-        >
-          <PassThroughRoutesSelector
-            onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
-            value={form.getFieldValue("allowed_passthrough_routes")}
-            accessToken={accessToken || ""}
-            placeholder={
-              !premiumUser
-                ? "Premium feature - Upgrade to set allowed pass through routes by key"
-                : Array.isArray(keyData.metadata?.allowed_passthrough_routes) &&
-                    keyData.metadata.allowed_passthrough_routes.length > 0
-                  ? `Current: ${keyData.metadata.allowed_passthrough_routes.join(", ")}`
-                  : "Select or enter allowed pass through routes"
-            }
-            disabled={!premiumUser}
-          />
-        </Tooltip>
       </Form.Item>
 
       <Form.Item label="Vector Stores" name="vector_stores">
@@ -815,21 +731,6 @@ export function KeyEditView({
           <Input value={projectDisplay ?? ""} disabled />
         </Form.Item>
       )}
-      <Form.Item label="Logging Settings" name="logging_settings">
-        <EditLoggingSettings
-          value={form.getFieldValue("logging_settings")}
-          onChange={(values) => form.setFieldValue("logging_settings", values)}
-          disabledCallbacks={disabledCallbacks}
-          onDisabledCallbacksChange={(internalValues) => {
-            // Convert internal values back to display names for UI state
-            const displayNames = mapInternalToDisplayNames(internalValues);
-            setDisabledCallbacks(displayNames);
-            // Store internal values in form for submission
-            form.setFieldValue("disabled_callbacks", internalValues);
-          }}
-        />
-      </Form.Item>
-
       <Form.Item label="Metadata" name="metadata">
         <Input.TextArea rows={10} />
       </Form.Item>
@@ -852,11 +753,6 @@ export function KeyEditView({
 
       {/* Hidden form field for token */}
       <Form.Item name="token" hidden>
-        <Input />
-      </Form.Item>
-
-      {/* Hidden form field for disabled callbacks */}
-      <Form.Item name="disabled_callbacks" hidden>
         <Input />
       </Form.Item>
 

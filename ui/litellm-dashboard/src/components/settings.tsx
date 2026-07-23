@@ -632,11 +632,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
                                 onChange={() => handleSwitchChange(key)}
                               />
                             ) : (
-                              <Button className="flex items-center justify-center">
-                                <a href="https://forms.gle/W3U4PZpJGFHWtHyA9" target="_blank">
-                                  ✨ Enterprise Feature
-                                </a>
-                              </Button>
+                              <span className="text-gray-400">사용 불가</span>
                             )
                           ) : (
                             <Switch

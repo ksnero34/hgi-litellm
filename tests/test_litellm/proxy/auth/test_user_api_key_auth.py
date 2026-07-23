@@ -1502,10 +1502,7 @@ class TestJWTOAuth2Coexistence:
             assert result.user_id == "machine-client-1"
 
     @pytest.mark.asyncio
-    async def test_oauth2_path_requires_premium_user(self):
-        """
-        OAuth2 token validation should fail when enterprise premium is disabled.
-        """
+    async def test_oauth2_path_works_without_license(self):
         opaque_token = "some-opaque-m2m-oauth2-token"
         general_settings = {
             "enable_oauth2_auth": True,
@@ -1516,6 +1513,11 @@ class TestJWTOAuth2Coexistence:
         mock_request.url.path = "/v1/chat/completions"
         mock_request.headers = {"authorization": f"Bearer {opaque_token}"}
         mock_request.query_params = {}
+        mock_oauth2_response = UserAPIKeyAuth(
+            api_key=opaque_token,
+            user_id="machine-client-1",
+            team_id="m2m-team",
+        )
 
         with (
             patch("litellm.proxy.proxy_server.general_settings", general_settings),
@@ -1525,6 +1527,7 @@ class TestJWTOAuth2Coexistence:
             patch(
                 "litellm.proxy.auth.user_api_key_auth.Oauth2Handler.check_oauth2_token",
                 new_callable=AsyncMock,
+                return_value=mock_oauth2_response,
             ) as mock_oauth2,
         ):
             litellm.proxy.proxy_server.jwt_handler.update_environment(
@@ -1533,18 +1536,13 @@ class TestJWTOAuth2Coexistence:
                 litellm_jwtauth=LiteLLM_JWTAuth(),
             )
 
-            with pytest.raises(ProxyException) as exc_info:
-                await user_api_key_auth(
-                    request=mock_request,
-                    api_key=f"Bearer {opaque_token}",
-                )
-
-            assert exc_info.value.type == ProxyErrorTypes.auth_error
-            assert (
-                "Oauth2 token validation is only available for premium users"
-                in exc_info.value.message
+            result = await user_api_key_auth(
+                request=mock_request,
+                api_key=f"Bearer {opaque_token}",
             )
-            mock_oauth2.assert_not_called()
+
+            assert result.user_id == "machine-client-1"
+            mock_oauth2.assert_awaited_once_with(token=opaque_token)
 
     @pytest.mark.asyncio
     async def test_both_enabled_jwt_token_skips_oauth2(self):
