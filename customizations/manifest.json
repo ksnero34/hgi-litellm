@@ -140,6 +140,8 @@
         "tests/test_litellm/proxy/logging_endpoints/test_callback_logs_endpoints.py",
         "tests/test_litellm/proxy/management_endpoints/test_common_daily_activity.py",
         "ui/litellm-dashboard/src/components/UsagePage/types.ts",
+        "ui/litellm-dashboard/src/components/common_components/chartUtils.test.tsx",
+        "ui/litellm-dashboard/src/components/common_components/chartUtils.tsx",
         "ui/litellm-dashboard/src/components/activity_metrics.test.tsx",
         "ui/litellm-dashboard/src/components/activity_metrics.tsx"
       ],

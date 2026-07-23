@@ -31,7 +31,7 @@ export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) =>
       // key is like "metrics.total_tokens"
       const metricKey = key.substring(key.indexOf(".") + 1) as keyof SpendMetrics;
       if (dataPoint.metrics && metricKey in dataPoint.metrics) {
-        return dataPoint.metrics[metricKey];
+        return dataPoint.metrics[metricKey] ?? undefined;
       }
       return undefined;
     };

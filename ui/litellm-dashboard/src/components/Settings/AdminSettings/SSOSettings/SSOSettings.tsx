@@ -27,7 +27,7 @@ export default function SSOSettings() {
     Boolean(ssoSettings?.values.generic_client_id);
 
   const selectedProvider = ssoSettings?.values ? detectSSOProvider(ssoSettings.values) : null;
-  const isRoleMappingsEnabled = Boolean(ssoSettings?.values.role_mappings);
+  const roleMappings = ssoSettings?.values.role_mappings;
   const isTeamMappingsEnabled = Boolean(ssoSettings?.values.team_mappings);
 
   const renderEndpointValue = (value?: string | null) => (
@@ -238,7 +238,7 @@ export default function SSOSettings() {
               )}
             </Space>
           </Card>
-          {isRoleMappingsEnabled && <RoleMappings roleMappings={ssoSettings?.values.role_mappings} />}
+          {roleMappings && <RoleMappings roleMappings={roleMappings} />}
         </Space>
       )}
 
