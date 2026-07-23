@@ -73,6 +73,8 @@ import {
 import NewBadge from "./common_components/NewBadge";
 import type { Organization } from "./networking";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
+import { i18n } from "@/i18n/i18n";
+import { useTranslation } from "react-i18next";
 import { MIGRATED_PAGES, migratedHref, legacyPageHref } from "@/utils/migratedPages";
 
 const ICON = { strokeWidth: 1.75 } as const;
@@ -334,56 +336,60 @@ const findMenuItemKey = (page: string): string => {
   return "api-keys";
 };
 
-const NAV_LABELS: Record<string, string> = {
-  "api-keys": "가상 키",
-  "llm-playground": "플레이그라운드",
-  chat: "채팅",
-  models: "모델 및 엔드포인트",
-  agentic: "에이전트",
-  agents: "에이전트",
-  workflows: "워크플로 실행",
-  memory: "메모리",
-  "mcp-servers": "MCP 서버",
-  skills: "스킬",
-  guardrails: "가드레일",
-  policies: "정책",
-  tools: "도구",
-  "search-tools": "검색 도구",
-  "vector-stores": "벡터 저장소",
-  "tool-policies": "도구 정책",
-  new_usage: "사용량",
-  logs: "로그",
-  "guardrails-monitor": "가드레일 모니터링",
-  teams: "팀",
-  projects: "프로젝트",
-  users: "사용자",
-  "access-groups": "접근 그룹",
-  budgets: "예산",
-  api_ref: "API 참조",
-  "model-hub-table": "AI 허브",
-  experimental: "실험 기능",
-  caching: "캐시",
-  prompts: "프롬프트",
-  "transform-request": "API 테스트",
-  "tag-management": "태그 관리",
-  "4": "이전 사용량",
-  settings: "설정",
-  "router-settings": "라우터 설정",
-  "logging-and-alerts": "로깅 및 알림",
-  "admin-panel": "관리자 설정",
-  "cost-tracking": "비용 추적",
-  "ui-theme": "화면 테마",
+const NAV_LABEL_KEYS: Record<string, string> = {
+  "api-keys": "nav.apiKeys",
+  "llm-playground": "nav.playground",
+  chat: "nav.chat",
+  models: "nav.models",
+  agentic: "nav.agentic",
+  agents: "nav.agents",
+  workflows: "nav.workflows",
+  memory: "nav.memory",
+  "mcp-servers": "nav.mcpServers",
+  skills: "nav.skills",
+  guardrails: "nav.guardrails",
+  policies: "nav.policies",
+  tools: "nav.tools",
+  "search-tools": "nav.searchTools",
+  "vector-stores": "nav.vectorStores",
+  "tool-policies": "nav.toolPolicies",
+  new_usage: "nav.usage",
+  logs: "nav.logs",
+  "guardrails-monitor": "nav.guardrailsMonitor",
+  teams: "nav.teams",
+  projects: "nav.projects",
+  users: "nav.users",
+  "access-groups": "nav.accessGroups",
+  budgets: "nav.budgets",
+  api_ref: "nav.apiRef",
+  "model-hub-table": "nav.modelHub",
+  experimental: "nav.experimental",
+  caching: "nav.caching",
+  prompts: "nav.prompts",
+  "transform-request": "nav.transformRequest",
+  "tag-management": "nav.tagManagement",
+  "4": "nav.legacyUsage",
+  settings: "nav.settings",
+  "router-settings": "nav.routerSettings",
+  "logging-and-alerts": "nav.loggingAlerts",
+  "admin-panel": "nav.adminPanel",
+  "cost-tracking": "nav.costTracking",
+  "ui-theme": "nav.uiTheme",
 };
 
-const labelText = (item: MenuItem): string =>
-  NAV_LABELS[item.key] ?? (typeof item.label === "string" ? item.label : item.key);
+const labelText = (item: MenuItem): string => {
+  const translationKey = NAV_LABEL_KEYS[item.key];
+  if (translationKey) return i18n.t(translationKey);
+  if (typeof item.label === "string") return item.label;
+  return item.key;
+};
 
 const SECTION_DISPLAY: Record<string, string> = {
-  "AI GATEWAY": "AI 게이트웨이",
-  OBSERVABILITY: "관측 및 분석",
-  "ACCESS CONTROL": "접근 제어",
-  "DEVELOPER TOOLS": "개발자 도구",
-  SETTINGS: "설정",
+  "AI GATEWAY": "section.gateway",
+  OBSERVABILITY: "section.observability",
+  "ACCESS CONTROL": "section.access",
+  "DEVELOPER TOOLS": "section.developer",
+  SETTINGS: "section.settings",
 };
 
 const prettify = (key: string): string =>
@@ -396,7 +402,7 @@ const prettify = (key: string): string =>
 export const getBreadcrumb = (page: string): { section: string | null; title: string } => {
   for (const group of menuGroups) {
     for (const item of group.items) {
-      const section = SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel;
+      const section = SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel;
       if (item.page === page) return { section, title: labelText(item) };
       const child = item.children?.find((c) => c.page === page);
       if (child) return { section, title: labelText(child) };
@@ -418,6 +424,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   disableVectorStoresForInternalUsers,
   allowVectorStoresForTeamAdmins,
 }) => {
+  useTranslation();
   const { userId, accessToken, userRole } = useAuthorized();
   const { data: organizations } = useOrganizations();
   const { data: teams } = useTeams();
@@ -635,7 +642,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
         {visibleGroups.map((group, gi) => (
           <SidebarGroup key={group.groupLabel}>
             {gi > 0 && <SidebarSeparator className="hidden group-data-[collapsed=true]/sidebar:block" />}
-            <SidebarGroupLabel>{SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel}</SidebarGroupLabel>
+            <SidebarGroupLabel>
+              {SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel}
+            </SidebarGroupLabel>
             <SidebarMenu>{group.items.map((item) => renderItem(item))}</SidebarMenu>
           </SidebarGroup>
         ))}

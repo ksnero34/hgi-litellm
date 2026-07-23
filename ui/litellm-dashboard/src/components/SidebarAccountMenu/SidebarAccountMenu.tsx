@@ -13,8 +13,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cva.config";
+import LanguageSwitcher from "@/i18n/LanguageSwitcher";
 import { ChevronsUpDown, IdCard, LogOut, Mail, ShieldCheck } from "lucide-react";
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 function hueFromString(seed: string): number {
   let h = 0;
@@ -78,6 +80,7 @@ interface SidebarAccountMenuProps {
 }
 
 const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, collapsed = false }) => {
+  const { t } = useTranslation();
   const { userId, userEmail, userRole, accessToken } = useAuthorized();
   const { data: healthData } = useHealthReadinessDetails(accessToken);
   const version = healthData?.litellm_version;
@@ -97,21 +100,21 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
   const toggles = [
     {
       key: "disableShowNewBadge",
-      label: "새 기능 표시 숨기기",
+      label: t("account.hideNew"),
       ariaLabel: "Toggle hide new feature indicators",
       checked: disableShowNewBadge,
       onCheckedChange: (checked: boolean) => setFlag("disableShowNewBadge", checked),
     },
     {
       key: "disableShowPrompts",
-      label: "프롬프트 메뉴 숨기기",
+      label: t("account.hidePrompts"),
       ariaLabel: "Toggle hide all prompts",
       checked: disableShowPrompts,
       onCheckedChange: (checked: boolean) => setFlag("disableShowPrompts", checked),
     },
     {
       key: "disableUsageIndicator",
-      label: "사용량 표시 숨기기",
+      label: t("account.hideUsage"),
       ariaLabel: "Toggle hide usage indicator",
       checked: disableUsageIndicator,
       onCheckedChange: (checked: boolean) => setFlag("disableUsageIndicator", checked),
@@ -122,7 +125,10 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
   const initials = initialsFromIdentity(userEmail, userId);
   const hue = hueFromString(seed);
   const displayName = navAccountDisplayName(userEmail, userId);
-  const triggerLabel = `Account menu — ${userRole ?? "Unknown role"} — signed in as ${userEmail || userId || "unknown"}`;
+  const triggerLabel = t("account.menu", {
+    role: userRole ?? t("account.unknownRole"),
+    identity: userEmail || userId || t("account.unknown"),
+  });
 
   return (
     <Popover>
@@ -132,6 +138,7 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
           collapsed ? "justify-center px-0 py-1" : "gap-2.5 px-2 py-1.5 text-left",
         )}
         aria-label={triggerLabel}
+        data-testid="sidebar-account-menu-trigger"
         title={collapsed ? displayName : undefined}
       >
         <Avatar className="size-[30px] shadow-inner ring-1 ring-black/5" aria-hidden>
@@ -168,14 +175,14 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
         </div>
 
         <div className="flex flex-col px-3 py-2">
-          <InfoRow icon={<ShieldCheck className="size-[17px]" />} label="역할">
+          <InfoRow icon={<ShieldCheck className="size-[17px]" />} label={t("account.role")}>
             <Badge variant="secondary">{userRole}</Badge>
           </InfoRow>
-          <InfoRow icon={<Mail className="size-[17px]" />} label="이메일">
-            <MonoValue value={userEmail} copyLabel="Copy email" />
+          <InfoRow icon={<Mail className="size-[17px]" />} label={t("account.email")}>
+            <MonoValue value={userEmail} copyLabel={t("account.copyEmail")} />
           </InfoRow>
-          <InfoRow icon={<IdCard className="size-[17px]" />} label="User ID">
-            <MonoValue value={userId} copyLabel="Copy user ID" />
+          <InfoRow icon={<IdCard className="size-[17px]" />} label={t("account.userId")}>
+            <MonoValue value={userId} copyLabel={t("account.copyUserId")} />
           </InfoRow>
         </div>
 
@@ -197,14 +204,18 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
 
         <Separator />
 
+        <LanguageSwitcher />
+
+        <Separator />
+
         <Button
           variant="ghost"
           onClick={onLogout}
-          aria-label="Logout"
+          aria-label={t("account.logout")}
           className="h-[42px] w-full justify-start gap-2.5 rounded-none px-3 text-sm font-medium text-foreground"
         >
           <LogOut className="size-[19px] text-muted-foreground" />
-          로그아웃
+          {t("account.logout")}
         </Button>
       </PopoverContent>
     </Popover>

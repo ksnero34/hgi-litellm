@@ -124,6 +124,17 @@
       "remove_paths": []
     },
     {
+      "name": "dashboard-i18n",
+      "commit": "feat(hgi): add dashboard internationalization",
+      "paths": [
+        "ui/litellm-dashboard/package-lock.json",
+        "ui/litellm-dashboard/package.json",
+        "ui/litellm-dashboard/src/i18n/",
+        "ui/litellm-dashboard/tests/test-utils.tsx"
+      ],
+      "remove_paths": []
+    },
+    {
       "name": "usage-performance-metrics",
       "commit": "feat(hgi): add model response time and ttft metrics",
       "paths": [

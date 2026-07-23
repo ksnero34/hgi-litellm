@@ -64,7 +64,7 @@ vi.mock("@/utils/localStorageUtils", () => ({
 describe("SidebarAccountMenu", () => {
   const mockOnLogout = vi.fn();
 
-  const getAccountTrigger = () => screen.getByRole("button", { name: /account menu/i });
+  const getAccountTrigger = () => screen.getByTestId("sidebar-account-menu-trigger");
 
   const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(getAccountTrigger());
@@ -186,7 +186,7 @@ describe("SidebarAccountMenu", () => {
     renderWithProviders(<SidebarAccountMenu onLogout={mockOnLogout} />);
     await openMenu(user);
 
-    const copyButton = screen.getByRole("button", { name: "Copy email" });
+    const copyButton = screen.getByRole("button", { name: /이메일 복사|Copy email/ });
     await user.click(copyButton);
 
     expect(writeText).toHaveBeenCalledWith("test@example.com");
@@ -199,7 +199,7 @@ describe("SidebarAccountMenu", () => {
 
     await openMenu(user);
 
-    await user.click(screen.getByRole("button", { name: /logout/i }));
+    await user.click(screen.getByRole("button", { name: /로그아웃|log out/i }));
 
     expect(mockOnLogout).toHaveBeenCalledTimes(1);
   });
