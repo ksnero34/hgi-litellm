@@ -25,6 +25,12 @@ from litellm.repositories.table_repositories import (
 router = APIRouter()
 
 
+def _string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
+
+
 # --- Response models ---
 
 
@@ -531,16 +537,20 @@ def _policy_usage_log_entry_from_row(row: Any, spend_log: Any, action_filter: Op
         for entry in information
         if isinstance(entry, dict)
         and row.policy_id
-        in {
-            reference
-            for reference in (
-                *(entry.get("policy_ids") if isinstance(entry.get("policy_ids"), list) else []),
-                *(entry.get("policy_names") if isinstance(entry.get("policy_names"), list) else []),
-                entry.get("policy_id"),
-                entry.get("policy_name"),
-            )
-            if isinstance(reference, str)
-        }
+        in (
+            {
+                reference
+                for reference in (
+                    *_string_items(entry.get("policy_ids")),
+                    *_string_items(entry.get("policy_names")),
+                )
+            }
+            | {
+                reference
+                for reference in (entry.get("policy_id"), entry.get("policy_name"))
+                if isinstance(reference, str)
+            }
+        )
     ]
     selected_entry = max(matching_entries, key=lambda entry: precedence[_entry_action(entry)], default=None)
     action_value = _entry_action(selected_entry) if selected_entry is not None else "passed"

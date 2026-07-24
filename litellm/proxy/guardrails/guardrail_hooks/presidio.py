@@ -11,6 +11,7 @@
 import asyncio
 import json
 import threading
+from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import (
@@ -233,6 +234,48 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         if not self.pii_entities_config:
             return False
         return any(action == PiiAction.BLOCK for action in self.pii_entities_config.values())
+
+    @staticmethod
+    def _entity_type_value(entity_type: Union[PiiEntityType, str]) -> str:
+        return entity_type.value if isinstance(entity_type, PiiEntityType) else entity_type
+
+    @classmethod
+    def _entity_type_matches(
+        cls,
+        detected_entity_type: Union[PiiEntityType, str],
+        configured_entity_type: Union[PiiEntityType, str],
+    ) -> bool:
+        detected = cls._entity_type_value(detected_entity_type)
+        configured = cls._entity_type_value(configured_entity_type)
+        if detected == configured:
+            return True
+        if not detected.startswith(configured):
+            return False
+        suffix = detected[len(configured) :]
+        return suffix.isdigit() or (suffix.startswith("_") and suffix[1:].isdigit())
+
+    @classmethod
+    def _resolve_configured_entity_type(
+        cls,
+        detected_entity_type: Union[PiiEntityType, str],
+        configured_entity_types: Iterable[Union[PiiEntityType, str]],
+    ) -> Optional[Union[PiiEntityType, str]]:
+        configured_types = tuple(configured_entity_types)
+        detected = cls._entity_type_value(detected_entity_type)
+        exact_match = next(
+            (entity_type for entity_type in configured_types if cls._entity_type_value(entity_type) == detected),
+            None,
+        )
+        if exact_match is not None:
+            return exact_match
+        return next(
+            (
+                entity_type
+                for entity_type in configured_types
+                if cls._entity_type_matches(detected_entity_type, entity_type)
+            ),
+            None,
+        )
 
     def _get_presidio_analyze_request_payload(
         self,
@@ -479,15 +522,16 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             start = ar["start"]
             end = ar["end"]
             entity_type = ar["entity_type"]
-            replacement = f"<{entity_type}>"
+            configured_entity_type = self._resolve_configured_entity_type(
+                entity_type,
+                self.pii_entities_config.keys(),
+            )
+            replacement_entity_type = self._entity_type_value(configured_entity_type or entity_type)
             seq = seq_map[(start, end)]
-            if replacement.endswith(">"):
-                replacement = f"{replacement[:-1]}_{seq}>"
-            else:
-                replacement = f"{replacement}_{seq}"
+            replacement = f"<{replacement_entity_type}_{seq}>"
             pii_tokens[replacement] = text[start:end]
             new_text = new_text[:start] + replacement + new_text[end:]
-            masked_entity_count[entity_type] = masked_entity_count.get(entity_type, 0) + 1
+            masked_entity_count[replacement_entity_type] = masked_entity_count.get(replacement_entity_type, 0) + 1
         return new_text
 
     async def anonymize_text(
@@ -544,17 +588,19 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         for item in analyze_results:
             entity_type = item.get("entity_type")
 
-            str_entity_type = str(
-                getattr(entity_type, "value", entity_type) if entity_type is not None else entity_type
-            )
-            if entity_type and str_entity_type in deny_list_strings:
+            if entity_type and self._resolve_configured_entity_type(entity_type, deny_list_strings) is not None:
                 continue
 
             if self.presidio_score_thresholds:
                 score = item.get("score")
                 threshold = None
                 if entity_type is not None:
-                    threshold = self.presidio_score_thresholds.get(entity_type)
+                    threshold_entity_type = self._resolve_configured_entity_type(
+                        entity_type,
+                        self.presidio_score_thresholds.keys(),
+                    )
+                    if threshold_entity_type is not None:
+                        threshold = self.presidio_score_thresholds.get(threshold_entity_type)
                 if threshold is None:
                     threshold = self.presidio_score_thresholds.get("ALL")
 
@@ -584,8 +630,14 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             entity_type = result.get("entity_type")
 
             if entity_type:
-                # Check if entity_type is in config (supports both enum and string)
-                if entity_type in self.pii_entities_config and self.pii_entities_config[entity_type] == PiiAction.BLOCK:
+                configured_entity_type = self._resolve_configured_entity_type(
+                    entity_type,
+                    self.pii_entities_config.keys(),
+                )
+                if (
+                    configured_entity_type is not None
+                    and self.pii_entities_config[configured_entity_type] == PiiAction.BLOCK
+                ):
                     raise BlockedPiiEntityError(
                         entity_type=entity_type,
                         guardrail_name=self.guardrail_name,

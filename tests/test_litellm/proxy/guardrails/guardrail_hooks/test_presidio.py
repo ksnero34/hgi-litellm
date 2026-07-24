@@ -19,7 +19,7 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.presidio import (
     _OPTIONAL_PresidioPIIMasking,
 )
-from litellm.exceptions import GuardrailRaisedException
+from litellm.exceptions import BlockedPiiEntityError, GuardrailRaisedException
 from litellm.types.guardrails import LitellmParams, PiiAction, PiiEntityType
 from litellm.types.utils import Choices, Message, ModelResponse
 
@@ -1347,6 +1347,23 @@ def test_blocking_respects_threshold_filter():
     filtered_high = guardrail.filter_analyze_results_by_score(high_score_results)
     with pytest.raises(Exception):
         guardrail.raise_exception_if_blocked_entities_detected(filtered_high)
+
+
+@pytest.mark.parametrize("numbered_entity_type", ["KORNAME2", "KORNAME_2"])
+def test_numbered_entity_uses_base_block_action_and_threshold(numbered_entity_type):
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        pii_entities_config={"KORNAME": PiiAction.BLOCK},
+        presidio_score_thresholds={"KORNAME": 0.9},
+    )
+
+    low_score_results = [{"entity_type": "KORNAME1", "score": 0.8, "start": 0, "end": 3}]
+    assert guardrail.filter_analyze_results_by_score(low_score_results) == []
+
+    high_score_results = [{"entity_type": numbered_entity_type, "score": 0.95, "start": 0, "end": 3}]
+    filtered_results = guardrail.filter_analyze_results_by_score(high_score_results)
+    with pytest.raises(BlockedPiiEntityError):
+        guardrail.raise_exception_if_blocked_entities_detected(filtered_results)
 
 
 def test_update_in_memory_applies_score_thresholds():
@@ -2695,6 +2712,32 @@ async def test_anonymize_text_uses_correct_positions_with_parse_pii():
     assert pii_tokens.get("<PERSON_1>") == "John Smith"
     assert pii_tokens.get("<EMAIL_ADDRESS_2>") == "john@example.com"
     assert pii_tokens.get("<PHONE_NUMBER_3>") == "555-867-5309"
+
+
+def test_numbered_presidio_entities_use_base_label_for_reversible_tokens():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        pii_entities_config={"KORNAME": PiiAction.MASK},
+    )
+    request_data = {"metadata": {}}
+    masked_entity_count = {}
+
+    result = guardrail._finalize_presidio_anonymize_numbered_tokens(
+        text="Kim Lee",
+        analyze_results=[
+            {"entity_type": "KORNAME1", "start": 0, "end": 3},
+            {"entity_type": "KORNAME2", "start": 4, "end": 7},
+        ],
+        request_data=request_data,
+        masked_entity_count=masked_entity_count,
+    )
+
+    assert result == "<KORNAME_1> <KORNAME_2>"
+    assert request_data["metadata"]["pii_tokens"] == {
+        "<KORNAME_1>": "Kim",
+        "<KORNAME_2>": "Lee",
+    }
+    assert masked_entity_count == {"KORNAME": 2}
 
 
 def test_unmask_sse_bytes_chunk_replaces_text_delta():
