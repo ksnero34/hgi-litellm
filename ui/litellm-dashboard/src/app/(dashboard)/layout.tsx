@@ -13,6 +13,7 @@ import { MIGRATED_PAGES, migratedHref, legacyPageHref, legacyKeyForPathname } fr
 import { PluginModeProvider, usePluginMode } from "@/contexts/PluginModeContext";
 import { createApiClient } from "@/lib/http/client";
 import { getProxyBaseUrl } from "@/components/networking";
+import { useTranslation } from "react-i18next";
 
 const pluginApiClient = createApiClient({ getBaseUrl: () => getProxyBaseUrl() ?? "" });
 
@@ -24,6 +25,7 @@ function PluginModeProviderWithAuth({ children }: { children: React.ReactNode })
 }
 
 export function AgentControlPlaneView() {
+  const { t } = useTranslation();
   const { activePlugin } = usePluginMode();
   const activePluginName = activePlugin?.name;
   const agentPlatformUrl = activePlugin?.url ?? "";
@@ -68,8 +70,8 @@ export function AgentControlPlaneView() {
     return (
       <div className="flex flex-1 items-center justify-center text-gray-500">
         <div className="text-center">
-          <p className="text-lg font-medium mb-2">Plugin</p>
-          <p className="text-sm">Configure the plugin URL in settings</p>
+          <p className="text-lg font-medium mb-2">{t("plugin.fallbackTitle")}</p>
+          <p className="text-sm">{t("plugin.fallbackDescription")}</p>
         </div>
       </div>
     );
@@ -87,7 +89,7 @@ export function AgentControlPlaneView() {
         flex: 1,
         minHeight: "calc(100vh - 56px)",
       }}
-      title={activePlugin?.display_name ?? "Plugin"}
+      title={activePlugin?.display_name ?? t("plugin.fallbackTitle")}
       allow="clipboard-write"
     />
   );

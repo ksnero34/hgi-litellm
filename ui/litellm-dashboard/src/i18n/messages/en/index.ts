@@ -7,6 +7,7 @@ import { gatewayMessages } from "./gateway";
 import { accessMessages } from "./access";
 import { authMessages } from "./auth";
 import { playgroundAgentsMessages } from "./playgroundAgents";
+import { identityMessages } from "./identity";
 import type { MessageCatalog } from "../types";
 
 const areaCatalogs: readonly MessageCatalog[] = [
@@ -18,6 +19,7 @@ const areaCatalogs: readonly MessageCatalog[] = [
   authMessages,
   settingsMessages,
   playgroundAgentsMessages,
+  identityMessages,
 ];
 
 export const enMessages: MessageCatalog = {

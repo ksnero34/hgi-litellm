@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AccessGroupsPage } from "./AccessGroupsPage";
 import type { AccessGroupResponse } from "@/app/(dashboard)/hooks/accessGroups/useAccessGroups";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 
 const mockAccessGroups: AccessGroupResponse[] = [
   {
@@ -89,6 +91,17 @@ describe("AccessGroupsPage", () => {
   it("should render", () => {
     renderWithProviders(<AccessGroupsPage />);
     expect(screen.getByRole("heading", { name: "Access Groups" })).toBeInTheDocument();
+  });
+
+  it("renders the access group page in Korean", async () => {
+    localStorage.setItem(languageStorageKey, "ko");
+    await i18n.changeLanguage("ko");
+
+    renderWithProviders(<AccessGroupsPage />);
+
+    expect(screen.getByRole("heading", { name: "액세스 그룹" })).toBeInTheDocument();
+    expect(screen.getByText("조직의 리소스 권한을 관리합니다")).toBeInTheDocument();
+    expect(screen.getByText("액세스 그룹 생성")).toBeInTheDocument();
   });
 
   it("should display page title and subtitle", () => {

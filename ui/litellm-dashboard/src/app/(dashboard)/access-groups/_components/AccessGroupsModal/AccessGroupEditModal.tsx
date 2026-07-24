@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { Modal, Form } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
+import { useTranslation } from "react-i18next";
 import { AccessGroupBaseForm, AccessGroupFormValues } from "./AccessGroupBaseForm";
 import { useEditAccessGroup, AccessGroupUpdateParams } from "@/app/(dashboard)/hooks/accessGroups/useEditAccessGroup";
 import { AccessGroupResponse } from "@/app/(dashboard)/hooks/accessGroups/useAccessGroups";
@@ -13,6 +14,7 @@ interface AccessGroupEditModalProps {
 }
 
 export function AccessGroupEditModal({ visible, accessGroup, onCancel, onSuccess }: AccessGroupEditModalProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<AccessGroupFormValues>();
   const editMutation = useEditAccessGroup();
 
@@ -45,7 +47,9 @@ export function AccessGroupEditModal({ visible, accessGroup, onCancel, onSuccess
           { accessGroupId: accessGroup.access_group_id, params },
           {
             onSuccess: () => {
-              MessageManager.success("Access group updated successfully");
+              MessageManager.success(
+                t("identity.accessGroups.modal.editSuccess", { defaultValue: "Access group updated successfully" }),
+              );
               onSuccess?.();
               onCancel();
             },
@@ -57,13 +61,13 @@ export function AccessGroupEditModal({ visible, accessGroup, onCancel, onSuccess
 
   return (
     <Modal
-      title="Edit Access Group"
+      title={t("identity.accessGroups.modal.editTitle", { defaultValue: "Edit Access Group" })}
       open={visible}
       onOk={handleOk}
       onCancel={onCancel}
       width={700}
-      okText="Save Changes"
-      cancelText="Cancel"
+      okText={t("identity.common.saveChanges", { defaultValue: "Save Changes" })}
+      cancelText={t("identity.common.cancel", { defaultValue: "Cancel" })}
       confirmLoading={editMutation.isPending}
       destroyOnHidden
     >

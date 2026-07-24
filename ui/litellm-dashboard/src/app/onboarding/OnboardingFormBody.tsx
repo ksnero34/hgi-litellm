@@ -22,7 +22,7 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError, 
     <div className="mx-auto w-full max-w-md mt-10">
       <Card>
         <Typography.Title level={5} className="text-center mb-5">
-          LLM Gateway
+          {t("app.name")}
         </Typography.Title>
         <Typography.Title level={3}>
           {variant === "reset_password" ? t("auth.onboarding.resetPassword.title") : t("auth.onboarding.signup.title")}

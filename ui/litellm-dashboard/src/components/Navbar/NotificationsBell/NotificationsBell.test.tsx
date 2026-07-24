@@ -2,10 +2,12 @@ import { renderWithProviders, screen } from "../../../../tests/test-utils";
 import { NotificationsBell, AGENT_PLATFORM_URL } from "./NotificationsBell";
 import React from "react";
 import userEvent from "@testing-library/user-event";
+import { languageStorageKey } from "@/i18n/resources";
 
 describe("NotificationsBell", () => {
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem(languageStorageKey, "en");
   });
 
   it("should open notifications with Agent Platform details and GitHub link", async () => {

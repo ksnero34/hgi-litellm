@@ -18,6 +18,7 @@ import {
 import { ArrowLeftIcon, BotIcon, EditIcon, KeyIcon, LayersIcon, ServerIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
 import DefaultProxyAdminTag from "@/components/common_components/DefaultProxyAdminTag";
+import { useTranslation } from "react-i18next";
 import { AccessGroupEditModal } from "./AccessGroupsModal/AccessGroupEditModal";
 
 const { Title, Text } = Typography;
@@ -29,6 +30,7 @@ interface AccessGroupDetailProps {
 }
 
 export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailProps) {
+  const { t, i18n } = useTranslation();
   const { data: accessGroup, isLoading } = useAccessGroupDetails(accessGroupId);
   const { token } = theme.useToken();
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -61,7 +63,7 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
         }}
       >
         <Button icon={<ArrowLeftIcon size={16} />} onClick={onBack} type="text" style={{ marginBottom: 16 }} />
-        <Empty description="Access group not found" />
+        <Empty description={t("identity.accessGroups.details.notFound", { defaultValue: "Access group not found" })} />
       </Content>
     );
   }
@@ -85,7 +87,7 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
       label: (
         <Flex align="center" gap={8}>
           <LayersIcon size={16} />
-          Models
+          {t("identity.accessGroups.details.models", { defaultValue: "Models" })}
           <Tag style={{ marginInlineEnd: 0 }}>{modelIds?.length}</Tag>
         </Flex>
       ),
@@ -103,7 +105,11 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
             )}
           />
         ) : (
-          <Empty description="No models assigned to this group" />
+          <Empty
+            description={t("identity.accessGroups.details.emptyModels", {
+              defaultValue: "No models assigned to this group",
+            })}
+          />
         ),
     },
     {
@@ -111,7 +117,7 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
       label: (
         <Flex align="center" gap={8}>
           <ServerIcon size={16} />
-          MCP Servers
+          {t("identity.accessGroups.details.mcpServers", { defaultValue: "MCP Servers" })}
           <Tag>{mcpServerIds?.length}</Tag>
         </Flex>
       ),
@@ -129,7 +135,11 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
             )}
           />
         ) : (
-          <Empty description="No MCP servers assigned to this group" />
+          <Empty
+            description={t("identity.accessGroups.details.emptyMcpServers", {
+              defaultValue: "No MCP servers assigned to this group",
+            })}
+          />
         ),
     },
     {
@@ -137,7 +147,7 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
       label: (
         <Flex align="center" gap={8}>
           <BotIcon size={16} />
-          Agents
+          {t("identity.accessGroups.details.agents", { defaultValue: "Agents" })}
           <Tag>{agentIds?.length}</Tag>
         </Flex>
       ),
@@ -155,7 +165,11 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
             )}
           />
         ) : (
-          <Empty description="No agents assigned to this group" />
+          <Empty
+            description={t("identity.accessGroups.details.emptyAgents", {
+              defaultValue: "No agents assigned to this group",
+            })}
+          />
         ),
     },
   ];
@@ -178,34 +192,40 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
               {accessGroup.access_group_name}
             </Title>
             <Text type="secondary">
-              ID: <Text copyable>{accessGroup.access_group_id}</Text>
+              {t("identity.accessGroups.details.id", { defaultValue: "ID" })}:{" "}
+              <Text copyable>{accessGroup.access_group_id}</Text>
             </Text>
           </div>
         </div>
         <Button type="primary" icon={<EditIcon size={16} />} onClick={handleEdit}>
-          Edit Access Group
+          {t("identity.accessGroups.details.edit", { defaultValue: "Edit Access Group" })}
         </Button>
       </div>
 
       {/* Group Details */}
       <Row style={{ marginBottom: 24 }}>
         <Card>
-          <Descriptions title="Group Details" column={1}>
-            <Descriptions.Item label="Description">{accessGroup.description || "—"}</Descriptions.Item>
-            <Descriptions.Item label="Created">
-              {new Date(accessGroup.created_at).toLocaleString()}
+          <Descriptions
+            title={t("identity.accessGroups.details.groupDetails", { defaultValue: "Group Details" })}
+            column={1}
+          >
+            <Descriptions.Item label={t("identity.accessGroups.details.description", { defaultValue: "Description" })}>
+              {accessGroup.description || t("identity.common.none", { defaultValue: "—" })}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("identity.accessGroups.details.created", { defaultValue: "Created" })}>
+              {new Date(accessGroup.created_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US")}
               {accessGroup.created_by && (
                 <Text>
-                  &nbsp;{"by"}&nbsp;
+                  &nbsp;{t("identity.common.by", { defaultValue: "by" })}&nbsp;
                   <DefaultProxyAdminTag userId={accessGroup.created_by} />
                 </Text>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="Last Updated">
-              {new Date(accessGroup.updated_at).toLocaleString()}
+            <Descriptions.Item label={t("identity.accessGroups.details.updated", { defaultValue: "Last Updated" })}>
+              {new Date(accessGroup.updated_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US")}
               {accessGroup.updated_by && (
                 <Text>
-                  &nbsp;{"by"}&nbsp;
+                  &nbsp;{t("identity.common.by", { defaultValue: "by" })}&nbsp;
                   <DefaultProxyAdminTag userId={accessGroup.updated_by} />
                 </Text>
               )}
@@ -221,14 +241,19 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
             title={
               <Flex align="center" gap={8}>
                 <KeyIcon size={16} />
-                Attached Keys
+                {t("identity.accessGroups.details.attachedKeys", { defaultValue: "Attached Keys" })}
                 <Tag>{keyIds?.length}</Tag>
               </Flex>
             }
             extra={
               keyIds?.length > MAX_PREVIEW ? (
                 <Button type="link" onClick={() => setShowAllKeys(!showAllKeys)}>
-                  {showAllKeys ? "Show Less" : `View All (${keyIds?.length})`}
+                  {showAllKeys
+                    ? t("identity.accessGroups.details.showLess", { defaultValue: "Show Less" })
+                    : t("identity.accessGroups.details.viewAll", {
+                        defaultValue: "View All ({{count}})",
+                        count: keyIds.length,
+                      })}
                 </Button>
               ) : null
             }
@@ -244,7 +269,10 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
                 ))}
               </Flex>
             ) : (
-              <Empty description="No keys attached" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty
+                description={t("identity.accessGroups.details.emptyKeys", { defaultValue: "No keys attached" })}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
             )}
           </Card>
         </Col>
@@ -253,14 +281,19 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
             title={
               <Flex align="center" gap={8}>
                 <UsersIcon size={16} />
-                Attached Teams
+                {t("identity.accessGroups.details.attachedTeams", { defaultValue: "Attached Teams" })}
                 <Tag>{teamIds?.length}</Tag>
               </Flex>
             }
             extra={
               teamIds?.length > MAX_PREVIEW ? (
                 <Button type="link" onClick={() => setShowAllTeams(!showAllTeams)}>
-                  {showAllTeams ? "Show Less" : `View All (${teamIds?.length})`}
+                  {showAllTeams
+                    ? t("identity.accessGroups.details.showLess", { defaultValue: "Show Less" })
+                    : t("identity.accessGroups.details.viewAll", {
+                        defaultValue: "View All ({{count}})",
+                        count: teamIds.length,
+                      })}
                 </Button>
               ) : null
             }
@@ -276,7 +309,10 @@ export function AccessGroupDetail({ accessGroupId, onBack }: AccessGroupDetailPr
                 ))}
               </Flex>
             ) : (
-              <Empty description="No teams attached" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty
+                description={t("identity.accessGroups.details.emptyTeams", { defaultValue: "No teams attached" })}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
             )}
           </Card>
         </Col>

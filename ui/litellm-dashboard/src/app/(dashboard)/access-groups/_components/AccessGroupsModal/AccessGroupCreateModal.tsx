@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Form } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
+import { useTranslation } from "react-i18next";
 import { AccessGroupBaseForm, AccessGroupFormValues } from "./AccessGroupBaseForm";
 import {
   useCreateAccessGroup,
@@ -14,6 +15,7 @@ interface AccessGroupCreateModalProps {
 }
 
 export function AccessGroupCreateModal({ visible, onCancel, onSuccess }: AccessGroupCreateModalProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<AccessGroupFormValues>();
   const createMutation = useCreateAccessGroup();
 
@@ -31,7 +33,9 @@ export function AccessGroupCreateModal({ visible, onCancel, onSuccess }: AccessG
 
         createMutation.mutate(params, {
           onSuccess: () => {
-            MessageManager.success("Access group created successfully");
+            MessageManager.success(
+              t("identity.accessGroups.modal.createSuccess", { defaultValue: "Access group created successfully" }),
+            );
             form.resetFields();
             onSuccess?.();
             onCancel();
@@ -43,13 +47,13 @@ export function AccessGroupCreateModal({ visible, onCancel, onSuccess }: AccessG
 
   return (
     <Modal
-      title="Create Access Group"
+      title={t("identity.accessGroups.modal.createTitle", { defaultValue: "Create Access Group" })}
       open={visible}
       onOk={handleOk}
       onCancel={onCancel}
       width={700}
-      okText="Create Group"
-      cancelText="Cancel"
+      okText={t("identity.accessGroups.modal.createConfirm", { defaultValue: "Create Group" })}
+      cancelText={t("identity.common.cancel", { defaultValue: "Cancel" })}
       confirmLoading={createMutation.isPending}
       destroyOnClose
     >

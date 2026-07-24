@@ -6,13 +6,22 @@ import { koMessages } from "./messages/ko";
 import { resources } from "./resources";
 
 const migratedPrefixes = [
+  "account.",
   "access.",
+  "app.",
   "auth.",
   "gateway.",
   "guardrails.",
+  "identity.",
+  "language.",
+  "nav.",
+  "notifications.",
   "observability.",
+  "plugin.",
   "playgroundAgents.",
+  "section.",
   "settings.",
+  "shell.",
   "toolsModels.",
 ] as const;
 

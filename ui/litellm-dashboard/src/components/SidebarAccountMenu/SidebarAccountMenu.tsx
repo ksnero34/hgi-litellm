@@ -101,21 +101,21 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
     {
       key: "disableShowNewBadge",
       label: t("account.hideNew"),
-      ariaLabel: "Toggle hide new feature indicators",
+      ariaLabel: t("account.toggleHideNew"),
       checked: disableShowNewBadge,
       onCheckedChange: (checked: boolean) => setFlag("disableShowNewBadge", checked),
     },
     {
       key: "disableShowPrompts",
       label: t("account.hidePrompts"),
-      ariaLabel: "Toggle hide all prompts",
+      ariaLabel: t("account.toggleHidePrompts"),
       checked: disableShowPrompts,
       onCheckedChange: (checked: boolean) => setFlag("disableShowPrompts", checked),
     },
     {
       key: "disableUsageIndicator",
       label: t("account.hideUsage"),
-      ariaLabel: "Toggle hide usage indicator",
+      ariaLabel: t("account.toggleHideUsage"),
       checked: disableUsageIndicator,
       onCheckedChange: (checked: boolean) => setFlag("disableUsageIndicator", checked),
     },
@@ -165,7 +165,7 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
         data-testid="sidebar-account-menu-panel"
       >
         <div className="flex items-center gap-2 border-b border-border px-3 py-3">
-          <span className="text-[15px] font-bold tracking-tight text-foreground">LLM Gateway</span>
+          <span className="text-[15px] font-bold tracking-tight text-foreground">{t("app.name")}</span>
           <span className="flex-1" />
           {version && (
             <Badge variant="outline" className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground">

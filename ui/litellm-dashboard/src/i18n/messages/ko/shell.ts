@@ -1,6 +1,19 @@
 import type { MessageCatalog } from "../types";
 
 export const shellMessages: MessageCatalog = {
+  "app.name": "LLM Gateway",
+  "plugin.fallbackTitle": "플러그인",
+  "plugin.fallbackDescription": "설정에서 플러그인 URL을 설정하세요",
+  "shell.home": "LLM Gateway 홈",
+  "shell.gateway": "AI 게이트웨이",
+  "shell.expandSidebar": "사이드바 펼치기",
+  "shell.collapseSidebar": "사이드바 접기",
+  "shell.chatDisabled": "관리자가 설정에서 채팅을 활성화할 수 있습니다",
+  "notifications.label": "알림",
+  "notifications.agentPlatform.title": "LiteLLM 에이전트 플랫폼",
+  "notifications.agentPlatform.description":
+    "샌드박스, 지속 세션, AWS Fargate 워커를 제공하는 오픈 소스 에이전트 인프라입니다.",
+  "notifications.markAsRead": "읽음으로 표시",
   "language.label": "언어",
   "language.ko": "한국어",
   "language.en": "English",
@@ -10,6 +23,9 @@ export const shellMessages: MessageCatalog = {
   "account.hideNew": "새 기능 표시 숨기기",
   "account.hidePrompts": "프롬프트 메뉴 숨기기",
   "account.hideUsage": "사용량 표시 숨기기",
+  "account.toggleHideNew": "새 기능 표시 숨기기 전환",
+  "account.toggleHidePrompts": "모든 프롬프트 숨기기 전환",
+  "account.toggleHideUsage": "사용량 표시 숨기기 전환",
   "account.logout": "로그아웃",
   "account.menu": "계정 메뉴 — {{role}} — {{identity}} 로그인",
   "account.unknownRole": "알 수 없는 역할",

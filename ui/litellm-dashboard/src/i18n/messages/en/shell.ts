@@ -1,6 +1,19 @@
 import type { MessageCatalog } from "../types";
 
 export const shellMessages: MessageCatalog = {
+  "app.name": "LLM Gateway",
+  "plugin.fallbackTitle": "Plugin",
+  "plugin.fallbackDescription": "Configure the plugin URL in settings",
+  "shell.home": "LLM Gateway home",
+  "shell.gateway": "AI Gateway",
+  "shell.expandSidebar": "Expand sidebar",
+  "shell.collapseSidebar": "Collapse sidebar",
+  "shell.chatDisabled": "Admins can enable in Settings",
+  "notifications.label": "Notifications",
+  "notifications.agentPlatform.title": "LiteLLM Agent Platform",
+  "notifications.agentPlatform.description":
+    "Open-source agent infrastructure with sandboxes, durable sessions, and workers on AWS Fargate.",
+  "notifications.markAsRead": "Mark as read",
   "language.label": "Language",
   "language.ko": "한국어",
   "language.en": "English",
@@ -10,6 +23,9 @@ export const shellMessages: MessageCatalog = {
   "account.hideNew": "Hide new feature indicators",
   "account.hidePrompts": "Hide prompts menu",
   "account.hideUsage": "Hide usage indicator",
+  "account.toggleHideNew": "Toggle hide new feature indicators",
+  "account.toggleHidePrompts": "Toggle hide all prompts",
+  "account.toggleHideUsage": "Toggle hide usage indicator",
   "account.logout": "Log out",
   "account.menu": "Account menu — {{role}} — signed in as {{identity}}",
   "account.unknownRole": "Unknown role",

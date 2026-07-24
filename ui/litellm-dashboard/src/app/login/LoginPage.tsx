@@ -135,7 +135,7 @@ function LoginPageContent() {
         <Card className="w-full max-w-lg shadow-md">
           <Space direction="vertical" size="middle" className="w-full">
             <div className="text-center">
-              <Title level={2}>LLM Gateway</Title>
+              <Title level={2}>{t("app.name")}</Title>
             </div>
 
             <Alert
@@ -162,7 +162,7 @@ function LoginPageContent() {
       <Card className="w-full max-w-lg shadow-md">
         <Space direction="vertical" size="middle" className="w-full">
           <div className="text-center">
-            <Title level={2}>LLM Gateway</Title>
+            <Title level={2}>{t("app.name")}</Title>
           </div>
 
           <div className="text-center">
