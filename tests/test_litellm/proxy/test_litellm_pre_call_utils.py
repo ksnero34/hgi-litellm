@@ -2765,7 +2765,7 @@ async def test_request_guardrails_do_not_override_key_guardrails():
         "guardrails": [],
     }
 
-    with patch("litellm.proxy.utils._premium_user_check"):
+    with patch("litellm.proxy.proxy_server.premium_user", False):
         updated_data_empty = await add_litellm_data_to_request(
             data=data_with_empty,
             request=request_mock,

@@ -2161,7 +2161,6 @@ def _add_guardrails_from_key_or_team_metadata(
     # Add key-level guardrails first
     if key_metadata and "guardrails" in key_metadata:
         if isinstance(key_metadata["guardrails"], list) and len(key_metadata["guardrails"]) > 0:
-            _premium_user_check()
             combined_guardrails.update(key_metadata["guardrails"])
 
     # Add team-level guardrails (set automatically handles duplicates)
