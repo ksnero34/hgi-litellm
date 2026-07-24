@@ -805,6 +805,33 @@ async def _await_llm_call_cancelling_on_disconnect(
         monitor.cancel()
 
 
+def _synchronize_guardrailed_proxy_request(
+    data: dict,
+    logging_obj: LiteLLMLoggingObj,
+) -> None:
+    proxy_server_request = data.get("proxy_server_request")
+    if not isinstance(proxy_server_request, dict):
+        return
+
+    body = proxy_server_request.get("body")
+    if not isinstance(body, dict):
+        return
+
+    excluded_fields = frozenset({"proxy_server_request", "secret_fields", "litellm_logging_obj", "pii_tokens"})
+    synchronized_body = {key: data[key] for key in tuple(body) if key in data and key not in excluded_fields}
+    for metadata_key in ("metadata", "litellm_metadata"):
+        metadata = synchronized_body.get(metadata_key)
+        if isinstance(metadata, dict):
+            synchronized_body[metadata_key] = {key: value for key, value in metadata.items() if key != "pii_tokens"}
+
+    body.clear()
+    body.update(synchronized_body)
+    logging_obj.litellm_params["proxy_server_request"] = proxy_server_request
+    model_call_litellm_params = logging_obj.model_call_details.get("litellm_params")
+    if isinstance(model_call_litellm_params, dict):
+        model_call_litellm_params["proxy_server_request"] = proxy_server_request
+
+
 class ProxyBaseLLMRequestProcessing:
     def __init__(self, data: dict):
         self.data = data
@@ -1174,6 +1201,10 @@ class ProxyBaseLLMRequestProcessing:
             user_api_key_dict=user_api_key_dict,
             data=self.data,
             call_type=route_type,  # type: ignore
+        )
+        _synchronize_guardrailed_proxy_request(
+            data=self.data,
+            logging_obj=logging_obj,
         )
 
         # Apply hierarchical router_settings (Key > Team)
@@ -2294,6 +2325,7 @@ class ProxyBaseLLMRequestProcessing:
             return
         logging_obj._enqueue_deferred_logging = None  # type: ignore[union-attr]
         if exception_raised:
+            logging_obj.__dict__.pop("_deferred_logging_result", None)
             return
         try:
             _enqueue_fn()

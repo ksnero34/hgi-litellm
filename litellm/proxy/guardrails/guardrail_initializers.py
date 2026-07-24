@@ -78,7 +78,9 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
 
     filter_scope = getattr(litellm_params, "presidio_filter_scope", None) or "both"
     run_input = filter_scope in ("input", "both")
-    run_output = filter_scope in ("output", "both")
+    run_output = filter_scope in ("output", "both") and not (
+        run_input and litellm_params.output_parse_pii
+    )
 
     def _make_presidio_callback(**overrides):
         params = dict(

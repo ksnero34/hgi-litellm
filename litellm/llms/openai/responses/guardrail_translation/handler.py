@@ -28,7 +28,7 @@ Output: response.output is List[GenericResponseOutputItem] where each has:
     - text: str
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic import BaseModel
@@ -58,6 +58,8 @@ if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
     from litellm.types.llms.openai import ResponseInputParam
     from litellm.types.utils import ResponsesAPIResponse
+
+InputTextMapping = Tuple[int, Literal["content", "output", "arguments"], Optional[int]]
 
 
 class OpenAIResponsesHandler(BaseTranslation):
@@ -141,7 +143,7 @@ class OpenAIResponsesHandler(BaseTranslation):
 
         texts_to_check: List[str] = []
         images_to_check: List[str] = []
-        task_mappings: List[Tuple[int, Optional[int]]] = []
+        task_mappings: List[InputTextMapping] = []
         original_tools_list: List[Dict[str, Any]] = list(data.get("tools") or [])
 
         # Step 1: Extract all text content, images, and tools
@@ -281,34 +283,68 @@ class OpenAIResponsesHandler(BaseTranslation):
         msg_idx: int,
         texts_to_check: List[str],
         images_to_check: List[str],
-        task_mappings: List[Tuple[int, Optional[int]]],
+        task_mappings: List[InputTextMapping],
     ) -> None:
         """
         Extract text content and images from an input message.
 
         Override this method to customize text/image extraction logic.
         """
+        if not isinstance(message, dict):
+            return
+
+        if message.get("type") == "function_call_output":
+            self._extract_input_text_field(
+                message=message,
+                msg_idx=msg_idx,
+                field="output",
+                texts_to_check=texts_to_check,
+                task_mappings=task_mappings,
+            )
+            return
+
+        if message.get("type") == "function_call":
+            arguments = message.get("arguments")
+            if isinstance(arguments, str):
+                texts_to_check.append(arguments)
+                task_mappings.append((msg_idx, "arguments", None))
+            return
+
         content = message.get("content", None)
         if content is None:
             return
+        self._extract_input_text_field(
+            message=message,
+            msg_idx=msg_idx,
+            field="content",
+            texts_to_check=texts_to_check,
+            task_mappings=task_mappings,
+            images_to_check=images_to_check,
+        )
 
+    def _extract_input_text_field(
+        self,
+        message: Dict[str, Any],
+        msg_idx: int,
+        field: Literal["content", "output"],
+        texts_to_check: List[str],
+        task_mappings: List[InputTextMapping],
+        images_to_check: Optional[List[str]] = None,
+    ) -> None:
+        content = message.get(field)
         if isinstance(content, str):
-            # Simple string content
             texts_to_check.append(content)
-            task_mappings.append((msg_idx, None))
+            task_mappings.append((msg_idx, field, None))
 
         elif isinstance(content, list):
-            # List content (e.g., multimodal with text and images)
             for content_idx, content_item in enumerate(content):
                 if isinstance(content_item, dict):
-                    # Extract text
                     text_str = content_item.get("text", None)
                     if text_str is not None:
                         texts_to_check.append(text_str)
-                        task_mappings.append((msg_idx, int(content_idx)))
+                        task_mappings.append((msg_idx, field, int(content_idx)))
 
-                    # Extract images
-                    if content_item.get("type") == "image_url":
+                    if images_to_check is not None and content_item.get("type") == "image_url":
                         image_url = content_item.get("image_url", {})
                         if isinstance(image_url, dict):
                             url = image_url.get("url")
@@ -319,7 +355,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         self,
         messages: Any,  # Can be List[Dict[str, Any]] or ResponseInputParam
         responses: List[str],
-        task_mappings: List[Tuple[int, Optional[int]]],
+        task_mappings: List[InputTextMapping],
     ) -> None:
         """
         Apply guardrail responses back to input messages.
@@ -329,20 +365,19 @@ class OpenAIResponsesHandler(BaseTranslation):
         for task_idx, guardrail_response in enumerate(responses):
             mapping = task_mappings[task_idx]
             msg_idx = cast(int, mapping[0])
-            content_idx_optional = cast(Optional[int], mapping[1])
+            field = mapping[1]
+            content_idx_optional = cast(Optional[int], mapping[2])
 
-            content = messages[msg_idx].get("content", None)
+            content = messages[msg_idx].get(field, None)
             if content is None:
                 continue
 
             if isinstance(content, str) and content_idx_optional is None:
-                # Replace string content with guardrail response
-                messages[msg_idx]["content"] = guardrail_response
+                messages[msg_idx][field] = guardrail_response
 
             elif isinstance(content, list) and content_idx_optional is not None:
-                # Replace specific text item in list content
-                if isinstance(messages[msg_idx]["content"][content_idx_optional], dict):
-                    messages[msg_idx]["content"][content_idx_optional]["text"] = guardrail_response
+                if isinstance(messages[msg_idx][field][content_idx_optional], dict):
+                    messages[msg_idx][field][content_idx_optional]["text"] = guardrail_response
 
     async def process_output_response(
         self,

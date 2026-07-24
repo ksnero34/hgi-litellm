@@ -9,6 +9,7 @@
 
 
 import asyncio
+import copy
 import json
 import threading
 from collections.abc import Iterable
@@ -511,9 +512,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         # Assign sequence numbers in forward (left-to-right) order so
         # that <PERSON_1> is the first entity in the text, etc.
         sorted_forward = sorted(analyze_results, key=lambda x: x["start"])
+        sequence_start = len(pii_tokens)
         seq_map = {}
         for idx, ar in enumerate(sorted_forward, start=1):
-            seq_map[(ar["start"], ar["end"])] = idx
+            seq_map[(ar["start"], ar["end"])] = sequence_start + idx
 
         # Apply replacements in reverse order by start position so
         # that replacing later spans first does not shift earlier
@@ -918,6 +920,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         if self.output_parse_pii is False and litellm.output_parse_pii is False:
             return response
 
+        self._preserve_masked_response_for_logging(
+            response=response,
+            logging_obj=data.get("litellm_logging_obj"),
+        )
+
         if isinstance(response, ModelResponse) and not isinstance(
             response.choices[0], StreamingChoices
         ):  # /chat/completions requests
@@ -957,6 +964,14 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         text = text[:i] + original_text
                         break
         return text
+
+    @staticmethod
+    def _preserve_masked_response_for_logging(
+        response: Any,
+        logging_obj: Optional["LiteLLMLoggingObj"],
+    ) -> None:
+        if response is not None and logging_obj is not None:
+            logging_obj.set_deferred_logging_result(copy.deepcopy(response))
 
     @staticmethod
     def _is_anthropic_message_response(response: Any) -> bool:
@@ -1397,7 +1412,15 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         pii_tokens = metadata.get("pii_tokens", {})
 
         new_texts = []
-        if input_type == "response" and pii_tokens:
+        should_unmask_response = (
+            input_type == "response" and bool(pii_tokens) and self.output_parse_pii and not self.apply_to_output
+        )
+        if should_unmask_response:
+            self._preserve_masked_response_for_logging(
+                response=request_data.get("response"),
+                logging_obj=logging_obj,
+            )
+        if should_unmask_response:
             for text in texts:
                 new_texts.append(self._unmask_pii_text(text, pii_tokens))
         else:
@@ -1410,6 +1433,27 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 )
                 new_texts.append(modified_text)
         inputs["texts"] = new_texts
+
+        tool_calls = inputs.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function")
+                if not isinstance(function, dict):
+                    continue
+                arguments = function.get("arguments")
+                if not isinstance(arguments, str):
+                    continue
+                if should_unmask_response:
+                    function["arguments"] = self._unmask_pii_text(arguments, pii_tokens)
+                else:
+                    function["arguments"] = await self.check_pii(
+                        text=arguments,
+                        output_parse_pii=self.output_parse_pii,
+                        presidio_config=None,
+                        request_data=request_data or {},
+                    )
         return inputs
 
     def update_in_memory_litellm_params(self, litellm_params: LitellmParams) -> None:

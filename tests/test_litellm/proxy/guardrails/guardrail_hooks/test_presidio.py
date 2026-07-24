@@ -841,6 +841,17 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     assert any(not c.apply_to_output for c in created)
     assert any(c.apply_to_output for c in created)
 
+    created.clear()
+    params_reversible = LitellmParams(
+        guardrail="presidio",
+        mode="pre_call",
+        output_parse_pii=True,
+        presidio_filter_scope="both",
+    )
+    initialize_presidio(params_reversible, guardrail_dict)
+    assert len(created) == 2
+    assert all(not callback.apply_to_output for callback in created)
+
 
 @pytest.mark.asyncio
 async def test_empty_content_handling(
@@ -1771,6 +1782,43 @@ async def test_pii_tokens_in_metadata_used_for_unmasking():
     )
 
     assert response.choices[0].message.content == "Hello John, how can I help you?"
+
+
+@pytest.mark.asyncio
+async def test_unmasking_preserves_masked_response_for_deferred_logging():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        output_parse_pii=True,
+    )
+    logging_obj = MagicMock()
+    request_data = {
+        "metadata": {"pii_tokens": {"<KOR_NAME_1>": "홍길동"}},
+    }
+    response = ModelResponse(
+        choices=[
+            Choices(
+                message=Message(
+                    role="assistant",
+                    content="안녕하세요 <KOR_NAME_1>님",
+                ),
+                index=0,
+                finish_reason="stop",
+            )
+        ]
+    )
+
+    request_data["response"] = response
+    result = await guardrail.apply_guardrail(
+        inputs={"texts": ["안녕하세요 <KOR_NAME_1>님"]},
+        request_data=request_data,
+        input_type="response",
+        logging_obj=logging_obj,
+    )
+
+    logged_response = logging_obj.set_deferred_logging_result.call_args.args[0]
+    assert logged_response is not response
+    assert logged_response.choices[0].message.content == "안녕하세요 <KOR_NAME_1>님"
+    assert result["texts"] == ["안녕하세요 홍길동님"]
 
 
 @pytest.mark.parametrize(
@@ -2738,6 +2786,111 @@ def test_numbered_presidio_entities_use_base_label_for_reversible_tokens():
         "<KORNAME_2>": "Lee",
     }
     assert masked_entity_count == {"KORNAME": 2}
+
+
+def test_numbered_presidio_entities_remain_unique_across_messages():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        pii_entities_config={
+            "KOR_NAME": PiiAction.MASK,
+            "RSNO": PiiAction.MASK,
+        },
+    )
+    request_data = {"metadata": {}}
+    masked_entity_count = {}
+
+    first = guardrail._finalize_presidio_anonymize_numbered_tokens(
+        text="홍길동 900101-1234567",
+        analyze_results=[
+            {"entity_type": "KOR_NAME", "start": 0, "end": 3},
+            {"entity_type": "RSNO", "start": 4, "end": 18},
+        ],
+        request_data=request_data,
+        masked_entity_count=masked_entity_count,
+    )
+    second = guardrail._finalize_presidio_anonymize_numbered_tokens(
+        text="김철수 880202-2345678",
+        analyze_results=[
+            {"entity_type": "KOR_NAME", "start": 0, "end": 3},
+            {"entity_type": "RSNO", "start": 4, "end": 18},
+        ],
+        request_data=request_data,
+        masked_entity_count=masked_entity_count,
+    )
+
+    assert first == "<KOR_NAME_1> <RSNO_2>"
+    assert second == "<KOR_NAME_3> <RSNO_4>"
+    assert request_data["metadata"]["pii_tokens"] == {
+        "<KOR_NAME_1>": "홍길동",
+        "<RSNO_2>": "900101-1234567",
+        "<KOR_NAME_3>": "김철수",
+        "<RSNO_4>": "880202-2345678",
+    }
+    assert (
+        guardrail._unmask_pii_text(first, request_data["metadata"]["pii_tokens"])
+        == "홍길동 900101-1234567"
+    )
+    assert (
+        guardrail._unmask_pii_text(second, request_data["metadata"]["pii_tokens"])
+        == "김철수 880202-2345678"
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_guardrail_masks_tool_call_arguments():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        mock_redacted_text={"text": '{"name":"<KOR_NAME>","rsno":"<RSNO>"}'},
+        pii_entities_config={
+            "KOR_NAME": PiiAction.MASK,
+            "RSNO": PiiAction.MASK,
+        },
+    )
+    inputs = {
+        "texts": [],
+        "tool_calls": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": '{"name":"홍길동","rsno":"900101-1234567"}',
+                },
+            }
+        ],
+    }
+
+    result = await guardrail.apply_guardrail(
+        inputs=inputs,
+        request_data={"metadata": {}},
+        input_type="request",
+    )
+
+    assert (
+        result["tool_calls"][0]["function"]["arguments"]
+        == '{"name":"<KOR_NAME>","rsno":"<RSNO>"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_takes_precedence_over_existing_reversible_tokens():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        mock_redacted_text={"text": "<KOR_NAME>"},
+        apply_to_output=True,
+    )
+    inputs = {"texts": ["홍길동"]}
+
+    result = await guardrail.apply_guardrail(
+        inputs=inputs,
+        request_data={
+            "metadata": {
+                "pii_tokens": {"<KOR_NAME_1>": "홍길동"},
+            }
+        },
+        input_type="response",
+    )
+
+    assert result["texts"] == ["<KOR_NAME>"]
 
 
 def test_unmask_sse_bytes_chunk_replaces_text_delta():

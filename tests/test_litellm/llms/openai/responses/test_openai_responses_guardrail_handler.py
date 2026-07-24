@@ -162,6 +162,43 @@ class TestOpenAIResponsesHandlerInputProcessing:
         )
 
     @pytest.mark.asyncio
+    async def test_process_input_masks_function_arguments_and_outputs(self):
+        handler = OpenAIResponsesHandler()
+        guardrail = MockGuardrail(guardrail_name="test")
+        data = {
+            "input": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "lookup",
+                    "arguments": '{"resident":"900101-1234567"}',
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": "홍길동의 주민번호는 900101-1234567",
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_2",
+                    "output": [
+                        {
+                            "type": "input_text",
+                            "text": "홍길동의 주민번호는 900101-1234567",
+                        }
+                    ],
+                },
+            ],
+            "model": "gpt-4",
+        }
+
+        result = await handler.process_input_messages(data, guardrail)
+
+        assert result["input"][0]["arguments"].endswith("[GUARDRAILED]")
+        assert result["input"][1]["output"].endswith("[GUARDRAILED]")
+        assert result["input"][2]["output"][0]["text"].endswith("[GUARDRAILED]")
+
+    @pytest.mark.asyncio
     async def test_process_input_with_empty_content(self):
         """Test processing input with empty or None content"""
         handler = OpenAIResponsesHandler()
