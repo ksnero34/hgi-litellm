@@ -99,13 +99,8 @@ def test_max_migration_timestamp_empty_set():
     assert _max_migration_timestamp(set()) == 0
 
 
-def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
-    """v1 (default) continues to call _resolve_all_migrations on the happy path.
-
-    This is the existing buggy behavior — we're not fixing it in v1, only
-    offering v2 as opt-in. This test pins the default so that a future
-    inadvertent default flip is caught.
-    """
+@pytest.mark.parametrize("stdout", ["Applied migration.\n", "No pending migrations to apply\n"])
+def test_v1_default_always_calls_resolve_all_migrations(monkeypatch, tmp_path, stdout):
     monkeypatch.setattr(ProxyExtrasDBManager, "_get_prisma_dir", lambda: str(tmp_path))
     (tmp_path / "schema.prisma").write_text("// stub")
 
@@ -113,8 +108,10 @@ def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
     # applied, which is the code path that triggers the legacy post-migration
     # sanity check (a call to _resolve_all_migrations).
     class FakeResult:
-        stdout = "Applied migration.\n"
-        stderr = ""
+        pass
+
+    FakeResult.stdout = stdout
+    FakeResult.stderr = ""
 
     def fake_run(cmd, *args, **kwargs):
         return FakeResult()
@@ -129,7 +126,7 @@ def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
 
     ok = ProxyExtrasDBManager.setup_database(use_migrate=True)  # v2 flag NOT set
     assert ok is True
-    assert resolve_called["n"] == 1, "v1 default should still invoke the legacy path"
+    assert resolve_called["n"] == 1
 
 
 def test_v2_db_push_wraps_subprocess_error_as_runtime_error(monkeypatch, tmp_path):

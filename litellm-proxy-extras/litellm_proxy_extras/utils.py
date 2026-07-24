@@ -286,23 +286,25 @@ class ProxyExtrasDBManager:
         # 1. Generate migration SQL for the diff between DB and schema
         try:
             logger.info("Generating migration diff between DB and schema.prisma...")
-            with open(diff_sql_path, "w") as f:
-                subprocess.run(
-                    [
-                        _get_prisma_command(),
-                        "migrate",
-                        "diff",
-                        "--from-url",
-                        diff_url,
-                        "--to-schema-datamodel",
-                        schema_path,
-                        "--script",
-                    ],
-                    check=True,
-                    timeout=60,
-                    stdout=f,
-                    env=_get_prisma_env(),
-                )
+            result = subprocess.run(
+                [
+                    _get_prisma_command(),
+                    "migrate",
+                    "diff",
+                    "--from-url",
+                    diff_url,
+                    "--to-schema-datamodel",
+                    schema_path,
+                    "--script",
+                ],
+                check=True,
+                timeout=60,
+                capture_output=True,
+                text=True,
+                env=_get_prisma_env(),
+            )
+            if result.stdout.strip():
+                diff_sql_path.write_text(result.stdout)
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to generate migration diff: {e.stderr}")
         except subprocess.TimeoutExpired:
@@ -720,14 +722,6 @@ class ProxyExtrasDBManager:
                         logger.info(f"prisma migrate deploy stdout: {result.stdout}")
 
                         logger.info("prisma migrate deploy completed")
-
-                        # Skip sanity check when deploy reports no pending migrations —
-                        # DB already matches schema, no drift to correct.
-                        if "No pending migrations to apply" in result.stdout:
-                            logger.info(
-                                "No pending migrations — skipping post-migration sanity check"
-                            )
-                            return True
 
                         # Run sanity check to ensure DB matches schema
                         logger.info("Running post-migration sanity check...")

@@ -25,6 +25,8 @@ from typing import (
     overload,
 )
 
+import httpx
+
 import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.caching import DualCache, RedisCache
@@ -1566,7 +1568,10 @@ class DBSpendUpdateWriter:
                             return
 
                         try:
-                            async with prisma_client.db.batch_() as batcher:
+                            async with (
+                                prisma_client.db.tx(timeout=timedelta(seconds=60)) as db_transaction,
+                                db_transaction.batch_() as batcher,
+                            ):
                                 for _, transaction in transactions_to_process.items():
                                     entity_id = transaction.get(entity_id_field)
 
@@ -1692,6 +1697,12 @@ class DBSpendUpdateWriter:
 
                         break
 
+                    except httpx.ReadTimeout as e:
+                        _raise_failed_update_spend_exception(
+                            e=e,
+                            start_time=start_time,
+                            proxy_logging_obj=proxy_logging_obj,
+                        )
                     except DB_CONNECTION_ERROR_TYPES as e:
                         if i >= n_retry_times:
                             _raise_failed_update_spend_exception(

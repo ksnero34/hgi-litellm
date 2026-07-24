@@ -72,6 +72,10 @@ def test_load_project_manifest():
         "virtual-key-controls",
         "purview",
         "closed-network-ui",
+        "presidio-custom-entities",
+        "dashboard-i18n",
+        "usage-performance-metrics",
+        "upstream-runtime-fixes",
         "maintenance-tooling",
     }
 

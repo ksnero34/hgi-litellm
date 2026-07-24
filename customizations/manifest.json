@@ -265,6 +265,7 @@
         "litellm-proxy-extras/litellm_proxy_extras/schema.prisma",
         "litellm-proxy-extras/litellm_proxy_extras/migrations/20260723000000_add_daily_performance_metrics/",
         "litellm-proxy-extras/litellm_proxy_extras/migrations/20260723120000_add_spend_log_policy_index/",
+        "litellm-proxy-extras/litellm_proxy_extras/migrations/20260724000000_repair_daily_performance_metrics/",
         "litellm/proxy/db/db_spend_update_writer.py",
         "litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py",
         "litellm/proxy/guardrails/usage_endpoints.py",
@@ -285,6 +286,17 @@
         "ui/litellm-dashboard/src/components/common_components/chartUtils.tsx",
         "ui/litellm-dashboard/src/components/activity_metrics.test.tsx",
         "ui/litellm-dashboard/src/components/activity_metrics.tsx"
+      ],
+      "remove_paths": []
+    },
+    {
+      "name": "upstream-runtime-fixes",
+      "commit": "fix(hgi): backport responses and spend reliability fixes",
+      "paths": [
+        "litellm/main.py",
+        "litellm-proxy-extras/litellm_proxy_extras/utils.py",
+        "tests/test_litellm/test_main.py",
+        "litellm-proxy-extras/tests/test_setup_database_fail_fast.py"
       ],
       "remove_paths": []
     },
