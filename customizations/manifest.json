@@ -10,6 +10,7 @@
       "commit": "chore(hgi): remove enterprise distribution",
       "paths": [
         "Dockerfile",
+        "docker-compose.yml",
         "docker/Dockerfile.database",
         "docker/Dockerfile.non_root",
         "pyproject.toml",
