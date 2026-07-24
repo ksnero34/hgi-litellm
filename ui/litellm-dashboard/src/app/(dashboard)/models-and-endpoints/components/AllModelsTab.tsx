@@ -206,7 +206,7 @@ const AllModelsTab = ({
     try {
       setDeleteLoading(true);
       await modelDeleteCall(accessToken, deleteModalModelId);
-      NotificationsManager.success("Model deleted successfully");
+      NotificationsManager.success(t("modelManagement.modelDeleted"));
       queryClient.invalidateQueries({ queryKey: ["models", "list"] });
       refetchModels();
     } catch (error) {
@@ -225,7 +225,7 @@ const AllModelsTab = ({
     try {
       setPausingModelId(modelId);
       await modelPatchUpdateCall(accessToken, { blocked }, modelId);
-      NotificationsManager.success(blocked ? "Model paused" : "Model resumed");
+      NotificationsManager.success(t(blocked ? "modelManagement.modelPaused" : "modelManagement.modelResumed"));
       // invalidateQueries already schedules a refetch for active observers
       // on this key — no need to also call refetchModels() (would double-fetch).
       queryClient.invalidateQueries({ queryKey: ["models", "list"] });
@@ -381,7 +381,7 @@ const AllModelsTab = ({
                     <div className="relative w-64">
                       <input
                         type="text"
-                        placeholder="Search model names..."
+                        placeholder={t("modelManagement.searchModelNames")}
                         data-testid="model-search-input"
                         className="w-full px-3 py-2 pl-8 border rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         value={modelNameSearch}
@@ -415,7 +415,7 @@ const AllModelsTab = ({
                           d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
                         />
                       </svg>
-                      Filters
+                      {t("modelManagement.filters")}
                     </button>
 
                     {/* Reset Filters Button */}
@@ -431,7 +431,7 @@ const AllModelsTab = ({
                           d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                         />
                       </svg>
-                      Reset Filters
+                      {t("modelManagement.resetFilters")}
                     </button>
                   </div>
 
@@ -439,7 +439,7 @@ const AllModelsTab = ({
                   <Button
                     icon={<SettingOutlined />}
                     onClick={() => setIsModelSettingsModalVisible(true)}
-                    title="Model Settings"
+                    title={t("modelManagement.modelSettings")}
                   />
                 </div>
 
@@ -452,11 +452,11 @@ const AllModelsTab = ({
                         className="w-full"
                         value={selectedModelGroup ?? "all"}
                         onChange={(value) => setSelectedModelGroup(value === "all" ? "all" : value)}
-                        placeholder="Filter by Public Model Name"
+                        placeholder={t("modelManagement.filterPublicName")}
                         showSearch
                         options={[
-                          { value: "all", label: "All Models" },
-                          { value: "wildcard", label: "Wildcard Models (*)" },
+                          { value: "all", label: t("modelManagement.allModels") },
+                          { value: "wildcard", label: t("modelManagement.wildcardModels") },
                           ...availableModelGroups.map((group, idx) => ({
                             value: group,
                             label: group,
@@ -471,10 +471,10 @@ const AllModelsTab = ({
                         className="w-full"
                         value={selectedModelAccessGroupFilter ?? "all"}
                         onChange={(value) => setSelectedModelAccessGroupFilter(value === "all" ? null : value)}
-                        placeholder="Filter by Model Access Group"
+                        placeholder={t("modelManagement.filterAccessGroup")}
                         showSearch
                         options={[
-                          { value: "all", label: "All Model Access Groups" },
+                          { value: "all", label: t("modelManagement.allAccessGroups") },
                           ...availableModelAccessGroups.map((accessGroup, idx) => ({
                             value: accessGroup,
                             label: accessGroup,
@@ -492,8 +492,12 @@ const AllModelsTab = ({
                   ) : (
                     <span data-testid="models-results-count" className="text-sm text-gray-700">
                       {paginationMeta.total_count > 0
-                        ? `Showing ${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, paginationMeta.total_count)} of ${paginationMeta.total_count} results`
-                        : "Showing 0 results"}
+                        ? t("modelManagement.showingResults", {
+                            start: (currentPage - 1) * pageSize + 1,
+                            end: Math.min(currentPage * pageSize, paginationMeta.total_count),
+                            total: paginationMeta.total_count,
+                          })
+                        : t("modelManagement.showingNoResults")}
                     </span>
                   )}
 
@@ -571,28 +575,28 @@ const AllModelsTab = ({
 
       <DeleteResourceModal
         isOpen={!!deleteModalModelId}
-        title="Delete Model"
-        alertMessage="This action cannot be undone."
-        message="Are you sure you want to delete this model?"
-        resourceInformationTitle="Model Information"
+        title={t("modelManagement.deleteModel")}
+        alertMessage={t("modelManagement.cannotUndo")}
+        message={t("modelManagement.deleteModelConfirm")}
+        resourceInformationTitle={t("modelManagement.modelInformation")}
         resourceInformation={
           modelToDelete
             ? [
                 {
-                  label: "Model Name",
-                  value: modelToDelete.model_name || "Not Set",
+                  label: t("modelManagement.modelName"),
+                  value: modelToDelete.model_name || t("modelManagement.notSet"),
                 },
                 {
-                  label: "LiteLLM Model Name",
-                  value: modelToDelete.litellm_model_name || "Not Set",
+                  label: t("modelManagement.litellmModelName"),
+                  value: modelToDelete.litellm_model_name || t("modelManagement.notSet"),
                 },
                 {
-                  label: "Provider",
-                  value: modelToDelete.provider || "Not Set",
+                  label: t("modelManagement.provider").replace(":", ""),
+                  value: modelToDelete.provider || t("modelManagement.notSet"),
                 },
                 {
-                  label: "Created By",
-                  value: modelToDelete.model_info?.created_by || "Not Set",
+                  label: t("modelManagement.createdBy"),
+                  value: modelToDelete.model_info?.created_by || t("modelManagement.notSet"),
                 },
               ]
             : []

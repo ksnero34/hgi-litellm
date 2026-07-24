@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Text, Button, Icon, Title } from "@tremor/react";
 import { deletePassThroughEndpointsCall, getPassThroughEndpointsCall } from "./networking";
 import { Badge, Tooltip } from "antd";
@@ -68,6 +69,7 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
   modelData,
   premiumUser,
 }) => {
+  const { t } = useTranslation();
   const [generalSettings, setGeneralSettings] = useState<passThroughItem[]>([]);
   const [selectedEndpointId, setSelectedEndpointId] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -110,7 +112,7 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
       const updatedSettings = generalSettings.filter((setting) => setting.id !== endpointToDelete);
       setGeneralSettings(updatedSettings);
 
-      NotificationsManager.success("Endpoint deleted successfully.");
+      NotificationsManager.success(t("operations.passThrough.deleted"));
     } catch (error) {
       console.error("Error deleting the endpoint:", error);
       NotificationsManager.fromBackend("Error deleting the endpoint: " + error);
@@ -140,18 +142,18 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
       cell: (info: any) => <IdCell value={info.row.original.id} onClick={setSelectedEndpointId} />,
     },
     {
-      header: "Path",
+      header: t("operations.passThrough.path"),
       accessorKey: "path",
     },
     {
-      header: "Target",
+      header: t("operations.passThrough.target"),
       accessorKey: "target",
       cell: (info: any) => <Text>{info.getValue()}</Text>,
     },
     {
       header: () => (
         <div className="flex items-center gap-1">
-          <span>Methods</span>
+          <span>{t("operations.passThrough.methods")}</span>
           <Tooltip title="HTTP methods supported by this endpoint">
             <InformationCircleIcon className="w-4 h-4 text-gray-400 cursor-help" />
           </Tooltip>
@@ -189,12 +191,12 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
       ),
     },
     {
-      header: "Headers",
+      header: t("operations.passThrough.headers"),
       accessorKey: "headers",
       cell: (info: any) => <PasswordField value={info.getValue() || {}} />,
     },
     {
-      header: "Actions",
+      header: t("operations.cost.actions"),
       id: "actions",
       cell: ({ row }) => (
         <div className="flex space-x-1">
@@ -225,7 +227,7 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
     const selectedEndpoint = generalSettings.find((endpoint) => endpoint.id === selectedEndpointId);
 
     if (!selectedEndpoint) {
-      return <div>Endpoint not found</div>;
+      return <div>{t("operations.passThrough.notFound")}</div>;
     }
 
     return (
@@ -243,8 +245,8 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
   return (
     <div>
       <div>
-        <Title>Pass Through Endpoints</Title>
-        <Text className="text-tremor-content">Configure and manage your pass-through endpoints</Text>
+        <Title>{t("operations.passThrough.title")}</Title>
+        <Text className="text-tremor-content">{t("operations.passThrough.subtitle")}</Text>
       </div>
 
       <AddPassThroughEndpoint
@@ -258,7 +260,7 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
         data={generalSettings}
         columns={columns}
         isLoading={false}
-        noDataMessage="No pass-through endpoints configured"
+        noDataMessage={t("operations.passThrough.empty")}
       />
 
       {isDeleteModalOpen && (
@@ -278,7 +280,9 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="sm:flex sm:items-start">
                   <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Delete Pass-Through Endpoint</h3>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      {t("operations.passThrough.deleteTitle")}
+                    </h3>
                     <div className="mt-2">
                       <p className="text-sm text-gray-500">
                         Are you sure you want to delete this pass-through endpoint? This action cannot be undone.
@@ -291,7 +295,7 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
                 <Button onClick={confirmDelete} color="red" className="ml-2">
                   Delete
                 </Button>
-                <Button onClick={cancelDelete}>Cancel</Button>
+                <Button onClick={cancelDelete}>{t("operations.common.cancel")}</Button>
               </div>
             </div>
           </div>

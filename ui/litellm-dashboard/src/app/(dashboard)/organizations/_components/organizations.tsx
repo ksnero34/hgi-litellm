@@ -27,6 +27,7 @@ import {
 import { Form, Input, Modal, Select as Select2, Tooltip } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DateCell, IdCell, MoneyCell } from "@/components/shared/table_cells";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
 import TableIconActionButton from "@/components/common_components/IconActionButton/TableIconActionButtons/TableIconActionButton";
@@ -69,6 +70,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
   handleRefreshClick,
   premiumUser,
 }) => {
+  const { t } = useTranslation();
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [editOrg, setEditOrg] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -117,7 +119,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
     try {
       setIsDeleting(true);
       await organizationDeleteCall(accessToken, orgToDelete);
-      NotificationsManager.success("Organization deleted successfully");
+      NotificationsManager.success(t("identityAdmin.organization.deleted"));
 
       setIsDeleteModalOpen(false);
       setOrgToDelete(null);
@@ -162,7 +164,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
       }
 
       await organizationCreateCall(accessToken, values);
-      NotificationsManager.success("Organization created successfully");
+      NotificationsManager.success(t("identityAdmin.organization.created"));
       setIsOrgModalVisible(false);
       form.resetFields();
       await refetchOrganizations();
@@ -216,7 +218,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
             <TabGroup className="gap-2 h-[75vh] w-full">
               <TabList className="flex justify-between mt-2 w-full items-center">
                 <div className="flex">
-                  <Tab>Your Organizations</Tab>
+                  <Tab>{t("identityAdmin.organization.yourOrganizations")}</Tab>
                 </div>
                 <div className="flex items-center space-x-2">
                   {lastRefreshed && <Text>Last Refreshed: {lastRefreshed}</Text>}
@@ -231,7 +233,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
               </TabList>
               <TabPanels>
                 <TabPanel>
-                  <Text>Click on &ldquo;Organization ID&rdquo; to view organization details.</Text>
+                  <Text>{t("identityAdmin.organization.clickId")}</Text>
                   <Grid numItems={1} className="gap-2 pt-2 pb-2 h-[75vh] w-full mt-2">
                     <Col numColSpan={1}>
                       <Card className="w-full mx-auto flex-auto overflow-hidden overflow-y-auto max-h-[50vh]">
@@ -249,15 +251,15 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                         <Table>
                           <TableHead>
                             <TableRow>
-                              <TableHeaderCell>Organization ID</TableHeaderCell>
-                              <TableHeaderCell>Organization Name</TableHeaderCell>
-                              <TableHeaderCell>Created</TableHeaderCell>
-                              <TableHeaderCell>Spend (USD)</TableHeaderCell>
-                              <TableHeaderCell>Budget (USD)</TableHeaderCell>
-                              <TableHeaderCell>Models</TableHeaderCell>
-                              <TableHeaderCell>TPM / RPM Limits</TableHeaderCell>
-                              <TableHeaderCell>Info</TableHeaderCell>
-                              <TableHeaderCell>Actions</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.id")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.name")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.createdColumn")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.spend")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.budget")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.models")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.limits")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.info")}</TableHeaderCell>
+                              <TableHeaderCell>{t("identityAdmin.organization.actions")}</TableHeaderCell>
                             </TableRow>
                           </TableHead>
 
@@ -281,7 +283,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                         <MoneyCell
                                           value={org.litellm_budget_table?.max_budget}
                                           decimals={2}
-                                          emptyText="Unlimited"
+                                          emptyText={t("identityAdmin.common.unlimited")}
                                           showZero
                                         />
                                       </TableCell>
@@ -298,7 +300,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                             <div className="flex flex-col">
                                               {org.models.length === 0 ? (
                                                 <Badge size={"xs"} className="mb-1" color="red">
-                                                  <Text>All Proxy Models</Text>
+                                                  <Text>{t("identityAdmin.organization.allProxyModels")}</Text>
                                                 </Badge>
                                               ) : (
                                                 <>
@@ -327,7 +329,9 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                                       {org.models.slice(0, 3).map((model, index) =>
                                                         model === "all-proxy-models" ? (
                                                           <Badge key={index} size={"xs"} color="red">
-                                                            <Text>All Proxy Models</Text>
+                                                            <Text>
+                                                              {t("identityAdmin.organization.allProxyModels")}
+                                                            </Text>
                                                           </Badge>
                                                         ) : (
                                                           <Badge key={index} size={"xs"} color="blue">
@@ -355,7 +359,9 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                                           {org.models.slice(3).map((model, index) =>
                                                             model === "all-proxy-models" ? (
                                                               <Badge key={index + 3} size={"xs"} color="red">
-                                                                <Text>All Proxy Models</Text>
+                                                                <Text>
+                                                                  {t("identityAdmin.organization.allProxyModels")}
+                                                                </Text>
                                                               </Badge>
                                                             ) : (
                                                               <Badge key={index + 3} size={"xs"} color="blue">
@@ -382,12 +388,12 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                           TPM:{" "}
                                           {org.litellm_budget_table?.tpm_limit
                                             ? org.litellm_budget_table?.tpm_limit
-                                            : "Unlimited"}
+                                            : t("identityAdmin.common.unlimited")}
                                           <br />
                                           RPM:{" "}
                                           {org.litellm_budget_table?.rpm_limit
                                             ? org.litellm_budget_table?.rpm_limit
-                                            : "Unlimited"}
+                                            : t("identityAdmin.common.unlimited")}
                                         </Text>
                                       </TableCell>
                                       <TableCell>
@@ -398,7 +404,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                           <>
                                             <TableIconActionButton
                                               variant="Edit"
-                                              tooltipText="Edit organization"
+                                              tooltipText={t("identityAdmin.organization.edit")}
                                               onClick={() => {
                                                 setSelectedOrgId(org.organization_id);
                                                 setEditOrg(true);
@@ -406,7 +412,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                             />
                                             <TableIconActionButton
                                               variant="Delete"
-                                              tooltipText="Delete organization"
+                                              tooltipText={t("identityAdmin.organization.delete")}
                                               onClick={() => handleDelete(org.organization_id)}
                                             />
                                           </>
@@ -426,7 +432,13 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
           )}
         </Col>
       </Grid>
-      <Modal title="Create Organization" visible={isOrgModalVisible} width={800} footer={null} onCancel={handleCancel}>
+      <Modal
+        title={t("identityAdmin.organization.create")}
+        visible={isOrgModalVisible}
+        width={800}
+        footer={null}
+        onCancel={handleCancel}
+      >
         <Form form={form} onFinish={handleCreate} labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} labelAlign="left">
           <Form.Item
             label="Organization Name"
@@ -513,17 +525,17 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
           </Form.Item>
 
           <div style={{ textAlign: "right", marginTop: "10px" }}>
-            <Button type="submit">Create Organization</Button>
+            <Button type="submit">{t("identityAdmin.organization.create")}</Button>
           </div>
         </Form>
       </Modal>
 
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
-        title="Delete Organization?"
-        message="Are you sure you want to delete this organization? This action cannot be undone."
-        resourceInformationTitle="Organization Information"
-        resourceInformation={[{ label: "Organization ID", value: orgToDelete, code: true }]}
+        title={t("identityAdmin.organization.deleteTitle")}
+        message={t("identityAdmin.organization.deleteMessage")}
+        resourceInformationTitle={t("identityAdmin.organization.information")}
+        resourceInformation={[{ label: t("identityAdmin.organization.id"), value: orgToDelete, code: true }]}
         onCancel={cancelDelete}
         onOk={confirmDelete}
         confirmLoading={isDeleting}

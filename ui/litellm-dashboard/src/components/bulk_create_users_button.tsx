@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Text } from "@tremor/react";
 import { Button, Modal, Table, Upload, Typography } from "antd";
 import {
@@ -52,6 +53,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
   possibleUIRoles,
   onUsersCreated,
 }) => {
+  const { t } = useTranslation();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [parsedData, setParsedData] = useState<UserData[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -454,33 +456,33 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
 
   const columns = [
     {
-      title: "Row",
+      title: t("identityAdmin.bulk.row"),
       dataIndex: "rowNumber",
       key: "rowNumber",
       width: 80,
     },
     {
-      title: "Email",
+      title: t("identityAdmin.bulk.email"),
       dataIndex: "user_email",
       key: "user_email",
     },
     {
-      title: "Role",
+      title: t("identityAdmin.bulk.role"),
       dataIndex: "user_role",
       key: "user_role",
     },
     {
-      title: "Teams",
+      title: t("identityAdmin.bulk.teams"),
       dataIndex: "teams",
       key: "teams",
     },
     {
-      title: "Budget",
+      title: t("identityAdmin.bulk.budget"),
       dataIndex: "max_budget",
       key: "max_budget",
     },
     {
-      title: "Status",
+      title: t("identityAdmin.bulk.status"),
       key: "status",
       render: (_: any, record: UserData) => {
         if (!record.isValid) {
@@ -488,21 +490,21 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
             <div>
               <div className="flex items-center">
                 <XCircleIcon className="h-5 w-5 text-red-500 mr-2" />
-                <span className="text-red-500">Invalid</span>
+                <span className="text-red-500">{t("identityAdmin.bulk.invalid")}</span>
               </div>
               {record.error && <span className="text-sm text-red-500 ml-7">{record.error}</span>}
             </div>
           );
         }
         if (!record.status || record.status === "pending") {
-          return <span className="text-gray-500">Pending</span>;
+          return <span className="text-gray-500">{t("identityAdmin.bulk.pending")}</span>;
         }
         if (record.status === "success") {
           return (
             <div>
               <div className="flex items-center">
                 <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                <span className="text-green-500">Success</span>
+                <span className="text-green-500">{t("identityAdmin.bulk.success")}</span>
               </div>
               {record.invitation_link && (
                 <div className="mt-1">
@@ -510,9 +512,11 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                     <span className="text-xs text-gray-500 truncate max-w-[150px]">{record.invitation_link}</span>
                     <CopyToClipboard
                       text={record.invitation_link}
-                      onCopy={() => NotificationsManager.success("Invitation link copied!")}
+                      onCopy={() => NotificationsManager.success(t("identityAdmin.bulk.invitationCopied"))}
                     >
-                      <button className="ml-1 text-blue-500 text-xs hover:text-blue-700">Copy</button>
+                      <button className="ml-1 text-blue-500 text-xs hover:text-blue-700">
+                        {t("identityAdmin.bulk.copy")}
+                      </button>
                     </CopyToClipboard>
                   </div>
                 </div>
@@ -524,7 +528,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
           <div>
             <div className="flex items-center">
               <XCircleIcon className="h-5 w-5 text-red-500 mr-2" />
-              <span className="text-red-500">Failed</span>
+              <span className="text-red-500">{t("identityAdmin.bulk.failed")}</span>
             </div>
             {record.error && <span className="text-sm text-red-500 ml-7">{JSON.stringify(record.error)}</span>}
           </div>
@@ -540,7 +544,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
       </Button>
 
       <Modal
-        title="Bulk Invite Users"
+        title={t("identityAdmin.bulk.inviteTitle")}
         open={isModalVisible}
         width={800}
         onCancel={() => setIsModalVisible(false)}
@@ -555,7 +559,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                 <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-3">
                   1
                 </div>
-                <h3 className="text-lg font-medium">Download and fill the template</h3>
+                <h3 className="text-lg font-medium">{t("identityAdmin.bulk.downloadTemplate")}</h3>
               </div>
 
               <div className="ml-11 mb-6">
@@ -633,7 +637,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                 <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-3">
                   2
                 </div>
-                <h3 className="text-lg font-medium">Upload your completed CSV</h3>
+                <h3 className="text-lg font-medium">{t("identityAdmin.bulk.uploadTitle")}</h3>
               </div>
 
               <div className="ml-11">
@@ -678,7 +682,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                           <div className="w-full bg-gray-200 rounded-full h-1.5">
                             <div className="bg-blue-500 h-1.5 rounded-full w-full animate-pulse"></div>
                           </div>
-                          <span className="ml-2 text-xs text-blue-600">Processing...</span>
+                          <span className="ml-2 text-xs text-blue-600">{t("identityAdmin.bulk.processing")}</span>
                         </div>
                       )
                     )}
@@ -687,10 +691,10 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                   <Upload beforeUpload={handleFileUpload} accept=".csv" maxCount={1} showUploadList={false}>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer">
                       <UploadOutlined className="text-3xl text-gray-400 mb-2" />
-                      <p className="mb-1">Drag and drop your CSV file here</p>
-                      <p className="text-sm text-gray-500 mb-3">or</p>
-                      <Button size="small">Browse files</Button>
-                      <p className="text-xs text-gray-500 mt-4">Only CSV files (.csv) are supported</p>
+                      <p className="mb-1">{t("identityAdmin.bulk.dragDrop")}</p>
+                      <p className="text-sm text-gray-500 mb-3">{t("identityAdmin.bulk.or")}</p>
+                      <Button size="small">{t("identityAdmin.bulk.browse")}</Button>
+                      <p className="text-xs text-gray-500 mt-4">{t("identityAdmin.bulk.csvOnly")}</p>
                     </div>
                   </Upload>
                 )}
@@ -723,8 +727,8 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                 </div>
                 <h3 className="text-lg font-medium">
                   {parsedData.some((user) => user.status === "success" || user.status === "failed")
-                    ? "User Creation Results"
-                    : "Review and create users"}
+                    ? t("identityAdmin.bulk.results")
+                    : t("identityAdmin.bulk.review")}
                 </h3>
               </div>
 
@@ -754,7 +758,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                   <div className="flex items-center">
                     {parsedData.some((user) => user.status === "success" || user.status === "failed") ? (
                       <div className="flex items-center">
-                        <Text className="text-lg font-medium mr-3">Creation Summary</Text>
+                        <Text className="text-lg font-medium mr-3">{t("identityAdmin.bulk.summary")}</Text>
                         <Text className="text-sm bg-green-100 text-green-800 px-2 py-1 rounded-sm mr-2">
                           {parsedData.filter((d) => d.status === "success").length} Successful
                         </Text>
@@ -766,7 +770,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                       </div>
                     ) : (
                       <div className="flex items-center">
-                        <Text className="text-lg font-medium mr-3">User Preview</Text>
+                        <Text className="text-lg font-medium mr-3">{t("identityAdmin.bulk.preview")}</Text>
                         <Text className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-sm">
                           {parsedData.filter((d) => d.isValid).length} of {parsedData.length} users valid
                         </Text>
@@ -789,7 +793,9 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                         onClick={handleBulkCreate}
                         disabled={parsedData.filter((d) => d.isValid).length === 0 || isProcessing}
                       >
-                        {isProcessing ? "Creating..." : `Create ${parsedData.filter((d) => d.isValid).length} Users`}
+                        {isProcessing
+                          ? t("identityAdmin.bulk.creating")
+                          : t("identityAdmin.bulk.create", { count: parsedData.filter((d) => d.isValid).length })}
                       </Button>
                     </div>
                   )}
@@ -802,7 +808,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                         <CheckCircleIcon className="h-5 w-5 text-blue-500" />
                       </div>
                       <div>
-                        <Text className="font-medium text-blue-800">User creation complete</Text>
+                        <Text className="font-medium text-blue-800">{t("identityAdmin.bulk.complete")}</Text>
                         <Text className="block text-sm text-blue-700 mt-1">
                           <span className="font-medium">Next step:</span> Download the credentials file containing
                           Virtual Keys and invitation links. Users will need these Virtual Keys to make LLM requests

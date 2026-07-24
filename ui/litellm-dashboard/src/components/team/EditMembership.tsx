@@ -1,6 +1,7 @@
 import { Text, TextInput } from "@tremor/react";
 import { Button as AntButton, Form, Modal, Select } from "antd";
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import NumericalInput from "../shared/numerical_input";
 import BudgetDurationDropdown from "../common_components/budget_duration_dropdown";
 
@@ -48,6 +49,7 @@ const MemberModal = <T extends BaseMember>({
   mode,
   config,
 }: MemberModalProps<T>) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -131,7 +133,7 @@ const MemberModal = <T extends BaseMember>({
             step={field.step || 1}
             min={field.min || 0}
             style={{ width: "100%" }}
-            placeholder={field.placeholder || "Enter a numerical value"}
+            placeholder={field.placeholder || t("identityAdmin.team.numericPlaceholder")}
           />
         );
       case "select":
@@ -148,7 +150,7 @@ const MemberModal = <T extends BaseMember>({
         return (
           <Select
             mode="multiple"
-            placeholder={field.placeholder || "Select options"}
+            placeholder={field.placeholder || t("identityAdmin.team.selectOptions")}
             options={field.options}
             allowClear
           />
@@ -162,7 +164,7 @@ const MemberModal = <T extends BaseMember>({
 
   return (
     <Modal
-      title={config.title || (mode === "add" ? "Add Member" : "Edit Member")}
+      title={config.title || (mode === "add" ? t("identityAdmin.team.addMember") : t("identityAdmin.team.editMember"))}
       open={visible}
       width={1000}
       footer={null}
@@ -171,10 +173,10 @@ const MemberModal = <T extends BaseMember>({
       <Form form={form} onFinish={handleSubmit} labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} labelAlign="left">
         {config.showEmail && (
           <Form.Item
-            label="Email"
+            label={t("identityAdmin.team.email")}
             name="user_email"
             className="mb-4"
-            rules={[{ type: "email", message: "Please enter a valid email!" }]}
+            rules={[{ type: "email", message: t("identityAdmin.team.emailInvalid") }]}
           >
             <TextInput placeholder="user@example.com" />
           </Form.Item>
@@ -182,7 +184,7 @@ const MemberModal = <T extends BaseMember>({
 
         {config.showEmail && config.showUserId && (
           <div className="text-center mb-4">
-            <Text>OR</Text>
+            <Text>{t("identityAdmin.team.or")}</Text>
           </div>
         )}
 
@@ -195,15 +197,17 @@ const MemberModal = <T extends BaseMember>({
         <Form.Item
           label={
             <div className="flex items-center gap-2">
-              <span>Role</span>
+              <span>{t("identityAdmin.team.role")}</span>
               {mode === "edit" && initialData && (
-                <span className="text-gray-500 text-sm">(Current: {getRoleLabel(initialData.role)})</span>
+                <span className="text-gray-500 text-sm">
+                  {t("identityAdmin.team.currentRole", { role: getRoleLabel(initialData.role) })}
+                </span>
               )}
             </div>
           }
           name="role"
           className="mb-4"
-          rules={[{ required: true, message: "Please select a role!" }]}
+          rules={[{ required: true, message: t("identityAdmin.team.roleRequired") }]}
         >
           <Select>
             {mode === "edit" && initialData
@@ -233,10 +237,16 @@ const MemberModal = <T extends BaseMember>({
 
         <div className="text-right mt-6">
           <AntButton onClick={onCancel} className="mr-2" disabled={isSubmitting}>
-            Cancel
+            {t("identityAdmin.team.cancel")}
           </AntButton>
           <AntButton type="default" htmlType="submit" loading={isSubmitting}>
-            {mode === "add" ? (isSubmitting ? "Adding..." : "Add Member") : isSubmitting ? "Saving..." : "Save Changes"}
+            {mode === "add"
+              ? isSubmitting
+                ? t("identityAdmin.team.adding")
+                : t("identityAdmin.team.addMember")
+              : isSubmitting
+                ? t("identityAdmin.team.saving")
+                : t("identityAdmin.team.saveChanges")}
           </AntButton>
         </div>
       </Form>

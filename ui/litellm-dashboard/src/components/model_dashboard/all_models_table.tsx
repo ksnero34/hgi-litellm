@@ -11,6 +11,7 @@ import {
   OnChangeFn,
 } from "@tanstack/react-table";
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Table, TableHead, TableHeaderCell, TableBody, TableRow, TableCell } from "@tremor/react";
 import {
   TableHeaderSortDropdown,
@@ -47,6 +48,7 @@ export function AllModelsDataTable<TData, TValue>({
   enablePagination = false,
   onRowClick,
 }: AllModelsDataTableProps<TData, TValue>) {
+  const { t } = useTranslation();
   const [columnResizeMode] = React.useState<ColumnResizeMode>("onChange");
   const [columnSizing, setColumnSizing] = React.useState({});
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
@@ -207,7 +209,7 @@ export function AllModelsDataTable<TData, TValue>({
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-8 text-center">
                     <div className="text-center text-gray-500">
-                      <p>No models found</p>
+                      <p>{t("modelManagement.noModels")}</p>
                     </div>
                   </TableCell>
                 </TableRow>

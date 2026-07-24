@@ -1,5 +1,6 @@
 import moment from "moment";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SyncOutlined } from "@ant-design/icons";
 import { Button, Switch } from "antd";
 import { QUICK_SELECT_OPTIONS } from "./constants";
@@ -49,6 +50,7 @@ export function LogsTableToolbar({
   onRefetch,
   filteredLogs,
 }: LogsTableToolbarProps) {
+  const { t } = useTranslation();
   const [quickSelectOpen, setQuickSelectOpen] = useState(false);
   const quickSelectRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +77,7 @@ export function LogsTableToolbar({
             <div className="relative w-64 min-w-0 shrink-0">
               <input
                 type="text"
-                placeholder="Search by Request ID"
+                placeholder={t("observabilityExtra.logs.searchRequestId")}
                 className="w-full px-3 py-2 pl-8 border rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={searchTerm}
                 onChange={(e) => onSearchChange(e.target.value)}
@@ -148,7 +150,7 @@ export function LogsTableToolbar({
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-900">Live Tail</span>
+                <span className="text-sm font-medium text-gray-900">{t("observabilityExtra.logs.liveTail")}</span>
                 <Switch checked={isLiveTail} defaultChecked={true} onChange={onIsLiveTailChange} />
               </div>
 
@@ -157,9 +159,9 @@ export function LogsTableToolbar({
                 icon={<SyncOutlined spin={isButtonLoading} />}
                 onClick={onRefetch}
                 disabled={isButtonLoading}
-                title="Fetch data"
+                title={t("observabilityExtra.logs.fetch")}
               >
-                {isButtonLoading ? "Fetching" : "Fetch"}
+                {isButtonLoading ? t("observabilityExtra.logs.fetching") : t("observabilityExtra.logs.fetch")}
               </Button>
             </div>
 
@@ -176,7 +178,7 @@ export function LogsTableToolbar({
                     className="px-3 py-2 border rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                <span className="text-gray-500">to</span>
+                <span className="text-gray-500">{t("observabilityExtra.logs.to")}</span>
                 <div>
                   <input
                     type="datetime-local"
@@ -233,7 +235,7 @@ export function LogsTableToolbar({
       {isLiveTail && currentPage === 1 && (
         <div className="mb-4 px-4 py-2 bg-green-50 border border-green-200 rounded-md flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-green-700">Auto-refreshing every 15 seconds</span>
+            <span className="text-sm text-green-700">{t("observabilityExtra.logs.autoRefresh")}</span>
           </div>
           <button onClick={() => onIsLiveTailChange(false)} className="text-sm text-green-600 hover:text-green-800">
             Stop

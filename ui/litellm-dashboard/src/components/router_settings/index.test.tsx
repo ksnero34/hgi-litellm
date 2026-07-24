@@ -144,7 +144,7 @@ describe("RouterSettings", () => {
     });
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
-    expect(NotificationsManager.success).toHaveBeenCalledWith("router settings updated successfully");
+    expect(NotificationsManager.success).toHaveBeenCalledWith("Router settings updated successfully");
   });
 
   it("should not render or save routing_groups (owned by the Routing Groups tab)", async () => {

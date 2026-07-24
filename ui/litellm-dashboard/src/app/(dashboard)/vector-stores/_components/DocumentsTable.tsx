@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Table, Tooltip } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
 import { EyeOutlined, CopyOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -11,17 +12,18 @@ interface DocumentsTableProps {
 }
 
 const DocumentsTable: React.FC<DocumentsTableProps> = ({ documents, onRemove }) => {
+  const { t } = useTranslation();
   const handleCopyId = (uid: string) => {
     navigator.clipboard.writeText(uid);
-    MessageManager.success("Document ID copied to clipboard");
+    MessageManager.success(t("operations.vector.documents.idCopied"));
   };
 
   const getStatusBadge = (status: DocumentUpload["status"]) => {
     const statusConfig: Record<DocumentUpload["status"], { tone: StatusTone; label: string }> = {
-      uploading: { tone: "info", label: "Uploading" },
-      done: { tone: "success", label: "Ready" },
-      error: { tone: "error", label: "Error" },
-      removed: { tone: "neutral", label: "Removed" },
+      uploading: { tone: "info", label: t("operations.vector.documents.uploading") },
+      done: { tone: "success", label: t("operations.vector.documents.ready") },
+      error: { tone: "error", label: t("operations.vector.documents.error") },
+      removed: { tone: "neutral", label: t("operations.vector.documents.removed") },
     };
 
     const config: { tone: StatusTone; label: string } = statusConfig[status] ?? { tone: "neutral", label: status };
@@ -37,7 +39,7 @@ const DocumentsTable: React.FC<DocumentsTableProps> = ({ documents, onRemove }) 
 
   const columns = [
     {
-      title: "Name",
+      title: t("operations.vector.documents.name"),
       dataIndex: "name",
       key: "name",
       render: (name: string, record: DocumentUpload) => (
@@ -48,28 +50,28 @@ const DocumentsTable: React.FC<DocumentsTableProps> = ({ documents, onRemove }) 
       ),
     },
     {
-      title: "Status",
+      title: t("operations.vector.documents.status"),
       dataIndex: "status",
       key: "status",
       width: 150,
       render: (status: DocumentUpload["status"]) => getStatusBadge(status),
     },
     {
-      title: "Actions",
+      title: t("operations.vector.documents.actions"),
       key: "actions",
       width: 120,
       render: (_: any, record: DocumentUpload) => (
         <div className="flex items-center space-x-2">
-          <Tooltip title="View details">
+          <Tooltip title={t("operations.vector.documents.viewDetails")}>
             <EyeOutlined className="cursor-pointer text-gray-600 hover:text-blue-500" onClick={() => {}} />
           </Tooltip>
-          <Tooltip title="Copy ID">
+          <Tooltip title={t("operations.vector.documents.copyId")}>
             <CopyOutlined
               className="cursor-pointer text-gray-600 hover:text-blue-500"
               onClick={() => handleCopyId(record.uid)}
             />
           </Tooltip>
-          <Tooltip title="Remove">
+          <Tooltip title={t("operations.vector.documents.remove")}>
             <DeleteOutlined
               className="cursor-pointer text-gray-600 hover:text-red-500"
               onClick={() => onRemove(record.uid)}
@@ -87,7 +89,7 @@ const DocumentsTable: React.FC<DocumentsTableProps> = ({ documents, onRemove }) 
       rowKey="uid"
       pagination={false}
       locale={{
-        emptyText: "No documents uploaded yet. Upload documents above to get started.",
+        emptyText: t("operations.vector.documents.empty"),
       }}
       size="small"
     />

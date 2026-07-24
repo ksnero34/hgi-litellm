@@ -21,6 +21,7 @@ import { Button, Form, Input, Modal, Select, Tooltip } from "antd";
 import VectorStoreSelector from "./vector_store_management/VectorStoreSelector";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { copyToClipboard as utilCopyToClipboard } from "../utils/dataUtils";
 import { formItemValidateJSON, truncateString } from "../utils/textUtils";
 import CacheControlSettings from "./add_model/cache_control_settings";
@@ -77,6 +78,7 @@ export default function ModelInfoView({
   onModelUpdate,
   modelAccessGroups,
 }: ModelInfoViewProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [localModelData, setLocalModelData] = useState<any>(null);
@@ -398,12 +400,12 @@ export default function ModelInfoView({
         onModelUpdate(updatedModelData);
       }
 
-      NotificationsManager.success("Model settings updated successfully");
+      NotificationsManager.success(t("modelManagement.settingsUpdated"));
       setIsDirty(false);
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating model:", error);
-      NotificationsManager.fromBackend("Failed to update model settings");
+      NotificationsManager.fromBackend(t("modelManagement.settingsUpdateFailed"));
     } finally {
       setIsSaving(false);
     }
@@ -416,7 +418,7 @@ export default function ModelInfoView({
         <TremorButton icon={ArrowLeftIcon} variant="light" onClick={onClose} className="mb-4">
           Back to Models
         </TremorButton>
-        <Text>Loading...</Text>
+        <Text>{t("modelManagement.loading")}</Text>
       </div>
     );
   }
@@ -428,7 +430,7 @@ export default function ModelInfoView({
         <TremorButton icon={ArrowLeftIcon} variant="light" onClick={onClose} className="mb-4">
           Back to Models
         </TremorButton>
-        <Text>Model not found</Text>
+        <Text>{t("modelManagement.modelNotFound")}</Text>
       </div>
     );
   }
@@ -436,7 +438,7 @@ export default function ModelInfoView({
   const handleTestConnection = async () => {
     if (!accessToken) return;
     try {
-      NotificationsManager.info("Testing connection...");
+      NotificationsManager.info(t("modelManagement.testingConnection"));
       const response = await testConnectionRequest(
         accessToken,
         {
@@ -457,7 +459,7 @@ export default function ModelInfoView({
       );
 
       if (response.status === "success") {
-        NotificationsManager.success("Connection test successful!");
+        NotificationsManager.success(t("modelManagement.connectionSuccess"));
       } else {
         throw new Error(response?.result?.error || response?.message || "Unknown error");
       }
@@ -475,7 +477,7 @@ export default function ModelInfoView({
       setDeleteLoading(true);
       if (!accessToken) return;
       await modelDeleteCall(accessToken, modelId);
-      NotificationsManager.success("Model deleted successfully");
+      NotificationsManager.success(t("modelManagement.modelDeleted"));
 
       if (onModelUpdate) {
         onModelUpdate({
@@ -487,7 +489,7 @@ export default function ModelInfoView({
       onClose();
     } catch (error) {
       console.error("Error deleting the model:", error);
-      NotificationsManager.fromBackend("Failed to delete model");
+      NotificationsManager.fromBackend(t("modelManagement.deleteFailed"));
     } finally {
       setDeleteLoading(false);
       setIsDeleteModalOpen(false);
@@ -579,8 +581,8 @@ export default function ModelInfoView({
 
       <TabGroup>
         <TabList className="mb-6">
-          <Tab>Overview</Tab>
-          <Tab>Raw JSON</Tab>
+          <Tab>{t("modelManagement.overview")}</Tab>
+          <Tab>{t("modelManagement.rawJson")}</Tab>
         </TabList>
 
         <TabPanels>
@@ -588,7 +590,7 @@ export default function ModelInfoView({
             {/* Overview Grid */}
             <Grid numItems={1} numItemsSm={2} numItemsLg={3} className="gap-6 mb-6">
               <Card>
-                <Text>Provider</Text>
+                <Text>{t("modelManagement.provider")}</Text>
                 <div className="mt-2 flex items-center space-x-2">
                   {modelData.provider && (
                     <img
@@ -614,11 +616,11 @@ export default function ModelInfoView({
                       }}
                     />
                   )}
-                  <Title>{modelData.provider || "Not Set"}</Title>
+                  <Title>{modelData.provider || t("modelManagement.notSet")}</Title>
                 </div>
               </Card>
               <Card>
-                <Text>LiteLLM Model</Text>
+                <Text>{t("modelManagement.litellmModelName")}</Text>
                 <div className="mt-2 overflow-hidden">
                   <Tooltip title={modelData.litellm_model_name || "Not Set"}>
                     <div className="break-all text-sm font-medium leading-relaxed cursor-pointer">
@@ -628,7 +630,7 @@ export default function ModelInfoView({
                 </div>
               </Card>
               <Card>
-                <Text>Pricing</Text>
+                <Text>{t("modelManagement.pricing")}</Text>
                 <div className="mt-2">
                   <Text>Input: ${modelData.input_cost}/1M tokens</Text>
                   <Text>Output: ${modelData.output_cost}/1M tokens</Text>
@@ -672,7 +674,7 @@ export default function ModelInfoView({
             {/* Settings Card */}
             <Card>
               <div className="flex justify-between items-center mb-4">
-                <Title>Model Settings</Title>
+                <Title>{t("modelManagement.modelSettings")}</Title>
                 <div className="flex gap-2">
                   {isAutoRouter && canEditModel && !isEditing && (
                     <TremorButton onClick={() => setIsAutoRouterModalOpen(true)} className="flex items-center">
@@ -1367,26 +1369,26 @@ export default function ModelInfoView({
 
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
-        title="Delete Model"
-        alertMessage="This action cannot be undone."
-        message="Are you sure you want to delete this model?"
-        resourceInformationTitle="Model Information"
+        title={t("modelManagement.deleteModel")}
+        alertMessage={t("modelManagement.cannotUndo")}
+        message={t("modelManagement.deleteModelConfirm")}
+        resourceInformationTitle={t("modelManagement.modelInformation")}
         resourceInformation={[
           {
-            label: "Model Name",
-            value: modelData?.model_name || "Not Set",
+            label: t("modelManagement.modelName"),
+            value: modelData?.model_name || t("modelManagement.notSet"),
           },
           {
-            label: "LiteLLM Model Name",
-            value: modelData?.litellm_model_name || "Not Set",
+            label: t("modelManagement.litellmModelName"),
+            value: modelData?.litellm_model_name || t("modelManagement.notSet"),
           },
           {
-            label: "Provider",
-            value: modelData?.provider || "Not Set",
+            label: t("modelManagement.provider"),
+            value: modelData?.provider || t("modelManagement.notSet"),
           },
           {
-            label: "Created By",
-            value: modelData?.model_info?.created_by || "Not Set",
+            label: t("modelManagement.createdBy"),
+            value: modelData?.model_info?.created_by || t("modelManagement.notSet"),
           },
         ]}
         onCancel={() => setIsDeleteModalOpen(false)}

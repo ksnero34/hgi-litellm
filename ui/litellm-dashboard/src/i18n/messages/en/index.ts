@@ -8,6 +8,14 @@ import { accessMessages } from "./access";
 import { authMessages } from "./auth";
 import { playgroundAgentsMessages } from "./playgroundAgents";
 import { identityMessages } from "./identity";
+import { identityAdminMessages } from "./identityAdmin";
+import { hubSkillsMessages } from "./hubSkills";
+import { interactionExtraMessages } from "./interactionExtra";
+import { modelManagementMessages } from "./modelManagement";
+import { operationsMessages } from "./operations";
+import { observabilityExtraMessages } from "./observabilityExtra";
+import { safetyPoliciesMessages } from "./safetyPolicies";
+import { settingsExtraMessages } from "./settingsExtra";
 import type { MessageCatalog } from "../types";
 
 const areaCatalogs: readonly MessageCatalog[] = [
@@ -20,6 +28,14 @@ const areaCatalogs: readonly MessageCatalog[] = [
   settingsMessages,
   playgroundAgentsMessages,
   identityMessages,
+  identityAdminMessages,
+  hubSkillsMessages,
+  interactionExtraMessages,
+  modelManagementMessages,
+  operationsMessages,
+  observabilityExtraMessages,
+  safetyPoliciesMessages,
+  settingsExtraMessages,
 ];
 
 export const enMessages: MessageCatalog = {

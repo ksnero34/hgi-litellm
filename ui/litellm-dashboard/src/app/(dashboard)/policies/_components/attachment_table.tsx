@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow, Icon, Badge } from "@tremor/react";
 import { TrashIcon, SwitchVerticalIcon, ChevronUpIcon, ChevronDownIcon } from "@heroicons/react/outline";
 import { Tooltip, Tag } from "antd";
@@ -29,16 +30,17 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
   isAdmin,
   accessToken,
 }) => {
+  const { t } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
 
   const columns: ColumnDef<PolicyAttachment>[] = [
     {
-      header: "Attachment ID",
+      header: t("safety.policies.attachmentId"),
       accessorKey: "attachment_id",
       cell: (info: any) => <IdCell value={info.getValue()} variant="plain" />,
     },
     {
-      header: "Policy",
+      header: t("safety.policies.policy"),
       accessorKey: "policy_name",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -50,7 +52,7 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Scope",
+      header: t("safety.policies.scope"),
       accessorKey: "scope",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -69,7 +71,7 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Teams",
+      header: t("safety.policies.teams"),
       accessorKey: "teams",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -94,7 +96,7 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Keys",
+      header: t("safety.policies.keys"),
       accessorKey: "keys",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -119,7 +121,7 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Models",
+      header: t("safety.policies.models"),
       accessorKey: "models",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -144,7 +146,7 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Tags",
+      header: t("safety.policies.tags"),
       accessorKey: "tags",
       cell: ({ row }) => {
         const attachment = row.original;
@@ -169,13 +171,13 @@ const AttachmentTable: React.FC<AttachmentTableProps> = ({
       },
     },
     {
-      header: "Created At",
+      header: t("safety.policies.createdAt"),
       accessorKey: "created_at",
       cell: ({ row }) => <DateCell value={row.original.created_at} />,
     },
     {
       id: "actions",
-      header: "Actions",
+      header: t("safety.policies.actions"),
       cell: ({ row }) => {
         const attachment = row.original;
         return (

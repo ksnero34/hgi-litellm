@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Collapse } from "antd";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 
@@ -49,6 +50,7 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
   cacheReadTokens,
   cacheCreationTokens,
 }) => {
+  const { t } = useTranslation();
   const isCached = cacheHit?.toLowerCase() === "true";
   const hasTokenCounts = promptTokens !== undefined || completionTokens !== undefined;
 
@@ -97,9 +99,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
             key: "1",
             label: (
               <div className="flex items-center justify-between w-full">
-                <h3 className="text-lg font-medium text-gray-900">Cost Breakdown</h3>
+                <h3 className="text-lg font-medium text-gray-900">{t("observabilityExtra.logs.costBreakdown")}</h3>
                 <div className="flex items-center space-x-2 mr-4">
-                  <span className="text-sm text-gray-500">Total:</span>
+                  <span className="text-sm text-gray-500">{t("observabilityExtra.logs.total")}</span>
                   <span className="text-sm font-semibold text-gray-900">
                     {formatCost(totalSpend)}
                     {isCached && " (Cached)"}
@@ -124,7 +126,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                       return (
                         <>
                           <div className="flex text-sm">
-                            <span className="text-gray-600 font-medium w-1/3">Input Cost:</span>
+                            <span className="text-gray-600 font-medium w-1/3">
+                              {t("observabilityExtra.logs.inputCost")}
+                            </span>
                             <span className="text-gray-900">
                               {formatCost(rawCost)}
                               {rawInputTokens !== undefined && rawInputTokens !== null && (
@@ -136,7 +140,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                           </div>
                           {(costBreakdown?.cache_read_cost ?? 0) > 0 && (
                             <div className="flex text-sm">
-                              <span className="text-gray-600 font-medium w-1/3">Cache Read Cost:</span>
+                              <span className="text-gray-600 font-medium w-1/3">
+                                {t("observabilityExtra.logs.cacheReadCost")}
+                              </span>
                               <span className="text-gray-900">
                                 {formatCost(isCached ? 0 : costBreakdown?.cache_read_cost)}
                                 {(cacheReadTokens ?? 0) > 0 && (
@@ -149,7 +155,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                           )}
                           {(costBreakdown?.cache_creation_cost ?? 0) > 0 && (
                             <div className="flex text-sm">
-                              <span className="text-gray-600 font-medium w-1/3">Cache Write Cost:</span>
+                              <span className="text-gray-600 font-medium w-1/3">
+                                {t("observabilityExtra.logs.cacheWriteCost")}
+                              </span>
                               <span className="text-gray-900">
                                 {formatCost(isCached ? 0 : costBreakdown?.cache_creation_cost)}
                                 {(cacheCreationTokens ?? 0) > 0 && (
@@ -165,7 +173,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                     }
                     return (
                       <div className="flex text-sm">
-                        <span className="text-gray-600 font-medium w-1/3">Input Cost:</span>
+                        <span className="text-gray-600 font-medium w-1/3">
+                          {t("observabilityExtra.logs.inputCost")}
+                        </span>
                         <span className="text-gray-900">
                           {formatCost(inputCost)}
                           {promptTokens !== undefined && (
@@ -178,7 +188,7 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                     );
                   })()}
                   <div className="flex text-sm">
-                    <span className="text-gray-600 font-medium w-1/3">Output Cost:</span>
+                    <span className="text-gray-600 font-medium w-1/3">{t("observabilityExtra.logs.outputCost")}</span>
                     <span className="text-gray-900">
                       {formatCost(outputCost)}
                       {completionTokens !== undefined && (
@@ -190,7 +200,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                   </div>
                   {costBreakdown?.tool_usage_cost !== undefined && costBreakdown.tool_usage_cost > 0 && (
                     <div className="flex text-sm">
-                      <span className="text-gray-600 font-medium w-1/3">Tool Usage Cost:</span>
+                      <span className="text-gray-600 font-medium w-1/3">
+                        {t("observabilityExtra.logs.toolUsageCost")}
+                      </span>
                       <span className="text-gray-900">{formatCost(costBreakdown.tool_usage_cost)}</span>
                     </div>
                   )}
@@ -269,7 +281,9 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                 {/* Final Summary */}
                 <div className="mt-4 pt-4 border-t border-gray-200 max-w-2xl">
                   <div className="flex items-center">
-                    <span className="font-bold text-sm text-gray-900 w-1/3">Final Calculated Cost:</span>
+                    <span className="font-bold text-sm text-gray-900 w-1/3">
+                      {t("observabilityExtra.logs.finalCost")}
+                    </span>
                     <span className="text-sm font-bold text-gray-900">
                       {formatCost(totalCost)}
                       {isCached && " (Cached)"}

@@ -11,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import { Badge, Select } from "antd";
 import React from "react";
+import { useTranslation } from "react-i18next";
 export type UsageOption =
   | "global"
   | "my-usage"
@@ -45,69 +46,69 @@ interface OptionConfig {
 const OPTIONS: OptionConfig[] = [
   {
     value: "global",
-    label: "Global Usage",
-    showForAdmin: "Global Usage",
-    showForNonAdmin: "Your Usage",
-    description: "View usage across all resources",
-    descriptionForAdmin: "View usage across all resources",
-    descriptionForNonAdmin: "View your usage",
+    label: "observabilityExtra.usage.global",
+    showForAdmin: "observabilityExtra.usage.global",
+    showForNonAdmin: "observabilityExtra.usage.yours",
+    description: "observabilityExtra.usage.allResourcesDescription",
+    descriptionForAdmin: "observabilityExtra.usage.allResourcesDescription",
+    descriptionForNonAdmin: "observabilityExtra.usage.yoursDescription",
     icon: <GlobalOutlined style={{ fontSize: "16px" }} />,
   },
   {
     value: "my-usage",
-    label: "Your Usage",
-    description: "View your own usage",
+    label: "observabilityExtra.usage.yours",
+    description: "observabilityExtra.usage.ownDescription",
     icon: <UserOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
   {
     value: "organization",
-    label: "Organization Usage",
-    showForAdmin: "Organization Usage",
-    showForNonAdmin: "Your Organization Usage",
-    description: "View organization-level usage",
-    descriptionForAdmin: "View usage across all organizations",
-    descriptionForNonAdmin: "View your organization's usage",
+    label: "observabilityExtra.usage.organization",
+    showForAdmin: "observabilityExtra.usage.organization",
+    showForNonAdmin: "observabilityExtra.usage.yourOrganization",
+    description: "observabilityExtra.usage.organizationDescription",
+    descriptionForAdmin: "observabilityExtra.usage.allOrganizationsDescription",
+    descriptionForNonAdmin: "observabilityExtra.usage.yourOrganizationDescription",
     icon: <BankOutlined style={{ fontSize: "16px" }} />,
   },
   {
     value: "team",
-    label: "Team Usage",
-    description: "View usage by team",
+    label: "observabilityExtra.usage.team",
+    description: "observabilityExtra.usage.teamDescription",
     icon: <TeamOutlined style={{ fontSize: "16px" }} />,
   },
   {
     value: "customer",
-    label: "Customer Usage",
-    description: "View usage by customer accounts",
+    label: "observabilityExtra.usage.customer",
+    description: "observabilityExtra.usage.customerDescription",
     icon: <ShoppingCartOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
   {
     value: "tag",
-    label: "Tag Usage",
-    description: "View usage grouped by tags",
+    label: "observabilityExtra.usage.tag",
+    description: "observabilityExtra.usage.tagDescription",
     icon: <TagsOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
   {
     value: "agent",
-    label: "Agent Usage (A2A)",
-    description: "View usage by AI agents",
+    label: "observabilityExtra.usage.agent",
+    description: "observabilityExtra.usage.agentDescription",
     icon: <RobotOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
   {
     value: "user",
-    label: "User Usage",
-    description: "View usage by individual users",
+    label: "observabilityExtra.usage.user",
+    description: "observabilityExtra.usage.userDescription",
     icon: <UserOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
   {
     value: "user-agent-activity",
-    label: "User Agent Activity",
-    description: "View detailed user agent activity logs",
+    label: "observabilityExtra.usage.userAgentActivity",
+    description: "observabilityExtra.usage.userAgentDescription",
     icon: <LineChartOutlined style={{ fontSize: "16px" }} />,
     adminOnly: true,
   },
@@ -117,10 +118,11 @@ export const UsageViewSelect: React.FC<UsageViewSelectProps> = ({
   onChange,
   isAdmin,
   canViewTagUsage = false,
-  title = "Usage View",
-  description = "Select the usage data you want to view",
+  title,
+  description,
   "data-id": dataId,
 }) => {
+  const { t } = useTranslation();
   const getFilteredOptions = () => {
     return OPTIONS.filter((option) => {
       if (option.value === "tag" && canViewTagUsage) {
@@ -141,8 +143,8 @@ export const UsageViewSelect: React.FC<UsageViewSelectProps> = ({
       }
       return {
         value: option.value,
-        label,
-        description: desc,
+        label: t(label),
+        description: t(desc),
         icon: option.icon,
         badgeText: option.badgeText,
       };
@@ -157,8 +159,12 @@ export const UsageViewSelect: React.FC<UsageViewSelectProps> = ({
             <BarChartOutlined style={{ fontSize: "32px" }} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 mb-0.5 leading-tight">{title}</h3>
-            <p className="text-xs text-gray-600 leading-tight">{description}</p>
+            <h3 className="text-sm font-semibold text-gray-900 mb-0.5 leading-tight">
+              {title ?? t("observabilityExtra.usage.viewTitle")}
+            </h3>
+            <p className="text-xs text-gray-600 leading-tight">
+              {description ?? t("observabilityExtra.usage.viewDescription")}
+            </p>
           </div>
         </div>
         <div className="shrink-0">

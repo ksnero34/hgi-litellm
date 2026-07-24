@@ -11,6 +11,7 @@ import {
 import { Badge, Button, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@tremor/react";
 import { Tooltip } from "antd";
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DateCell, IdCell, StatusBadge } from "@/components/shared/table_cells";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import { getCategoryBadgeColor } from "@/components/claude_code_plugins/helpers";
@@ -33,23 +34,24 @@ const PluginTable: React.FC<PluginTableProps> = ({
   isAdmin,
   onPluginClick,
 }) => {
+  const { t } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    NotificationsManager.success("Copied to clipboard!");
+    NotificationsManager.success(t("hubSkills.common.copiedToClipboard"));
   };
 
   const columns: ColumnDef<Plugin>[] = [
     {
-      header: "Skill Name",
+      header: t("hubSkills.skills.name"),
       accessorKey: "name",
       cell: ({ row }) => {
         const plugin = row.original;
         return (
           <div className="flex items-center gap-2">
             <IdCell value={plugin.name} onClick={() => onPluginClick(plugin.id)} />
-            <Tooltip title="Copy Plugin ID">
+            <Tooltip title={t("hubSkills.skills.copyId")}>
               <CopyOutlined
                 onClick={(e) => {
                   e.stopPropagation();
@@ -63,18 +65,18 @@ const PluginTable: React.FC<PluginTableProps> = ({
       },
     },
     {
-      header: "Version",
+      header: t("hubSkills.common.version"),
       accessorKey: "version",
       cell: ({ row }) => {
-        const version = row.original.version || "N/A";
+        const version = row.original.version || t("hubSkills.skills.notAvailable");
         return <span className="text-xs text-gray-600">{version}</span>;
       },
     },
     {
-      header: "Description",
+      header: t("hubSkills.common.description"),
       accessorKey: "description",
       cell: ({ row }) => {
-        const description = row.original.description || "No description";
+        const description = row.original.description || t("hubSkills.skills.noDescription");
         return (
           <Tooltip title={description}>
             <span className="text-xs text-gray-600 block max-w-[300px] truncate">{description}</span>
@@ -83,14 +85,14 @@ const PluginTable: React.FC<PluginTableProps> = ({
       },
     },
     {
-      header: "Category",
+      header: t("hubSkills.common.category"),
       accessorKey: "category",
       cell: ({ row }) => {
         const category = row.original.category;
         if (!category) {
           return (
             <Badge color="gray" className="text-xs font-normal" size="xs">
-              Uncategorized
+              {t("hubSkills.skills.uncategorized")}
             </Badge>
           );
         }
@@ -103,22 +105,27 @@ const PluginTable: React.FC<PluginTableProps> = ({
       },
     },
     {
-      header: "Public",
+      header: t("hubSkills.common.public"),
       accessorKey: "enabled",
       cell: ({ row }) => {
         const plugin = row.original;
-        return <StatusBadge tone={plugin.enabled ? "success" : "neutral"} label={plugin.enabled ? "Yes" : "No"} />;
+        return (
+          <StatusBadge
+            tone={plugin.enabled ? "success" : "neutral"}
+            label={plugin.enabled ? t("hubSkills.skills.yes") : t("hubSkills.skills.no")}
+          />
+        );
       },
     },
     {
-      header: "Created At",
+      header: t("hubSkills.skills.createdAt"),
       accessorKey: "created_at",
       cell: ({ row }) => <DateCell value={row.original.created_at} />,
     },
     ...(isAdmin
       ? [
           {
-            header: "Actions",
+            header: t("hubSkills.common.actions"),
             id: "actions",
             enableSorting: false,
             cell: ({ row }: any) => {
@@ -126,7 +133,7 @@ const PluginTable: React.FC<PluginTableProps> = ({
 
               return (
                 <div className="flex items-center gap-1">
-                  <Tooltip title="Delete skill">
+                  <Tooltip title={t("hubSkills.skills.deleteTitle")}>
                     <Button
                       size="xs"
                       variant="light"
@@ -201,7 +208,7 @@ const PluginTable: React.FC<PluginTableProps> = ({
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-8 text-center">
                   <div className="text-center text-gray-500">
-                    <p>Loading...</p>
+                    <p>{t("hubSkills.common.loading")}</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -230,7 +237,7 @@ const PluginTable: React.FC<PluginTableProps> = ({
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-8 text-center">
                   <div className="text-center text-gray-500">
-                    <p>No skills found. Add one to get started.</p>
+                    <p>{t("hubSkills.skills.empty")}</p>
                   </div>
                 </TableCell>
               </TableRow>

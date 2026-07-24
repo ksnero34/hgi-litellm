@@ -41,6 +41,7 @@ import { CopyIcon, CheckIcon } from "lucide-react";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import { getBudgetDurationLabel } from "@/components/common_components/budget_duration_dropdown";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
+import { useTranslation } from "react-i18next";
 
 interface UserInfoViewProps {
   userId: string;
@@ -69,6 +70,7 @@ export default function UserInfoView({
   initialTab = 0,
   startInEditMode = false,
 }: UserInfoViewProps) {
+  const { t } = useTranslation();
   const [userData, setUserData] = useState<UserInfoV2Response | null>(null);
   const [teamDetails, setTeamDetails] = useState<TeamDisplayInfo[]>([]);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -317,9 +319,9 @@ export default function UserInfoView({
     return (
       <div className="p-4">
         <Button icon={ArrowLeftIcon} variant="light" onClick={onClose} className="mb-4">
-          Back to Users
+          {t("identityAdmin.users.back")}
         </Button>
-        <Text>Loading user data...</Text>
+        <Text>{t("identityAdmin.users.loading")}</Text>
       </div>
     );
   }
@@ -328,9 +330,9 @@ export default function UserInfoView({
     return (
       <div className="p-4">
         <Button icon={ArrowLeftIcon} variant="light" onClick={onClose} className="mb-4">
-          Back to Users
+          {t("identityAdmin.users.back")}
         </Button>
-        <Text>User not found</Text>
+        <Text>{t("identityAdmin.users.notFound")}</Text>
       </div>
     );
   }
@@ -364,7 +366,7 @@ export default function UserInfoView({
       <div className="flex justify-between items-center mb-6">
         <div>
           <Button icon={ArrowLeftIcon} variant="light" onClick={onClose} className="mb-4">
-            Back to Users
+            {t("identityAdmin.users.back")}
           </Button>
           <Title>{userData.user_email || "User"}</Title>
           <div className="flex items-center cursor-pointer">
@@ -385,7 +387,7 @@ export default function UserInfoView({
         {userRole && rolesWithWriteAccess.includes(userRole) && (
           <div className="flex items-center space-x-2">
             <Button icon={RefreshIcon} variant="secondary" onClick={handleResetPassword} className="flex items-center">
-              Reset Password
+              {t("identityAdmin.users.resetPassword")}
             </Button>
             <Button
               icon={TrashIcon}
@@ -393,7 +395,7 @@ export default function UserInfoView({
               onClick={() => setIsDeleteModalOpen(true)}
               className="flex items-center text-red-500 border-red-500 hover:text-red-600 hover:border-red-600"
             >
-              Delete User
+              {t("identityAdmin.users.delete")}
             </Button>
           </div>
         )}
@@ -423,8 +425,8 @@ export default function UserInfoView({
 
       <TabGroup defaultIndex={activeTab} onIndexChange={setActiveTab}>
         <TabList className="mb-4">
-          <Tab>Overview</Tab>
-          <Tab>Details</Tab>
+          <Tab>{t("identityAdmin.users.overview")}</Tab>
+          <Tab>{t("identityAdmin.users.details")}</Tab>
         </TabList>
 
         <TabPanels>
@@ -432,7 +434,7 @@ export default function UserInfoView({
           <TabPanel>
             <Grid numItems={1} numItemsSm={2} numItemsLg={3} className="gap-6">
               <Card>
-                <Text>Spend</Text>
+                <Text>{t("identityAdmin.users.spend")}</Text>
                 <div className="mt-2">
                   <Title>${formatNumberWithCommas(userData.spend || 0, 4)}</Title>
                   <Text>
@@ -444,7 +446,7 @@ export default function UserInfoView({
 
               <Card>
                 <div className="flex justify-between items-center mb-2">
-                  <Text>Teams</Text>
+                  <Text>{t("identityAdmin.users.teams")}</Text>
                   {isProxyAdmin && (
                     <Button icon={PlusIcon} variant="light" size="xs" onClick={handleOpenAddTeamModal}>
                       Add Team
@@ -482,7 +484,7 @@ export default function UserInfoView({
                       </Table>
                     </div>
                   ) : (
-                    <Text>No teams</Text>
+                    <Text>{t("identityAdmin.users.noTeams")}</Text>
                   )}
                   {!isTeamsExpanded && teamDetails.length > 20 && (
                     <Button variant="light" size="xs" className="mt-2" onClick={() => setIsTeamsExpanded(true)}>
@@ -498,12 +500,12 @@ export default function UserInfoView({
               </Card>
 
               <Card>
-                <Text>Personal Models</Text>
+                <Text>{t("identityAdmin.users.personalModels")}</Text>
                 <div className="mt-2">
                   {userData.models?.length && userData.models?.length > 0 ? (
                     userData.models?.map((model, index) => <Text key={index}>{model}</Text>)
                   ) : (
-                    <Text>All proxy models</Text>
+                    <Text>{t("identityAdmin.users.allProxyModels")}</Text>
                   )}
                 </div>
               </Card>
@@ -514,9 +516,9 @@ export default function UserInfoView({
           <TabPanel>
             <Card>
               <div className="flex justify-between items-center mb-4">
-                <Title>User Settings</Title>
+                <Title>{t("identityAdmin.users.settings")}</Title>
                 {!isEditing && userRole && rolesWithWriteAccess.includes(userRole) && (
-                  <Button onClick={() => setIsEditing(true)}>Edit Settings</Button>
+                  <Button onClick={() => setIsEditing(true)}>{t("identityAdmin.users.editSettings")}</Button>
                 )}
               </div>
 
@@ -554,17 +556,17 @@ export default function UserInfoView({
 
                   <div>
                     <Text className="font-medium">Email</Text>
-                    <Text>{userData.user_email || "Not Set"}</Text>
+                    <Text>{userData.user_email || t("identityAdmin.users.notSet")}</Text>
                   </div>
 
                   <div>
                     <Text className="font-medium">User Alias</Text>
-                    <Text>{userData.user_alias || "Not Set"}</Text>
+                    <Text>{userData.user_alias || t("identityAdmin.users.notSet")}</Text>
                   </div>
 
                   <div>
                     <Text className="font-medium">Global Proxy Role</Text>
-                    <Text>{userData.user_role || "Not Set"}</Text>
+                    <Text>{userData.user_role || t("identityAdmin.users.notSet")}</Text>
                   </div>
 
                   <div>

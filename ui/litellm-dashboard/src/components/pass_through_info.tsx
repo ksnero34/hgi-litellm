@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Card,
   Title,
@@ -71,6 +72,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
   premiumUser = false,
   onEndpointUpdated,
 }) => {
+  const { t } = useTranslation();
   const [endpointData, setEndpointData] = useState<PassThroughEndpoint | null>(initialEndpointData);
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -122,7 +124,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
       }
     } catch (error) {
       console.error("Error updating endpoint:", error);
-      NotificationsManager.fromBackend("Failed to update pass through endpoint");
+      NotificationsManager.fromBackend(t("operations.passThrough.updatedError"));
     }
   };
 
@@ -131,23 +133,23 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
       if (!accessToken || !endpointData?.id) return;
 
       await deletePassThroughEndpointsCall(accessToken, endpointData.id);
-      NotificationsManager.success("Pass through endpoint deleted successfully");
+      NotificationsManager.success(t("operations.passThrough.deleted"));
       onClose();
       if (onEndpointUpdated) {
         onEndpointUpdated();
       }
     } catch (error) {
       console.error("Error deleting endpoint:", error);
-      NotificationsManager.fromBackend("Failed to delete pass through endpoint");
+      NotificationsManager.fromBackend(t("operations.passThrough.deleteError"));
     }
   };
 
   if (loading) {
-    return <div className="p-4">Loading...</div>;
+    return <div className="p-4">{t("operations.passThrough.loading")}</div>;
   }
 
   if (!endpointData) {
-    return <div className="p-4">Pass through endpoint not found</div>;
+    return <div className="p-4">{t("operations.passThrough.notFound")}</div>;
   }
 
   return (
@@ -164,8 +166,8 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
 
       <TabGroup>
         <TabList className="mb-4">
-          <Tab key="overview">Overview</Tab>
-          {isAdmin ? <Tab key="settings">Settings</Tab> : <></>}
+          <Tab key="overview">{t("operations.passThrough.overview")}</Tab>
+          {isAdmin ? <Tab key="settings">{t("operations.passThrough.settings")}</Tab> : <></>}
         </TabList>
 
         <TabPanels>
@@ -173,21 +175,21 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
           <TabPanel>
             <Grid numItems={1} numItemsSm={2} numItemsLg={3} className="gap-6">
               <Card>
-                <Text>Path</Text>
+                <Text>{t("operations.passThrough.path")}</Text>
                 <div className="mt-2">
                   <Title className="font-mono">{endpointData.path}</Title>
                 </div>
               </Card>
 
               <Card>
-                <Text>Target</Text>
+                <Text>{t("operations.passThrough.target")}</Text>
                 <div className="mt-2">
                   <Title>{endpointData.target}</Title>
                 </div>
               </Card>
 
               <Card>
-                <Text>Configuration</Text>
+                <Text>{t("operations.passThrough.configuration")}</Text>
                 <div className="mt-2 space-y-2">
                   <div>
                     <Badge color={endpointData.include_subpath ? "green" : "gray"}>
@@ -237,7 +239,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
             {endpointData.headers && Object.keys(endpointData.headers).length > 0 && (
               <Card className="mt-6">
                 <div className="flex justify-between items-center">
-                  <Text className="font-medium">Headers</Text>
+                  <Text className="font-medium">{t("operations.passThrough.headers")}</Text>
                   <Badge color="blue">{Object.keys(endpointData.headers).length} headers configured</Badge>
                 </div>
                 <div className="mt-4">
@@ -277,11 +279,13 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
             <TabPanel>
               <Card>
                 <div className="flex justify-between items-center mb-4">
-                  <Title>Pass Through Endpoint Settings</Title>
+                  <Title>{t("operations.passThrough.settingsTitle")}</Title>
                   <div className="space-x-2">
                     {!isEditing && (
                       <>
-                        <TremorButton onClick={() => setIsEditing(true)}>Edit Settings</TremorButton>
+                        <TremorButton onClick={() => setIsEditing(true)}>
+                          {t("operations.passThrough.editSettings")}
+                        </TremorButton>
                         <TremorButton onClick={handleDeleteEndpoint} variant="secondary" color="red">
                           Delete Endpoint
                         </TremorButton>
@@ -379,8 +383,8 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
                     </div>
 
                     <div className="flex justify-end gap-2 mt-6">
-                      <Button onClick={() => setIsEditing(false)}>Cancel</Button>
-                      <TremorButton>Save Changes</TremorButton>
+                      <Button onClick={() => setIsEditing(false)}>{t("operations.common.cancel")}</Button>
+                      <TremorButton>{t("operations.passThrough.saveChanges")}</TremorButton>
                     </div>
                   </Form>
                 ) : (

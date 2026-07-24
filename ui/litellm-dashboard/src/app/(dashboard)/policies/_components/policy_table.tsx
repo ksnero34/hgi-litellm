@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow, Icon, Button, Badge } from "@tremor/react";
 import { TrashIcon, PencilIcon, SwitchVerticalIcon, ChevronUpIcon, ChevronDownIcon } from "@heroicons/react/outline";
 import { Tooltip, Tag } from "antd";
@@ -56,13 +57,14 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
   onViewClick,
   isAdmin = false,
 }) => {
+  const { t } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([{ id: "policy_name", desc: false }]);
 
   const rows = useMemo(() => groupPoliciesByName(policies), [policies]);
 
   const columns: ColumnDef<PolicyRow>[] = [
     {
-      header: "Name",
+      header: t("safety.policies.name"),
       accessorKey: "policy_name",
       cell: ({ row }) => {
         const { primaryPolicy, versionCount } = row.original;
@@ -90,7 +92,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
       },
     },
     {
-      header: "Description",
+      header: t("safety.policies.description"),
       accessorFn: (row) => row.primaryPolicy.description ?? "",
       cell: ({ row }) => {
         const policy = row.original.primaryPolicy;
@@ -102,7 +104,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
       },
     },
     {
-      header: "Inherits From",
+      header: t("safety.policies.inheritsFrom"),
       accessorFn: (row) => row.primaryPolicy.inherit ?? "",
       cell: ({ row }) => {
         const policy = row.original.primaryPolicy;
@@ -116,7 +118,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
       },
     },
     {
-      header: "Guardrails (Add)",
+      header: t("safety.policies.guardrailsAdd"),
       accessorFn: (row) => (row.primaryPolicy.guardrails_add ?? []).join(", "),
       cell: ({ row }) => {
         const policy = row.original.primaryPolicy;
@@ -141,7 +143,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
       },
     },
     {
-      header: "Guardrails (Remove)",
+      header: t("safety.policies.guardrailsRemove"),
       accessorFn: (row) => (row.primaryPolicy.guardrails_remove ?? []).join(", "),
       cell: ({ row }) => {
         const policy = row.original.primaryPolicy;
@@ -166,7 +168,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
       },
     },
     {
-      header: "Model Condition",
+      header: t("safety.policies.modelCondition"),
       accessorFn: (row) => {
         const m = row.primaryPolicy.condition?.model;
         return typeof m === "string" ? m : JSON.stringify(m ?? "");
@@ -184,21 +186,21 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
                 ? modelCondition.length > 20
                   ? modelCondition.slice(0, 20) + "..."
                   : modelCondition
-                : "Multiple"}
+                : t("safety.policies.multiple")}
             </code>
           </Tooltip>
         );
       },
     },
     {
-      header: "Created At",
+      header: t("safety.policies.createdAt"),
       id: "created_at",
       accessorFn: (row) => row.primaryPolicy.created_at ?? "",
       cell: ({ row }) => <DateCell value={row.original.primaryPolicy.created_at} />,
     },
     {
       id: "actions",
-      header: "Actions",
+      header: t("safety.policies.actions"),
       cell: ({ row }) => {
         const { primaryPolicy } = row.original;
         const policy = primaryPolicy;
@@ -206,7 +208,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
           <div className="flex space-x-2">
             {isAdmin && (
               <>
-                <Tooltip title="Edit policy">
+                <Tooltip title={t("safety.policies.edit")}>
                   <Icon
                     icon={PencilIcon}
                     size="sm"
@@ -214,7 +216,7 @@ const PolicyTable: React.FC<PolicyTableProps> = ({
                     className="cursor-pointer hover:text-blue-500"
                   />
                 </Tooltip>
-                <Tooltip title="Delete policy">
+                <Tooltip title={t("safety.policies.delete")}>
                   <Icon
                     icon={TrashIcon}
                     size="sm"

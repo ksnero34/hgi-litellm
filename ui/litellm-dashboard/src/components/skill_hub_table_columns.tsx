@@ -4,14 +4,16 @@ import { Tooltip } from "antd";
 import { CopyOutlined, LinkOutlined } from "@ant-design/icons";
 import { Plugin } from "./claude_code_plugins/types";
 import { StatusBadge } from "@/components/shared/table_cells";
+import type { TFunction } from "i18next";
 
 export const skillHubColumns = (
   showModal: (skill: Plugin) => void,
   copyToClipboard: (text: string) => void,
+  t: TFunction,
   publicPage: boolean = false,
 ): ColumnDef<Plugin>[] => [
   {
-    header: "Skill Name",
+    header: t("hubSkills.skills.name"),
     accessorKey: "name",
     enableSorting: true,
     sortingFn: "alphanumeric",
@@ -27,7 +29,7 @@ export const skillHubColumns = (
             >
               {skill.name}
             </button>
-            <Tooltip title="Copy skill name">
+            <Tooltip title={t("hubSkills.skills.copyName")}>
               <CopyOutlined
                 onClick={() => copyToClipboard(skill.name)}
                 className="cursor-pointer text-gray-500 hover:text-blue-500 text-xs"
@@ -42,13 +44,13 @@ export const skillHubColumns = (
     },
   },
   {
-    header: "Description",
+    header: t("hubSkills.common.description"),
     accessorKey: "description",
     enableSorting: false,
     cell: ({ row }) => <Text className="text-xs line-clamp-2">{row.original.description || "-"}</Text>,
   },
   {
-    header: "Category",
+    header: t("hubSkills.common.category"),
     accessorKey: "category",
     enableSorting: true,
     cell: ({ row }) => {
@@ -62,13 +64,13 @@ export const skillHubColumns = (
     },
   },
   {
-    header: "Domain",
+    header: t("hubSkills.common.domain"),
     accessorKey: "domain",
     enableSorting: true,
     cell: ({ row }) => <Text className="text-xs">{row.original.domain || "-"}</Text>,
   },
   {
-    header: "Source",
+    header: t("hubSkills.common.source"),
     accessorKey: "source",
     enableSorting: false,
     cell: ({ row }) => {
@@ -101,13 +103,13 @@ export const skillHubColumns = (
     },
   },
   {
-    header: "Status",
+    header: t("hubSkills.common.status"),
     accessorKey: "enabled",
     enableSorting: true,
     cell: ({ row }) => (
       <StatusBadge
         tone={row.original.enabled ? "success" : "neutral"}
-        label={row.original.enabled ? "Public" : "Draft"}
+        label={row.original.enabled ? t("hubSkills.common.public") : t("hubSkills.common.draft")}
       />
     ),
   },
