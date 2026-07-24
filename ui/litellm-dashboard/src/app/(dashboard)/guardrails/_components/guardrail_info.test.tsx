@@ -1,5 +1,6 @@
 import * as networking from "@/components/networking";
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import GuardrailInfoView from "./guardrail_info";
 
@@ -171,6 +172,70 @@ describe("Guardrail Info", () => {
       expect(getByText("PII Entity Configuration")).toBeInTheDocument();
     });
   });
+
+  it("should preserve the custom Presidio base entity label when saving settings", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue({
+      guardrail_id: "123",
+      guardrail_name: "PII Guardrail",
+      litellm_params: {
+        guardrail: "presidio",
+        mode: "pre_call",
+        default_on: true,
+        pii_entities_config: {
+          PERSON: "MASK",
+        },
+      },
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      guardrail_definition_location: "database",
+    });
+
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue({
+      supported_entities: ["PERSON", "EMAIL_ADDRESS"],
+      supported_actions: ["MASK", "BLOCK"],
+      pii_entity_categories: [],
+      supported_modes: ["pre_call", "post_call"],
+    });
+
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+    vi.mocked(networking.updateGuardrailCall).mockResolvedValue({ status: "success" });
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    await user.type(screen.getByRole("textbox", { name: "Custom PII type" }), "KORNAME");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(networking.updateGuardrailCall).toHaveBeenCalledWith(
+        "123",
+        "123",
+        expect.objectContaining({
+          litellm_params: expect.objectContaining({
+            pii_entities_config: {
+              PERSON: "MASK",
+              KORNAME: "MASK",
+            },
+          }),
+        }),
+      );
+    });
+  });
+
   it("should handle content filter updates correctly", async () => {
     // Mock the network responses
     vi.mocked(networking.getGuardrailInfo).mockResolvedValue({

@@ -132,6 +132,18 @@
       "remove_paths": []
     },
     {
+      "name": "presidio-custom-entities",
+      "commit": "feat(hgi): allow custom Presidio PII entity types",
+      "paths": [
+        "litellm/proxy/guardrails/guardrail_hooks/presidio.py",
+        "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio.py",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.test.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.test.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.tsx"
+      ],
+      "remove_paths": []
+    },
+    {
       "name": "dashboard-i18n",
       "commit": "feat(hgi): add dashboard internationalization",
       "paths": [

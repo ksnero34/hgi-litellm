@@ -158,10 +158,10 @@ const EditGuardrailForm: React.FC<EditGuardrailFormProps> = ({
       let guardrail_info: Record<string, unknown> = {};
 
       // For Presidio PII, add the entity and action configurations
-      if (values.provider === "PresidioPII" && selectedEntities.length > 0) {
+      if (values.provider === "PresidioPII") {
         const piiEntitiesConfig: { [key: string]: string } = {};
         selectedEntities.forEach((entity) => {
-          piiEntitiesConfig[entity] = selectedActions[entity] || "MASK"; // Default to MASK if no action selected
+          piiEntitiesConfig[entity] = selectedActions[entity] || "MASK";
         });
 
         litellm_params.pii_entities_config = piiEntitiesConfig;
