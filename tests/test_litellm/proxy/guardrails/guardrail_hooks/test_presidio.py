@@ -689,6 +689,48 @@ async def test_presidio_sets_guardrail_information_in_request_data():
 
 
 @pytest.mark.asyncio
+async def test_presidio_logs_input_source_event_and_run_id():
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        guardrail_name="test_presidio",
+        output_parse_pii=True,
+        mock_redacted_text={"text": "masked"},
+    )
+    request_data = {"metadata": {}}
+    inputs = {
+        "texts": ["system text", "user text"],
+        "text_sources": [
+            {
+                "type": "message",
+                "message_index": 0,
+                "role": "system",
+                "content_index": None,
+                "path": "messages[0].content",
+            },
+            {
+                "type": "message",
+                "message_index": 1,
+                "role": "user",
+                "content_index": 0,
+                "path": "messages[1].content[0].text",
+            },
+        ],
+    }
+
+    await presidio.apply_guardrail(
+        inputs=inputs,
+        request_data=request_data,
+        input_type="request",
+    )
+
+    entries = request_data["metadata"]["standard_logging_guardrail_information"]
+    assert len(entries) == 2
+    assert entries[0]["guardrail_run_id"] == entries[1]["guardrail_run_id"]
+    assert entries[0]["guardrail_event"] == "pre_call"
+    assert entries[1]["input_source"] == inputs["text_sources"][1]
+
+
+@pytest.mark.asyncio
 async def test_request_data_flows_to_apply_guardrail():
     """
     Test that request_data is correctly passed to apply_guardrail method.

@@ -36,6 +36,14 @@ interface MatchDetail {
   position?: number;
 }
 
+interface GuardrailInputSource {
+  type?: string;
+  message_index?: number;
+  role?: string;
+  content_index?: number | null;
+  path?: string;
+}
+
 interface GuardrailInformation {
   duration: number;
   end_time: number;
@@ -55,6 +63,9 @@ interface GuardrailInformation {
   patterns_checked?: number;
   alert_recipients?: string[];
   risk_score?: number;
+  guardrail_run_id?: string;
+  guardrail_event?: string;
+  input_source?: GuardrailInputSource;
 }
 
 interface GuardrailViewerProps {
@@ -115,6 +126,16 @@ const formatMode = (mode: GuardrailInformation["guardrail_mode"]): string => {
   const s = resolveMode(mode);
   if (s == null || s === "") return "—";
   return s.replace(/_/g, "-").toUpperCase();
+};
+
+const getInputSourceLabel = (source?: GuardrailInputSource): string | null => {
+  if (!source) return null;
+  const parts = [
+    source.role?.toUpperCase(),
+    source.message_index != null ? "Message " + (source.message_index + 1) : source.type,
+    source.content_index != null ? "Content " + (source.content_index + 1) : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : source.path ?? null;
 };
 
 const formatDurationMs = (seconds: number): string => {
@@ -344,17 +365,19 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
 
     // Pre-call guardrails — use modeMatches so array modes (e.g. ["pre_call", "post_call"])
     // place the entry in every matching bucket.
-    const preCalls = sorted.filter((e) => modeMatches(e.guardrail_mode, "pre_call"));
+    const preCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "pre_call"));
     const postCalls = sorted.filter(
-      (e) => modeMatches(e.guardrail_mode, "post_call") || modeMatches(e.guardrail_mode, "logging_only"),
+      (e) =>
+        modeMatches(e.guardrail_event ?? e.guardrail_mode, "post_call") ||
+        modeMatches(e.guardrail_event ?? e.guardrail_mode, "logging_only"),
     );
-    const duringCalls = sorted.filter((e) => modeMatches(e.guardrail_mode, "during_call"));
+    const duringCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "during_call"));
 
     for (const e of preCalls) {
       const offsetMs = Math.round((e.end_time - baseTime) * 1000);
       items.push({
         type: "guardrail",
-        label: `Pre-call guardrail: ${getDisplayName(e)}`,
+        label: `Pre-call guardrail: ${getDisplayName(e)}${getInputSourceLabel(e.input_source) ? ` (${getInputSourceLabel(e.input_source)})` : ""}`,
         offsetMs,
         status: isEntrySuccess(e) ? "PASSED" : "FAILED",
         isSuccess: isEntrySuccess(e),
@@ -390,7 +413,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
       const offsetMs = Math.round((e.end_time - baseTime) * 1000);
       items.push({
         type: "guardrail",
-        label: `Post-call guardrail: ${getDisplayName(e)}`,
+        label: `Post-call guardrail: ${getDisplayName(e)}${getInputSourceLabel(e.input_source) ? ` (${getInputSourceLabel(e.input_source)})` : ""}`,
         offsetMs,
         status: isEntrySuccess(e) ? "PASSED" : "FAILED",
         isSuccess: isEntrySuccess(e),
@@ -460,8 +483,9 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
   const totalMasked = getTotalMasked(entry);
   const displayName = getDisplayName(entry);
   const durationStr = formatDurationMs(entry.duration);
-  const modeStr = formatMode(entry.guardrail_mode);
+  const modeStr = formatMode(entry.guardrail_event ?? entry.guardrail_mode);
   const riskScore = getRiskScore(entry);
+  const inputSourceLabel = getInputSourceLabel(entry.input_source);
 
   const guardrailProvider = entry.guardrail_provider ?? "presidio";
   const guardrailResponse = entry.guardrail_response;
@@ -495,6 +519,12 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
         {/* Name + badges */}
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <span className="font-semibold text-gray-900 text-sm truncate">{displayName}</span>
+
+          {inputSourceLabel && (
+            <span className="px-2 py-0.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-sm text-[11px] font-medium shrink-0">
+              {inputSourceLabel}
+            </span>
+          )}
 
           <span className="px-2 py-0.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-sm text-[11px] font-semibold uppercase shrink-0">
             {modeStr}
@@ -554,6 +584,13 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
       {/* Expanded details */}
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-3">
+          {entry.input_source?.path && (
+            <div className="mb-3 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+              <div className="text-xs font-medium text-violet-700">Input source</div>
+              <div className="text-xs font-mono text-violet-900 mt-1">{entry.input_source.path}</div>
+            </div>
+          )}
+
           {/* Classification details for llm-judge */}
           {entry.classification && (
             <div className="mb-3 bg-gray-50 rounded-lg p-3 space-y-1">
@@ -640,8 +677,16 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
         : [];
   }, [data]);
 
-  const passedCount = guardrailEntries.filter(isEntrySuccess).length;
-  const allPassed = passedCount === guardrailEntries.length;
+  const runKeys = guardrailEntries.map((entry, index) => entry.guardrail_run_id ?? `legacy-${index}`);
+  const evaluatedCount = new Set(runKeys).size;
+  const failedRunKeys = new Set(
+    guardrailEntries
+      .map((entry, index) => ({ entry, runKey: runKeys[index] }))
+      .filter(({ entry }) => !isEntrySuccess(entry))
+      .map(({ runKey }) => runKey),
+  );
+  const passedCount = evaluatedCount - failedRunKeys.size;
+  const allPassed = passedCount === evaluatedCount;
 
   const totalOverheadMs = useMemo(() => {
     return Math.round(guardrailEntries.reduce((sum, e) => sum + (e.duration ?? 0), 0) * 1000);
@@ -677,8 +722,14 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
             <h3 className="text-lg font-semibold text-gray-900">Guardrails &amp; Policy Compliance</h3>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-sm text-gray-500">
-                {guardrailEntries.length} guardrail{guardrailEntries.length !== 1 ? "s" : ""} evaluated
+                {evaluatedCount} guardrail{evaluatedCount !== 1 ? "s" : ""} evaluated
               </span>
+              {guardrailEntries.length > evaluatedCount && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-500">{guardrailEntries.length} inputs scanned</span>
+                </>
+              )}
               <span className="text-gray-300">|</span>
               <span
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${

@@ -31,6 +31,7 @@ from litellm.types.utils import (
     CallTypes,
     GenericGuardrailAPIInputs,
     GuardrailEnforcementMode,
+    GuardrailInputSource,
     GuardrailStatus,
     GuardrailTracingDetail,
     GuardrailUsageAction,
@@ -751,6 +752,8 @@ class CustomGuardrail(CustomLogger):
         masked_entity_count: Optional[Dict[str, int]] = None,
         guardrail_provider: Optional[str] = None,
         event_type: Optional[GuardrailEventHooks] = None,
+        guardrail_run_id: Optional[str] = None,
+        input_source: Optional[GuardrailInputSource] = None,
         tracing_detail: Optional[GuardrailTracingDetail] = None,
         usage_action: GuardrailUsageAction | None = None,
         enforcement_mode: GuardrailEnforcementMode | None = None,
@@ -840,6 +843,9 @@ class CustomGuardrail(CustomLogger):
             guardrail_name=self.guardrail_name,
             guardrail_provider=guardrail_provider,
             guardrail_mode=guardrail_mode,
+            guardrail_run_id=guardrail_run_id,
+            guardrail_event=event_type,
+            input_source=input_source,
             guardrail_response=clean_guardrail_response,
             guardrail_status=guardrail_status,
             start_time=start_time,
@@ -1197,6 +1203,12 @@ def log_guardrail_information(func):
         self: CustomGuardrail = args[0]
         request_data: dict = kwargs.get("data") or kwargs.get("request_data") or {}
         event_type = _infer_event_type_from_function_name(func.__name__)
+        if event_type is None and func.__name__ == "apply_guardrail":
+            input_type = kwargs.get("input_type")
+            if input_type == "request":
+                event_type = GuardrailEventHooks.pre_call
+            elif input_type == "response":
+                event_type = GuardrailEventHooks.post_call
 
         # Store original inputs for comparison (for apply_guardrail functions)
         original_inputs = None

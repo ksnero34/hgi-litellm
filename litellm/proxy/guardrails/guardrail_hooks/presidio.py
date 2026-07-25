@@ -14,6 +14,7 @@ import json
 import threading
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
@@ -24,16 +25,18 @@ from typing import (
     Literal,
     Optional,
     Tuple,
+    TypedDict,
     Union,
     cast,
 )
+from uuid import uuid4
 
 import aiohttp
 
 import litellm
 from litellm import get_secret
 from litellm._logging import verbose_proxy_logger
-from litellm.types.utils import GenericGuardrailAPIInputs
+from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
@@ -63,6 +66,15 @@ from litellm.utils import (
     ModelResponse,
     ModelResponseStream,
 )
+
+
+class PresidioLogContext(TypedDict, total=False):
+    guardrail_run_id: str
+    guardrail_event: GuardrailEventHooks
+    input_source: GuardrailInputSource
+
+
+_PRESIDIO_LOG_CONTEXT: ContextVar[Optional[PresidioLogContext]] = ContextVar("presidio_log_context", default=None)
 
 
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
@@ -645,6 +657,25 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         guardrail_name=self.guardrail_name,
                     )
 
+    async def _check_pii_with_context(
+        self,
+        text: str,
+        output_parse_pii: bool,
+        presidio_config: Optional[PresidioPerRequestConfig],
+        request_data: dict,
+        log_context: PresidioLogContext,
+    ) -> str:
+        context_token = _PRESIDIO_LOG_CONTEXT.set(log_context)
+        try:
+            return await self.check_pii(
+                text=text,
+                output_parse_pii=output_parse_pii,
+                presidio_config=presidio_config,
+                request_data=request_data,
+            )
+        finally:
+            _PRESIDIO_LOG_CONTEXT.reset(context_token)
+
     async def check_pii(
         self,
         text: str,
@@ -705,6 +736,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     guardrail_json_response = [dict(item) for item in analyze_results]
             else:
                 guardrail_json_response = exception_str
+            log_context = _PRESIDIO_LOG_CONTEXT.get() or {}
             self.add_standard_logging_guardrail_information_to_request_data(
                 guardrail_provider=self.guardrail_provider,
                 guardrail_json_response=guardrail_json_response,
@@ -714,6 +746,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 end_time=datetime.now().timestamp(),
                 duration=(datetime.now() - start_time).total_seconds(),
                 masked_entity_count=masked_entity_count,
+                guardrail_run_id=log_context.get("guardrail_run_id"),
+                event_type=log_context.get("guardrail_event"),
+                input_source=log_context.get("input_source"),
             )
 
     async def async_pre_call_hook(
@@ -1405,6 +1440,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             2. When Testing the guardrail with some text, this function will be called with the input text and returns a text after applying the guardrail
         """
         texts = inputs.get("texts", [])
+        text_sources = inputs.get("text_sources", [])
+        guardrail_run_id = str(uuid4())
+        guardrail_event = GuardrailEventHooks.pre_call if input_type == "request" else GuardrailEventHooks.post_call
 
         # When input_type is "response" and pii_tokens are available,
         # unmask the text instead of masking it.
@@ -1424,19 +1462,32 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             for text in texts:
                 new_texts.append(self._unmask_pii_text(text, pii_tokens))
         else:
-            for text in texts:
-                modified_text = await self.check_pii(
+            for text_index, text in enumerate(texts):
+                input_source: GuardrailInputSource = (
+                    text_sources[text_index]
+                    if text_index < len(text_sources)
+                    else {
+                        "type": "request" if input_type == "request" else "response",
+                        "path": f"texts[{text_index}]",
+                    }
+                )
+                modified_text = await self._check_pii_with_context(
                     text=text,
                     output_parse_pii=self.output_parse_pii,
                     presidio_config=None,
                     request_data=request_data or {},
+                    log_context={
+                        "guardrail_run_id": guardrail_run_id,
+                        "guardrail_event": guardrail_event,
+                        "input_source": input_source,
+                    },
                 )
                 new_texts.append(modified_text)
         inputs["texts"] = new_texts
 
         tool_calls = inputs.get("tool_calls")
         if isinstance(tool_calls, list):
-            for tool_call in tool_calls:
+            for tool_call_index, tool_call in enumerate(tool_calls):
                 if not isinstance(tool_call, dict):
                     continue
                 function = tool_call.get("function")
@@ -1448,11 +1499,19 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 if should_unmask_response:
                     function["arguments"] = self._unmask_pii_text(arguments, pii_tokens)
                 else:
-                    function["arguments"] = await self.check_pii(
+                    function["arguments"] = await self._check_pii_with_context(
                         text=arguments,
                         output_parse_pii=self.output_parse_pii,
                         presidio_config=None,
                         request_data=request_data or {},
+                        log_context={
+                            "guardrail_run_id": guardrail_run_id,
+                            "guardrail_event": guardrail_event,
+                            "input_source": {
+                                "type": "tool_call",
+                                "path": f"tool_calls[{tool_call_index}].function.arguments",
+                            },
+                        },
                     )
         return inputs
 

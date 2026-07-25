@@ -30,6 +30,7 @@ from litellm.types.llms.openai import AllMessageValues, ChatCompletionToolParam
 from litellm.types.utils import (
     Choices,
     GenericGuardrailAPIInputs,
+    GuardrailInputSource,
     ModelResponse,
     ModelResponseStream,
     StreamingChoices,
@@ -100,6 +101,25 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
         # Step 2: Apply guardrail to all texts and tool calls in batch
         if texts_to_check or tool_calls_to_check:
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            text_sources: List[GuardrailInputSource] = [
+                {
+                    "type": "message",
+                    "message_index": message_index,
+                    "role": (
+                        messages[message_index].get("role")
+                        if isinstance(messages[message_index].get("role"), str)
+                        else "unknown"
+                    ),
+                    "content_index": content_index,
+                    "path": (
+                        f"messages[{message_index}].content"
+                        if content_index is None
+                        else f"messages[{message_index}].content[{content_index}].text"
+                    ),
+                }
+                for message_index, content_index in text_task_mappings
+            ]
+            inputs["text_sources"] = text_sources
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:

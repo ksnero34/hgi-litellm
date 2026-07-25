@@ -2697,6 +2697,14 @@ GuardrailUsageAction = Literal["passed", "flagged", "blocked"]
 GuardrailEnforcementMode = Literal["enforce", "observe"]
 
 
+class GuardrailInputSource(TypedDict, total=False):
+    type: str
+    message_index: int
+    role: str
+    content_index: Optional[int]
+    path: str
+
+
 class StandardLoggingGuardrailInformation(TypedDict, total=False):
     guardrail_name: Optional[str]
     guardrail_provider: Optional[str]
@@ -2766,6 +2774,10 @@ class StandardLoggingGuardrailInformation(TypedDict, total=False):
     or ``NONE``). Populated by the provider hook so the OTEL integration can
     surface it as a queryable span attribute without parsing the raw
     guardrail_response blob."""
+
+    guardrail_run_id: Optional[str]
+    guardrail_event: Optional[GuardrailEventHooks]
+    input_source: Optional[GuardrailInputSource]
 
 
 class EvalVerdict(TypedDict, total=False):
@@ -3763,6 +3775,7 @@ class PriorityReservationSettings(BaseModel):
 
 class GenericGuardrailAPIInputs(TypedDict, total=False):
     texts: List[str]  # extracted text from the LLM response - for basic text guardrails
+    text_sources: List[GuardrailInputSource]
     images: List[str]  # extracted images from the LLM response - for image guardrails
     tools: List[ChatCompletionToolParam]  # tools sent to the LLM
     tool_calls: Union[

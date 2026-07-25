@@ -1251,6 +1251,35 @@ class TestEventTypeLogging:
         assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
 
     @pytest.mark.asyncio
+    async def test_log_guardrail_information_infers_event_type_from_apply_guardrail(self):
+        from litellm.integrations.custom_guardrail import log_guardrail_information
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        class TestGuardrail(CustomGuardrail):
+            def __init__(self):
+                super().__init__(
+                    guardrail_name="test_apply_guardrail_event",
+                    event_hook=[GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call],
+                )
+
+            @log_guardrail_information
+            async def apply_guardrail(self, inputs, request_data, input_type):
+                return inputs
+
+        guardrail = TestGuardrail()
+        request_data = {"metadata": {}}
+
+        await guardrail.apply_guardrail(
+            inputs={"texts": ["response"]},
+            request_data=request_data,
+            input_type="response",
+        )
+
+        logged_info = request_data["metadata"]["standard_logging_guardrail_information"]
+        assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
+        assert logged_info[0]["guardrail_event"] == GuardrailEventHooks.post_call
+
+    @pytest.mark.asyncio
     async def test_log_guardrail_information_returns_none_for_unknown_function_name(
         self,
     ):

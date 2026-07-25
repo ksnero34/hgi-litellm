@@ -147,6 +147,51 @@ class MockMisalignedToolCallGuardrail(CustomGuardrail):
         )
 
 
+@pytest.mark.asyncio
+async def test_process_input_messages_includes_text_sources():
+    guardrail = MockGuardrail()
+    messages = [
+        {"role": "system", "content": "system text"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "user text"},
+                {"type": "text", "text": "environment text"},
+            ],
+        },
+    ]
+
+    await OpenAIChatCompletionsHandler().process_input_messages(
+        data={"messages": messages, "model": "test-model"},
+        guardrail_to_apply=guardrail,
+    )
+
+    assert guardrail.last_inputs is not None
+    assert guardrail.last_inputs["text_sources"] == [
+        {
+            "type": "message",
+            "message_index": 0,
+            "role": "system",
+            "content_index": None,
+            "path": "messages[0].content",
+        },
+        {
+            "type": "message",
+            "message_index": 1,
+            "role": "user",
+            "content_index": 0,
+            "path": "messages[1].content[0].text",
+        },
+        {
+            "type": "message",
+            "message_index": 1,
+            "role": "user",
+            "content_index": 1,
+            "path": "messages[1].content[1].text",
+        },
+    ]
+
+
 class TestOpenAIChatCompletionsHandlerToolsInput:
     """Test input processing with tools (function definitions)"""
 
