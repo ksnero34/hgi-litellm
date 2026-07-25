@@ -100,6 +100,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_anonymizer_api_base: Optional[str] = None,
         output_parse_pii: Optional[bool] = False,
         apply_to_output: bool = False,
+        expand_event_hook_for_output_processing: bool = True,
         presidio_ad_hoc_recognizers: Optional[str] = None,
         logging_only: Optional[bool] = None,
         pii_entities_config: Optional[Dict[Union[PiiEntityType, str], PiiAction]] = None,
@@ -122,7 +123,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         # When output_parse_pii or apply_to_output is enabled, the guardrail must
         # also run on post_call to unmask/mask the response.  Expand the event_hook
         # so should_run_guardrail returns True for both pre_call and post_call.
-        if (self.output_parse_pii or self.apply_to_output) and not logging_only:
+        if (
+            expand_event_hook_for_output_processing
+            and (self.output_parse_pii or self.apply_to_output)
+            and not logging_only
+        ):
             current_hook = self.event_hook
             if isinstance(current_hook, str) and current_hook != "post_call":
                 self.event_hook = cast(List[GuardrailEventHooks], [current_hook, "post_call"])

@@ -819,6 +819,71 @@ async def test_output_masking_apply_to_output_only(mock_user_api_key):
 
 
 @pytest.mark.asyncio
+async def test_output_scan_runs_before_reversible_token_restore(mock_user_api_key):
+    from litellm.llms.openai.chat.guardrail_translation.handler import (
+        OpenAIChatCompletionsHandler,
+    )
+
+    scanner = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        guardrail_name="test_presidio",
+        apply_to_output=True,
+        mock_redacted_text={
+            "text": "Hello <KR_PERSON_1>; generated <KR_RRN>",
+        },
+    )
+    token_restorer = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        guardrail_name="test_presidio",
+        output_parse_pii=True,
+        event_hook="post_call",
+    )
+    response = ModelResponse(
+        choices=[
+            Choices(
+                message=Message(
+                    role="assistant",
+                    content="Hello <KR_PERSON_1>; generated 900101-1234567",
+                ),
+                index=0,
+                finish_reason="stop",
+            )
+        ]
+    )
+    request_data = {
+        "metadata": {"pii_tokens": {"<KR_PERSON_1>": "홍길동"}},
+    }
+    logging_obj = MagicMock()
+    handler = OpenAIChatCompletionsHandler()
+
+    await handler.process_output_response(
+        response=response,
+        guardrail_to_apply=scanner,
+        litellm_logging_obj=logging_obj,
+        user_api_key_dict=mock_user_api_key,
+        request_data=request_data,
+    )
+    result = await handler.process_output_response(
+        response=response,
+        guardrail_to_apply=token_restorer,
+        litellm_logging_obj=logging_obj,
+        user_api_key_dict=mock_user_api_key,
+        request_data=request_data,
+    )
+
+    assert result.choices[0].message.content == "Hello 홍길동; generated <KR_RRN>"
+    logged_response = logging_obj.set_deferred_logging_result.call_args.args[0]
+    assert logged_response.choices[0].message.content == (
+        "Hello <KR_PERSON_1>; generated <KR_RRN>"
+    )
+    entries = request_data["metadata"][
+        "standard_logging_guardrail_information"
+    ]
+    assert entries
+    assert all(entry["guardrail_event"] == "post_call" for entry in entries)
+
+
+@pytest.mark.asyncio
 async def test_presidio_filter_scope_initializer(monkeypatch):
     """
     Ensure initializer respects presidio_filter_scope for input/output/both.
@@ -827,9 +892,20 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     created = []
 
     class DummyGuardrail:
-        def __init__(self, apply_to_output: bool = False, event_hook=None, **kwargs):
+        def __init__(
+            self,
+            apply_to_output: bool = False,
+            event_hook=None,
+            output_parse_pii: bool = False,
+            expand_event_hook_for_output_processing: bool = True,
+            **kwargs,
+        ):
             self.apply_to_output = apply_to_output
             self.event_hook = event_hook
+            self.output_parse_pii = output_parse_pii
+            self.expand_event_hook_for_output_processing = (
+                expand_event_hook_for_output_processing
+            )
             created.append(self)
 
         def update_in_memory_litellm_params(self, litellm_params):
@@ -888,13 +964,22 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     created.clear()
     params_reversible = LitellmParams(
         guardrail="presidio",
-        mode="pre_call",
+        mode=["pre_call", "post_call"],
         output_parse_pii=True,
         presidio_filter_scope="both",
     )
     initialize_presidio(params_reversible, guardrail_dict)
-    assert len(created) == 2
-    assert all(not callback.apply_to_output for callback in created)
+    assert len(created) == 3
+    assert created[0].apply_to_output is False
+    assert created[0].output_parse_pii is True
+    assert created[0].event_hook == "pre_call"
+    assert created[0].expand_event_hook_for_output_processing is False
+    assert created[1].apply_to_output is True
+    assert created[1].output_parse_pii is False
+    assert created[1].event_hook == "post_call"
+    assert created[2].apply_to_output is False
+    assert created[2].output_parse_pii is True
+    assert created[2].event_hook == "post_call"
 
 
 @pytest.mark.asyncio

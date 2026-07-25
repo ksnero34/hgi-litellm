@@ -78,9 +78,7 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
 
     filter_scope = getattr(litellm_params, "presidio_filter_scope", None) or "both"
     run_input = filter_scope in ("input", "both")
-    run_output = filter_scope in ("output", "both") and not (
-        run_input and litellm_params.output_parse_pii
-    )
+    run_output = filter_scope in ("output", "both")
 
     def _make_presidio_callback(**overrides):
         params = dict(
@@ -106,13 +104,10 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
     primary_callback = None
 
     if run_input:
-        primary_callback = _make_presidio_callback()
-
-        if litellm_params.output_parse_pii:
-            _make_presidio_callback(
-                output_parse_pii=True,
-                event_hook=GuardrailEventHooks.post_call.value,
-            )
+        primary_callback = _make_presidio_callback(
+            event_hook=GuardrailEventHooks.pre_call.value,
+            expand_event_hook_for_output_processing=False,
+        )
 
     if run_output:
         output_callback = _make_presidio_callback(
@@ -122,6 +117,12 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
         )
         if primary_callback is None:
             primary_callback = output_callback
+
+    if run_input and litellm_params.output_parse_pii:
+        _make_presidio_callback(
+            output_parse_pii=True,
+            event_hook=GuardrailEventHooks.post_call.value,
+        )
 
     return primary_callback
 
