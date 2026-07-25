@@ -145,13 +145,10 @@ const getInputSourceLabel = (source?: GuardrailInputSource): string | null => {
     ? INPUT_SCOPE_LABELS[source.scope] ?? source.scope.replace(/_/g, " ").toUpperCase()
     : null;
   if (scopeLabel) {
-    const parts = [
-      scopeLabel,
-      source.scope === "conversation_history" ? source.role?.toUpperCase() : null,
-      source.message_index != null ? "Message " + (source.message_index + 1) : null,
-      source.content_index != null ? "Content " + (source.content_index + 1) : null,
-    ].filter(Boolean);
-    return parts.join(" · ");
+    if (source.scope === "conversation_history" && source.role) {
+      return scopeLabel + " · " + source.role.toUpperCase();
+    }
+    return scopeLabel;
   }
   const parts = [
     source.role?.toUpperCase(),

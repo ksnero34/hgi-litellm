@@ -232,12 +232,12 @@ describe("GuardrailViewer", () => {
 
     expect(screen.getByText("1 guardrail evaluated")).toBeInTheDocument();
     expect(screen.getByText("3 inputs scanned")).toBeInTheDocument();
-    expect(screen.getByText("SYSTEM PROMPT · Message 1")).toBeInTheDocument();
-    expect(screen.getByText("CURRENT USER PROMPT · Message 2 · Content 1")).toBeInTheDocument();
-    expect(screen.getByText("ENVIRONMENT CONTEXT · Message 2 · Content 2")).toBeInTheDocument();
+    expect(screen.getByText("SYSTEM PROMPT")).toBeInTheDocument();
+    expect(screen.getByText("CURRENT USER PROMPT")).toBeInTheDocument();
+    expect(screen.getByText("ENVIRONMENT CONTEXT")).toBeInTheDocument();
     expect(screen.queryByText(/Post-call guardrail:/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByText("CURRENT USER PROMPT · Message 2 · Content 1"));
+    await user.click(screen.getByText("CURRENT USER PROMPT"));
     expect(screen.getByText("messages[1].content[0].text")).toBeInTheDocument();
   });
 
