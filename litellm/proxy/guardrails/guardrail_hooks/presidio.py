@@ -11,6 +11,7 @@
 import asyncio
 import copy
 import json
+import re
 import threading
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
@@ -78,8 +79,28 @@ _PRESIDIO_LOG_CONTEXT: ContextVar[Optional[PresidioLogContext]] = ContextVar("pr
 
 
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
+    _PII_TOKEN_PATTERN = re.compile(r"<[A-Z][A-Z0-9_]*_[0-9]+>")
+    _RESTORABLE_INPUT_SCOPES = frozenset({"conversation_history", "current_user_prompt", "current_user_context"})
     user_api_key_cache = None
     ad_hoc_recognizers = None
+
+    @classmethod
+    def _text_for_pii_analysis(cls, text: str) -> str:
+        return cls._PII_TOKEN_PATTERN.sub(
+            lambda match: " " * len(match.group()),
+            text,
+        )
+
+    @classmethod
+    def _should_create_reversible_tokens(
+        cls,
+        output_parse_pii: bool,
+        input_source: GuardrailInputSource,
+    ) -> bool:
+        scope = input_source.get("scope")
+        if scope is None:
+            return output_parse_pii
+        return output_parse_pii and scope in cls._RESTORABLE_INPUT_SCOPES
 
     @classmethod
     def get_supported_event_hooks(cls) -> List[GuardrailEventHooks]:
@@ -525,6 +546,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         if "pii_tokens" not in request_data["metadata"]:
             request_data["metadata"]["pii_tokens"] = {}
         pii_tokens = request_data["metadata"]["pii_tokens"]
+        pii_token_sources = request_data["metadata"].setdefault("pii_token_sources", {})
+        log_context = _PRESIDIO_LOG_CONTEXT.get() or {}
+        input_source = log_context.get("input_source")
 
         # Assign sequence numbers in forward (left-to-right) order so
         # that <PERSON_1> is the first entity in the text, etc.
@@ -549,6 +573,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             seq = seq_map[(start, end)]
             replacement = f"<{replacement_entity_type}_{seq}>"
             pii_tokens[replacement] = text[start:end]
+            if input_source is not None:
+                pii_token_sources[replacement] = input_source
             new_text = new_text[:start] + replacement + new_text[end:]
             masked_entity_count[replacement_entity_type] = masked_entity_count.get(replacement_entity_type, 0) + 1
         return new_text
@@ -692,6 +718,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         Calls Presidio Analyze + Anonymize endpoints for PII Analysis + Masking
         """
         start_time = datetime.now()
+        analysis_text = self._text_for_pii_analysis(text)
         analyze_results: Optional[Union[List[PresidioAnalyzeResponseItem], Dict]] = None
         status: GuardrailStatus = "success"
         masked_entity_count: Dict[str, int] = {}
@@ -702,7 +729,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             else:
                 # First get analysis results
                 analyze_results = await self.analyze_text(
-                    text=text,
+                    text=analysis_text,
                     presidio_config=presidio_config,
                     request_data=request_data,
                 )
@@ -1005,6 +1032,23 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         break
         return text
 
+    @classmethod
+    def _get_restorable_pii_tokens(
+        cls,
+        request_data: dict,
+    ) -> Dict[str, str]:
+        metadata = (request_data.get("metadata") or {}) if request_data else {}
+        pii_tokens: Dict[str, str] = metadata.get("pii_tokens", {})
+        pii_token_sources = metadata.get("pii_token_sources")
+        if not isinstance(pii_token_sources, dict):
+            return pii_tokens
+        return {
+            token: original_text
+            for token, original_text in pii_tokens.items()
+            if isinstance(pii_token_sources.get(token), dict)
+            and pii_token_sources[token].get("scope") in cls._RESTORABLE_INPUT_SCOPES
+        }
+
     @staticmethod
     def _preserve_masked_response_for_logging(
         response: Any,
@@ -1032,8 +1076,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         Process an Anthropic native message dict for PII masking/unmasking.
         Handles content blocks with type == "text".
         """
-        metadata = (request_data.get("metadata") or {}) if request_data else {}
-        pii_tokens = metadata.get("pii_tokens", {})
+        pii_tokens = self._get_restorable_pii_tokens(request_data)
         if not pii_tokens and mode == "unmask":
             verbose_proxy_logger.debug("No pii_tokens in metadata for Anthropic response unmask")
         presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
@@ -1070,8 +1113,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         Helper to recursively process a ModelResponse for PII.
         Handles all choices and tool calls.
         """
-        metadata = (request_data.get("metadata") or {}) if request_data else {}
-        pii_tokens = metadata.get("pii_tokens", {})
+        pii_tokens = self._get_restorable_pii_tokens(request_data)
         if not pii_tokens and mode == "unmask":
             verbose_proxy_logger.debug("No pii_tokens found in request_data['metadata'] — nothing to unmask")
         presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
@@ -1307,8 +1349,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         from litellm.main import stream_chunk_builder
         from litellm.types.utils import ModelResponse
 
-        metadata = (request_data.get("metadata") or {}) if request_data else {}
-        pii_tokens: Dict[str, str] = metadata.get("pii_tokens", {})
+        pii_tokens = self._get_restorable_pii_tokens(request_data)
 
         remaining_chunks: List[ModelResponseStream] = []
         saw_non_chat_chunk = False
@@ -1388,8 +1429,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 yield chunk
             return
 
-        metadata = (request_data.get("metadata") or {}) if request_data else {}
-        pii_tokens = metadata.get("pii_tokens", {})
+        pii_tokens = self._get_restorable_pii_tokens(request_data)
         if not pii_tokens and request_data:
             verbose_proxy_logger.debug("No pii_tokens in request_data['metadata'] for streaming unmask path")
         if not (self.output_parse_pii and pii_tokens):
@@ -1451,8 +1491,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         # When input_type is "response" and pii_tokens are available,
         # unmask the text instead of masking it.
-        metadata = (request_data.get("metadata") or {}) if request_data else {}
-        pii_tokens = metadata.get("pii_tokens", {})
+        pii_tokens = self._get_restorable_pii_tokens(request_data)
 
         new_texts = []
         should_unmask_response = (
@@ -1478,7 +1517,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 )
                 modified_text = await self._check_pii_with_context(
                     text=text,
-                    output_parse_pii=self.output_parse_pii,
+                    output_parse_pii=self._should_create_reversible_tokens(
+                        self.output_parse_pii,
+                        input_source,
+                    ),
                     presidio_config=None,
                     request_data=request_data or {},
                     log_context={

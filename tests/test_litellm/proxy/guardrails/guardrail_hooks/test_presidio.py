@@ -3000,6 +3000,110 @@ async def test_apply_guardrail_masks_tool_call_arguments():
     )
 
 
+def test_numbered_placeholders_are_excluded_from_pii_analysis():
+    text = "Name <KR_PERSON_1>, RRN 900101-1234567"
+
+    analysis_text = _OPTIONAL_PresidioPIIMasking._text_for_pii_analysis(text)
+
+    assert len(analysis_text) == len(text)
+    assert "<KR_PERSON_1>" not in analysis_text
+    assert "900101-1234567" in analysis_text
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [
+        ("system_prompt", False),
+        ("environment_context", False),
+        ("tool_result", False),
+        ("current_user_prompt", True),
+        ("current_user_context", True),
+        ("conversation_history", True),
+    ],
+)
+def test_reversible_tokens_are_limited_to_restorable_scopes(scope, expected):
+    input_source = {"scope": scope}
+
+    result = _OPTIONAL_PresidioPIIMasking._should_create_reversible_tokens(
+        True,
+        input_source,
+    )
+
+    assert result is expected
+
+
+def test_numbered_tokens_store_their_input_source():
+    from litellm.proxy.guardrails.guardrail_hooks.presidio import (
+        _PRESIDIO_LOG_CONTEXT,
+    )
+
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True)
+    request_data = {"metadata": {}}
+    input_source = {
+        "type": "message",
+        "role": "user",
+        "path": "messages[1].content[0].text",
+        "scope": "current_user_prompt",
+    }
+    context_token = _PRESIDIO_LOG_CONTEXT.set({"input_source": input_source})
+    try:
+        result = guardrail._finalize_presidio_anonymize_numbered_tokens(
+            text="홍길동",
+            analyze_results=[
+                {
+                    "entity_type": "KR_PERSON",
+                    "start": 0,
+                    "end": 3,
+                    "score": 1.0,
+                }
+            ],
+            request_data=request_data,
+            masked_entity_count={},
+        )
+    finally:
+        _PRESIDIO_LOG_CONTEXT.reset(context_token)
+
+    assert result == "<KR_PERSON_1>"
+    assert request_data["metadata"]["pii_token_sources"]["<KR_PERSON_1>"] == input_source
+
+
+@pytest.mark.asyncio
+async def test_unmasking_only_restores_tokens_from_restorable_input_scopes():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        output_parse_pii=True,
+    )
+    request_data = {
+        "metadata": {
+            "pii_tokens": {
+                "<KR_PERSON_1>": "system-secret",
+                "<KR_PERSON_11>": "홍길동",
+                "<KR_BANK_ACCOUNT_13>": "environment-secret",
+            },
+            "pii_token_sources": {
+                "<KR_PERSON_1>": {"scope": "system_prompt"},
+                "<KR_PERSON_11>": {"scope": "current_user_prompt"},
+                "<KR_BANK_ACCOUNT_13>": {"scope": "environment_context"},
+            },
+        }
+    }
+    inputs = {
+        "texts": [
+            "Wrong <KR_PERSON_1>; right <KR_PERSON_11>; env <KR_BANK_ACCOUNT_13>"
+        ]
+    }
+
+    result = await guardrail.apply_guardrail(
+        inputs=inputs,
+        request_data=request_data,
+        input_type="response",
+    )
+
+    assert result["texts"] == [
+        "Wrong <KR_PERSON_1>; right 홍길동; env <KR_BANK_ACCOUNT_13>"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_apply_to_output_takes_precedence_over_existing_reversible_tokens():
     guardrail = _OPTIONAL_PresidioPIIMasking(
