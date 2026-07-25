@@ -42,6 +42,7 @@ interface GuardrailInputSource {
   role?: string;
   content_index?: number | null;
   path?: string;
+  scope?: string;
 }
 
 interface GuardrailInformation {
@@ -128,8 +129,30 @@ const formatMode = (mode: GuardrailInformation["guardrail_mode"]): string => {
   return s.replace(/_/g, "-").toUpperCase();
 };
 
+const INPUT_SCOPE_LABELS: Record<string, string> = {
+  system_prompt: "SYSTEM PROMPT",
+  conversation_history: "HISTORY",
+  current_user_prompt: "CURRENT USER PROMPT",
+  current_user_context: "CURRENT USER CONTEXT",
+  environment_context: "ENVIRONMENT CONTEXT",
+  tool_result: "TOOL RESULT",
+  other: "OTHER INPUT",
+};
+
 const getInputSourceLabel = (source?: GuardrailInputSource): string | null => {
   if (!source) return null;
+  const scopeLabel = source.scope
+    ? INPUT_SCOPE_LABELS[source.scope] ?? source.scope.replace(/_/g, " ").toUpperCase()
+    : null;
+  if (scopeLabel) {
+    const parts = [
+      scopeLabel,
+      source.scope === "conversation_history" ? source.role?.toUpperCase() : null,
+      source.message_index != null ? "Message " + (source.message_index + 1) : null,
+      source.content_index != null ? "Content " + (source.content_index + 1) : null,
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
   const parts = [
     source.role?.toUpperCase(),
     source.message_index != null ? "Message " + (source.message_index + 1) : source.type,

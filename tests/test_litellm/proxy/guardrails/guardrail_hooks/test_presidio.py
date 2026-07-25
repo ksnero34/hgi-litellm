@@ -706,6 +706,7 @@ async def test_presidio_logs_input_source_event_and_run_id():
                 "role": "system",
                 "content_index": None,
                 "path": "messages[0].content",
+                "scope": "system_prompt",
             },
             {
                 "type": "message",
@@ -713,6 +714,7 @@ async def test_presidio_logs_input_source_event_and_run_id():
                 "role": "user",
                 "content_index": 0,
                 "path": "messages[1].content[0].text",
+                "scope": "current_user_prompt",
             },
         ],
     }

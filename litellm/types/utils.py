@@ -2697,12 +2697,24 @@ GuardrailUsageAction = Literal["passed", "flagged", "blocked"]
 GuardrailEnforcementMode = Literal["enforce", "observe"]
 
 
+GuardrailInputScope = Literal[
+    "system_prompt",
+    "conversation_history",
+    "current_user_prompt",
+    "current_user_context",
+    "environment_context",
+    "tool_result",
+    "other",
+]
+
+
 class GuardrailInputSource(TypedDict, total=False):
     type: str
     message_index: int
     role: str
     content_index: Optional[int]
     path: str
+    scope: GuardrailInputScope
 
 
 class StandardLoggingGuardrailInformation(TypedDict, total=False):

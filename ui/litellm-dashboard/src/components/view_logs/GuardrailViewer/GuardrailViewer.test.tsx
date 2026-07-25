@@ -184,7 +184,7 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText(/Post-call guardrail:/)).toBeInTheDocument();
   });
 
-  it("shows input origins and counts one run as one guardrail", async () => {
+  it("shows semantic input scopes and counts one run as one guardrail", async () => {
     const user = userEvent.setup();
     const data = [
       makeGuardrailInformation({
@@ -197,6 +197,7 @@ describe("GuardrailViewer", () => {
           role: "system",
           content_index: null,
           path: "messages[0].content",
+          scope: "system_prompt",
         },
       }),
       makeGuardrailInformation({
@@ -209,6 +210,20 @@ describe("GuardrailViewer", () => {
           role: "user",
           content_index: 0,
           path: "messages[1].content[0].text",
+          scope: "current_user_prompt",
+        },
+      }),
+      makeGuardrailInformation({
+        guardrail_run_id: "run-1",
+        guardrail_event: "pre_call",
+        guardrail_mode: ["pre_call", "post_call"],
+        input_source: {
+          type: "message",
+          message_index: 1,
+          role: "user",
+          content_index: 1,
+          path: "messages[1].content[1].text",
+          scope: "environment_context",
         },
       }),
     ];
@@ -216,13 +231,30 @@ describe("GuardrailViewer", () => {
     renderWithProviders(<GuardrailViewer data={data} />);
 
     expect(screen.getByText("1 guardrail evaluated")).toBeInTheDocument();
-    expect(screen.getByText("2 inputs scanned")).toBeInTheDocument();
-    expect(screen.getByText("SYSTEM · Message 1")).toBeInTheDocument();
-    expect(screen.getByText("USER · Message 2 · Content 1")).toBeInTheDocument();
+    expect(screen.getByText("3 inputs scanned")).toBeInTheDocument();
+    expect(screen.getByText("SYSTEM PROMPT · Message 1")).toBeInTheDocument();
+    expect(screen.getByText("CURRENT USER PROMPT · Message 2 · Content 1")).toBeInTheDocument();
+    expect(screen.getByText("ENVIRONMENT CONTEXT · Message 2 · Content 2")).toBeInTheDocument();
     expect(screen.queryByText(/Post-call guardrail:/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByText("USER · Message 2 · Content 1"));
+    await user.click(screen.getByText("CURRENT USER PROMPT · Message 2 · Content 1"));
     expect(screen.getByText("messages[1].content[0].text")).toBeInTheDocument();
+  });
+
+  it("keeps legacy input source labels when scope is absent", () => {
+    const data = makeGuardrailInformation({
+      input_source: {
+        type: "message",
+        message_index: 1,
+        role: "user",
+        content_index: 0,
+        path: "messages[1].content[0].text",
+      },
+    });
+
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    expect(screen.getByText("USER · Message 2 · Content 1")).toBeInTheDocument();
   });
 
   it("integration: renders with real Bedrock details without mocks", async () => {

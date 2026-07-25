@@ -37,6 +37,7 @@ export interface GuardrailInformation {
     role?: string;
     content_index?: number | null;
     path?: string;
+    scope?: string;
   };
 }
 

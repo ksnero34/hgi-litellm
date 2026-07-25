@@ -152,11 +152,18 @@ async def test_process_input_messages_includes_text_sources():
     guardrail = MockGuardrail()
     messages = [
         {"role": "system", "content": "system text"},
+        {"role": "user", "content": "historical user text"},
+        {"role": "assistant", "content": "historical assistant text"},
+        {"role": "tool", "tool_call_id": "call-1", "content": "tool result"},
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": "user text"},
-                {"type": "text", "text": "environment text"},
+                {"type": "text", "text": "user context"},
+                {
+                    "type": "text",
+                    "text": "<environment_details>environment text</environment_details>",
+                },
             ],
         },
     ]
@@ -174,20 +181,55 @@ async def test_process_input_messages_includes_text_sources():
             "role": "system",
             "content_index": None,
             "path": "messages[0].content",
+            "scope": "system_prompt",
         },
         {
             "type": "message",
             "message_index": 1,
+            "role": "user",
+            "content_index": None,
+            "path": "messages[1].content",
+            "scope": "conversation_history",
+        },
+        {
+            "type": "message",
+            "message_index": 2,
+            "role": "assistant",
+            "content_index": None,
+            "path": "messages[2].content",
+            "scope": "conversation_history",
+        },
+        {
+            "type": "message",
+            "message_index": 3,
+            "role": "tool",
+            "content_index": None,
+            "path": "messages[3].content",
+            "scope": "tool_result",
+        },
+        {
+            "type": "message",
+            "message_index": 4,
             "role": "user",
             "content_index": 0,
-            "path": "messages[1].content[0].text",
+            "path": "messages[4].content[0].text",
+            "scope": "current_user_prompt",
         },
         {
             "type": "message",
-            "message_index": 1,
+            "message_index": 4,
             "role": "user",
             "content_index": 1,
-            "path": "messages[1].content[1].text",
+            "path": "messages[4].content[1].text",
+            "scope": "current_user_context",
+        },
+        {
+            "type": "message",
+            "message_index": 4,
+            "role": "user",
+            "content_index": 2,
+            "path": "messages[4].content[2].text",
+            "scope": "environment_context",
         },
     ]
 
