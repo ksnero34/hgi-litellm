@@ -1,5 +1,5 @@
 import * as networking from "@/components/networking";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import GuardrailInfoView from "./guardrail_info";
@@ -35,6 +35,44 @@ vi.mock("./content_filter/ContentFilterManager", () => ({
     categories: categories ?? [],
   }),
 }));
+
+const createGuardrailResponse = (overrides: Record<string, unknown> = {}) => ({
+  guardrail_id: "123",
+  guardrail_name: "Test Guardrail",
+  litellm_params: {
+    guardrail: "presidio",
+    mode: "pre_call",
+    default_on: true,
+  },
+  created_at: "2024-01-01T00:00:00Z",
+  updated_at: "2024-01-01T00:00:00Z",
+  guardrail_definition_location: "database",
+  ...overrides,
+});
+
+const createGuardrailSettings = (overrides: Record<string, unknown> = {}) => ({
+  supported_entities: ["PERSON", "EMAIL"],
+  supported_actions: ["MASK", "REDACT"],
+  pii_entity_categories: [],
+  supported_modes: ["pre_call", "post_call"],
+  ...overrides,
+});
+
+const getModeFormItem = () => {
+  const modeFormItem = screen
+    .getAllByText("Mode")
+    .find((element) => element.closest(".ant-form-item") !== null)
+    ?.closest(".ant-form-item");
+
+  expect(modeFormItem).not.toBeNull();
+  return modeFormItem as HTMLElement;
+};
+
+const openModeDropdown = () => {
+  const selector = getModeFormItem().querySelector(".ant-select-selector");
+  expect(selector).not.toBeNull();
+  fireEvent.mouseDown(selector as HTMLElement);
+};
 
 describe("Guardrail Info", () => {
   afterEach(() => {
@@ -121,6 +159,8 @@ describe("Guardrail Info", () => {
     await waitFor(() => {
       expect(getByText("Guardrail Settings")).toBeInTheDocument();
     });
+
+    expect(screen.queryByText("Edit Settings")).not.toBeInTheDocument();
 
     // Find the info icon and hover over it
     const infoIcon = container.querySelector(".anticon-info-circle");
@@ -233,6 +273,244 @@ describe("Guardrail Info", () => {
           }),
         }),
       );
+    });
+  });
+
+  it("shows an existing single mode as selected in the edit form", async () => {
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(createGuardrailResponse());
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(createGuardrailSettings());
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    expect(within(getModeFormItem()).getByText("pre_call")).toBeInTheDocument();
+  });
+
+  it("adds post_call and sends the normalized mode array in the patch payload", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(createGuardrailResponse());
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(createGuardrailSettings());
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+    vi.mocked(networking.updateGuardrailCall).mockResolvedValue({ status: "success" });
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    openModeDropdown();
+    const postCallOptionLabel = Array.from(document.querySelectorAll(".ant-select-item-option strong")).find(
+      (element) => element.textContent === "post_call",
+    );
+    expect(postCallOptionLabel).not.toBeUndefined();
+    await user.click(postCallOptionLabel?.closest(".ant-select-item-option") as HTMLElement);
+    await waitFor(() => {
+      expect(getModeFormItem().querySelector('[title="post_call"]')).not.toBeNull();
+    });
+    await user.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(networking.updateGuardrailCall).toHaveBeenCalledWith(
+        "123",
+        "123",
+        expect.objectContaining({
+          litellm_params: expect.objectContaining({
+            mode: ["pre_call", "post_call"],
+          }),
+        }),
+      );
+    });
+  });
+
+  it("omits mode from the patch payload when the normalized selection did not change", async () => {
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(
+      createGuardrailResponse({
+        litellm_params: {
+          guardrail: "presidio",
+          mode: ["post_call", "pre_call"],
+          default_on: true,
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(createGuardrailSettings());
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+    vi.mocked(networking.updateGuardrailCall).mockResolvedValue({ status: "success" });
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+    fireEvent.change(screen.getByLabelText("Guardrail Name"), { target: { value: "Renamed Guardrail" } });
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(networking.updateGuardrailCall).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(networking.updateGuardrailCall).mock.calls[0][2]).toEqual({
+      guardrail_name: "Renamed Guardrail",
+    });
+  });
+
+  it("only shows provider-supported mode options in the edit form", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(createGuardrailResponse());
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(
+      createGuardrailSettings({
+        supported_modes_by_provider: {
+          presidio: ["pre_call"],
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    openModeDropdown();
+    expect(await screen.findByRole("option", { name: "pre_call" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "post_call" })).not.toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+  });
+
+  it("only shows provider-supported mode options for dynamic providers", async () => {
+    const user = userEvent.setup();
+    const dynamicProviderParams = {
+      custom_guardrail: {
+        ui_friendly_name: "Custom Guardrail",
+      },
+    };
+
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(
+      createGuardrailResponse({
+        litellm_params: {
+          guardrail: "custom_guardrail",
+          mode: "logging_only",
+          default_on: true,
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(
+      createGuardrailSettings({
+        supported_modes_by_provider: {
+          custom_guardrail: ["logging_only"],
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue(dynamicProviderParams);
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    openModeDropdown();
+    expect(await screen.findByRole("option", { name: "logging_only" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "pre_call" })).not.toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+  });
+
+  it("keeps an unsupported stored mode selected and omits mode from unrelated saves", async () => {
+    vi.mocked(networking.getGuardrailInfo).mockResolvedValue(
+      createGuardrailResponse({
+        litellm_params: {
+          guardrail: "presidio",
+          mode: ["legacy_mode"],
+          default_on: true,
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailUISettings).mockResolvedValue(
+      createGuardrailSettings({
+        supported_modes_by_provider: {
+          presidio: ["pre_call"],
+        },
+      }),
+    );
+    vi.mocked(networking.getGuardrailProviderSpecificParams).mockResolvedValue({});
+    vi.mocked(networking.updateGuardrailCall).mockResolvedValue({ status: "success" });
+
+    render(<GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Settings"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Settings")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Edit Settings"));
+
+    expect(within(getModeFormItem()).getByText("legacy_mode")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Guardrail Name"), {
+      target: { value: "Renamed Unsupported Mode Guardrail" },
+    });
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(networking.updateGuardrailCall).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(networking.updateGuardrailCall).mock.calls[0][2]).toEqual({
+      guardrail_name: "Renamed Unsupported Mode Guardrail",
     });
   });
 

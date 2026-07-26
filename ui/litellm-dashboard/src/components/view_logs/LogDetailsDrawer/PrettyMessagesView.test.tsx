@@ -65,8 +65,8 @@ describe("PrettyMessagesView", () => {
 
     expect(screen.getByText("ㅎㅇㅎㅇ")).toBeInTheDocument();
     expect(screen.getByText("ㅎㅇ! 어떻게 도와줄까?")).toBeInTheDocument();
-    expect(screen.queryByText("Internal reasoning")).not.toBeInTheDocument();
-    expect(screen.queryByText("Nested reasoning")).not.toBeInTheDocument();
+    expect(screen.getByText("Internal reasoning")).toBeInTheDocument();
+    expect(screen.getByText("Nested reasoning")).toBeInTheDocument();
   });
 
   it("renders a Responses API content block input as one user message", () => {
@@ -79,6 +79,119 @@ describe("PrettyMessagesView", () => {
 
     expect(screen.getByText("Direct input")).toBeInTheDocument();
     expect(screen.getByText("Reply")).toBeInTheDocument();
+  });
+
+  it("renders Responses request tool calls and tool outputs", () => {
+    const request = {
+      input: [
+        { role: "user", type: "message", content: "Run lookup" },
+        {
+          type: "function_call",
+          call_id: "call_request",
+          name: "lookup",
+          arguments: '{"query":"internal"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_request",
+          output: "Lookup complete",
+        },
+      ],
+    };
+    const response = {
+      object: "response",
+      output: [{ type: "message", content: [{ type: "output_text", text: "Done" }] }],
+    };
+
+    render(<PrettyMessagesView request={request} response={response} />);
+
+    expect(screen.getByText("Run lookup")).toBeInTheDocument();
+    expect(screen.getByText("lookup")).toBeInTheDocument();
+    expect(screen.getByText('"internal"')).toBeInTheDocument();
+    expect(screen.getByText("Lookup complete")).toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+  });
+
+  it("renders Responses reasoning, tools, outputs, state, and unknown items", () => {
+    const response = {
+      object: "response",
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        {
+          type: "reasoning",
+          content: [{ type: "reasoning_text", text: "Check the weather" }],
+          summary: [{ type: "summary_text", text: "Weather lookup" }],
+        },
+        {
+          type: "function_call",
+          call_id: "call_1",
+          name: "get_weather",
+          arguments: '{"city":"Seoul"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: "Sunny",
+        },
+        {
+          type: "provider_extension",
+          payload: "preserved",
+        },
+      ],
+    };
+
+    render(<PrettyMessagesView request={{ input: "weather" }} response={response} />);
+
+    expect(screen.getByText("Check the weather")).toBeInTheDocument();
+    expect(screen.getByText("Weather lookup")).toBeInTheDocument();
+    expect(screen.getByText("get_weather")).toBeInTheDocument();
+    expect(screen.getByText('"Seoul"')).toBeInTheDocument();
+    expect(screen.getByText("Sunny")).toBeInTheDocument();
+    expect(screen.getByText(/max_output_tokens/)).toBeInTheDocument();
+    expect(screen.getByText(/preserved/)).toBeInTheDocument();
+  });
+
+  it("renders root output_text and failed response details without output items", () => {
+    const response = {
+      object: "response",
+      status: "failed",
+      output_text: "Fallback answer",
+      output: [],
+      error: { message: "Provider failed after partial output" },
+    };
+
+    render(<PrettyMessagesView request={{ input: "test" }} response={response} />);
+
+    expect(screen.getByText("Fallback answer")).toBeInTheDocument();
+    expect(screen.getByText(/Provider failed after partial output/)).toBeInTheDocument();
+  });
+
+  it("aggregates raw Responses SSE text and reasoning deltas", () => {
+    const response = [
+      { type: "response.reasoning_text.delta", delta: "Need " },
+      { type: "response.reasoning_text.delta", delta: "context" },
+      { type: "response.output_text.delta", delta: "Hello " },
+      { type: "response.output_text.delta", delta: "world" },
+      {
+        type: "response.output_item.done",
+        item: { type: "function_call", call_id: "call_sse", name: "search", arguments: '{"q":"docs"}' },
+      },
+      {
+        type: "response.output_item.done",
+        item: { type: "function_call_output", call_id: "call_sse", output: "Search complete" },
+      },
+      { type: "response.incomplete", incomplete_details: { reason: "max_output_tokens" } },
+    ];
+
+    render(<PrettyMessagesView request={{ input: "test" }} response={response} />);
+
+    expect(screen.getByText("Need context")).toBeInTheDocument();
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
+    expect(screen.getByText("search")).toBeInTheDocument();
+    expect(screen.getByText('"docs"')).toBeInTheDocument();
+    expect(screen.getByText("Search complete")).toBeInTheDocument();
+    expect(screen.getByText(/max_output_tokens/)).toBeInTheDocument();
   });
 
   it("should render the realtime pretty view for realtime API responses", () => {

@@ -94,6 +94,7 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
             presidio_anonymizer_api_base=litellm_params.presidio_anonymizer_api_base,
             presidio_language=litellm_params.presidio_language,
             presidio_entities_deny_list=litellm_params.presidio_entities_deny_list,
+            presidio_filter_scope=filter_scope,
             apply_to_output=False,
         )
         params.update(overrides)
@@ -102,6 +103,15 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
         return callback
 
     primary_callback = None
+
+    configured_modes = litellm_params.mode
+    if configured_modes == GuardrailEventHooks.logging_only.value or configured_modes == [
+        GuardrailEventHooks.logging_only.value
+    ]:
+        return _make_presidio_callback(
+            event_hook=GuardrailEventHooks.logging_only.value,
+            logging_only=True,
+        )
 
     if run_input:
         primary_callback = _make_presidio_callback(

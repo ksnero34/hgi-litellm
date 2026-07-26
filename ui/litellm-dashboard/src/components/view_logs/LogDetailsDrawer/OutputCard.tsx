@@ -6,30 +6,42 @@
 import { useState } from "react";
 import { Typography } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
-import { ParsedMessage } from "./prettyMessagesTypes";
+import { ParsedMessage, ParsedResponseItem, ParsedResponseState } from "./prettyMessagesTypes";
 import { SectionHeader } from "./SectionHeader";
-import { SimpleMessageBlock } from "./SimpleMessageBlock";
+import { ResponseItemsView } from "./ResponseItemsView";
 
 const { Text } = Typography;
 
 interface OutputCardProps {
   message: ParsedMessage | null;
+  responseItems?: ParsedResponseItem[];
+  responseState?: ParsedResponseState | null;
   completionTokens?: number;
   outputCost?: number;
 }
 
-export function OutputCard({ message, completionTokens, outputCost }: OutputCardProps) {
+export function OutputCard({
+  message,
+  responseItems,
+  responseState = null,
+  completionTokens,
+  outputCost,
+}: OutputCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const normalizedItems = responseItems ?? (message ? [{ kind: "message" as const, content: message.content }] : []);
 
   const handleCopy = () => {
-    if (!message) return;
+    if (normalizedItems.length === 0 && !responseState) return;
 
-    const content = message.content || "";
+    const content =
+      normalizedItems.length === 1 && normalizedItems[0].kind === "message" && !responseState
+        ? normalizedItems[0].content
+        : JSON.stringify({ items: normalizedItems, state: responseState }, null, 2);
     navigator.clipboard.writeText(content);
     MessageManager.success("Output copied");
   };
 
-  if (!message) {
+  if (normalizedItems.length === 0 && !responseState) {
     return (
       <div
         style={{
@@ -92,7 +104,7 @@ export function OutputCard({ message, completionTokens, outputCost }: OutputCard
         }}
       >
         <div style={{ padding: "12px 16px" }}>
-          <SimpleMessageBlock label="ASSISTANT" content={message.content} toolCalls={message.toolCalls} />
+          <ResponseItemsView items={normalizedItems} state={responseState} />
         </div>
       </div>
     </div>

@@ -49,6 +49,7 @@ from litellm.integrations.custom_guardrail import (
     log_guardrail_information,
 )
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.guardrails import (
     GuardrailEventHooks,
     LitellmParams,
@@ -124,6 +125,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         expand_event_hook_for_output_processing: bool = True,
         presidio_ad_hoc_recognizers: Optional[str] = None,
         logging_only: Optional[bool] = None,
+        presidio_filter_scope: Literal["input", "output", "both"] = "both",
         pii_entities_config: Optional[Dict[Union[PiiEntityType, str], PiiAction]] = None,
         presidio_language: Optional[str] = None,
         presidio_score_thresholds: Optional[Dict[Union[PiiEntityType, str], float]] = None,
@@ -140,6 +142,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.mock_redacted_text = mock_redacted_text
         self.output_parse_pii = output_parse_pii or False
         self.apply_to_output = apply_to_output
+        self.presidio_filter_scope = presidio_filter_scope
 
         # When output_parse_pii or apply_to_output is enabled, the guardrail must
         # also run on post_call to unmask/mask the response.  Expand the event_hook
@@ -905,13 +908,16 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         """
         Masks the input before logging to langfuse, datadog, etc.
         """
-        if call_type == "completion" or call_type == "acompletion":  # /chat/completions requests
+        if (call_type == "completion" or call_type == "acompletion") and self.presidio_filter_scope in (
+            "input",
+            "both",
+        ):
             messages: Optional[List] = kwargs.get("messages", None)
             tasks = []
             task_mappings: List[Tuple[int, Optional[int]]] = []  # Track (message_index, content_index) for each task
 
             if messages is None:
-                return kwargs, result
+                messages = []
 
             presidio_config = self.get_presidio_settings_from_request_data(kwargs)
 
@@ -962,7 +968,24 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             verbose_proxy_logger.debug(f"Presidio PII Masking: Redacted pii message: {messages}")
             kwargs["messages"] = messages
 
-        return kwargs, result
+        if self.presidio_filter_scope == "input":
+            return kwargs, result
+
+        logged_result, logged_response = await self._mask_responses_copy_for_logging(result, kwargs)
+        complete_stream = kwargs.get("async_complete_streaming_response")
+        masked_stream, masked_stream_response = await self._mask_responses_copy_for_logging(complete_stream, kwargs)
+        if masked_stream_response is not None:
+            kwargs["async_complete_streaming_response"] = masked_stream
+
+        standard_logging_object = kwargs.get("standard_logging_object")
+        if isinstance(standard_logging_object, dict):
+            standard_response = standard_logging_object.get("response")
+            _, masked_standard_response = await self._mask_responses_copy_for_logging(standard_response, kwargs)
+            response_to_log = masked_standard_response or logged_response or masked_stream_response
+            if response_to_log is not None:
+                standard_logging_object["response"] = self._serialize_responses_api_response(response_to_log)
+
+        return kwargs, logged_result
 
     async def async_post_call_success_hook(  # type: ignore
         self,
@@ -1103,6 +1126,161 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         return response
 
+    @staticmethod
+    def _response_field(container: object, field: str) -> object:
+        if isinstance(container, dict):
+            return container.get(field)
+        return getattr(container, field, None)
+
+    @staticmethod
+    def _set_response_field(container: object, field: str, value: object) -> None:
+        if isinstance(container, dict):
+            container[field] = value
+            return
+        setattr(container, field, value)
+
+    @classmethod
+    def _is_responses_api_response(cls, value: object) -> bool:
+        if isinstance(value, ResponsesAPIResponse):
+            return True
+        object_type = cls._response_field(value, "object")
+        output = cls._response_field(value, "output")
+        return object_type == "response" or (isinstance(output, list) and cls._response_field(value, "choices") is None)
+
+    @classmethod
+    def _get_responses_api_response(cls, value: object) -> Optional[object]:
+        if cls._is_responses_api_response(value):
+            return value
+        nested_response = cls._response_field(value, "response")
+        return nested_response if cls._is_responses_api_response(nested_response) else None
+
+    @staticmethod
+    def _serialize_responses_api_response(response: object) -> object:
+        if isinstance(response, ResponsesAPIResponse):
+            return response.model_dump()
+        return copy.deepcopy(response)
+
+    async def _mask_responses_copy_for_logging(
+        self,
+        value: object,
+        request_data: dict,
+    ) -> Tuple[object, Optional[object]]:
+        if isinstance(value, list):
+            masked_events = copy.deepcopy(value)
+            contains_responses_event = False
+            for event in masked_events:
+                event_type = self._response_field(event, "type")
+                if not isinstance(event_type, str) or not event_type.startswith("response."):
+                    continue
+                contains_responses_event = True
+                nested_response = self._get_responses_api_response(event)
+                if nested_response is not None:
+                    await self._process_responses_api_response_for_pii(nested_response, request_data)
+                await self._mask_responses_payload_field(event, "delta", request_data)
+                await self._mask_responses_payload_field(event, "text", request_data)
+                await self._mask_responses_payload_field(event, "arguments", request_data)
+                await self._mask_responses_payload_field(event, "input", request_data)
+                await self._mask_responses_payload_field(event, "output", request_data)
+                await self._mask_responses_payload_field(event, "error", request_data)
+                item = self._response_field(event, "item")
+                if item is not None:
+                    await self._mask_responses_blocks(self._response_field(item, "content"), request_data)
+                    await self._mask_responses_blocks(self._response_field(item, "summary"), request_data)
+                    await self._mask_responses_payload_field(item, "arguments", request_data)
+                    await self._mask_responses_payload_field(item, "input", request_data)
+                    await self._mask_responses_payload_field(item, "output", request_data)
+            if contains_responses_event:
+                return masked_events, masked_events
+
+        response = self._get_responses_api_response(value)
+        if response is None:
+            return value, None
+        masked_value = copy.deepcopy(value)
+        masked_response = self._get_responses_api_response(masked_value)
+        if masked_response is None:
+            return value, None
+        await self._process_responses_api_response_for_pii(masked_response, request_data)
+        return masked_value, masked_response
+
+    async def _mask_responses_text_field(
+        self,
+        container: object,
+        field: str,
+        request_data: dict,
+    ) -> None:
+        value = self._response_field(container, field)
+        if not isinstance(value, str) or not value:
+            return
+        presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
+        masked = await self.check_pii(
+            text=value,
+            output_parse_pii=False,
+            presidio_config=presidio_config,
+            request_data=request_data,
+        )
+        self._set_response_field(container, field, masked)
+
+    async def _mask_responses_payload(self, value: object, request_data: dict) -> object:
+        if isinstance(value, str):
+            if not value:
+                return value
+            presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
+            return await self.check_pii(
+                text=value,
+                output_parse_pii=False,
+                presidio_config=presidio_config,
+                request_data=request_data,
+            )
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                value[index] = await self._mask_responses_payload(item, request_data)
+            return value
+        if isinstance(value, dict):
+            for key, item in value.items():
+                value[key] = await self._mask_responses_payload(item, request_data)
+        return value
+
+    async def _mask_responses_payload_field(
+        self,
+        container: object,
+        field: str,
+        request_data: dict,
+    ) -> None:
+        value = self._response_field(container, field)
+        if value is not None:
+            self._set_response_field(container, field, await self._mask_responses_payload(value, request_data))
+
+    async def _mask_responses_blocks(self, value: object, request_data: dict) -> None:
+        if isinstance(value, list):
+            for block in value:
+                await self._mask_responses_text_field(block, "text", request_data)
+                await self._mask_responses_text_field(block, "refusal", request_data)
+
+    async def _process_responses_api_response_for_pii(
+        self,
+        response: object,
+        request_data: dict,
+    ) -> object:
+        output = self._response_field(response, "output")
+        if isinstance(output, list):
+            for output_item in output:
+                await self._mask_responses_blocks(self._response_field(output_item, "content"), request_data)
+                await self._mask_responses_blocks(self._response_field(output_item, "summary"), request_data)
+                await self._mask_responses_payload_field(output_item, "reasoning_content", request_data)
+                await self._mask_responses_blocks(self._response_field(output_item, "reasoning_items"), request_data)
+                await self._mask_responses_payload_field(output_item, "arguments", request_data)
+                await self._mask_responses_payload_field(output_item, "input", request_data)
+                await self._mask_responses_payload_field(output_item, "output", request_data)
+        reasoning = self._response_field(response, "reasoning")
+        if reasoning is not None:
+            await self._mask_responses_blocks(self._response_field(reasoning, "content"), request_data)
+            await self._mask_responses_blocks(self._response_field(reasoning, "summary"), request_data)
+        if isinstance(response, dict):
+            await self._mask_responses_text_field(response, "output_text", request_data)
+        if self._response_field(response, "error") is not None:
+            await self._mask_responses_payload_field(response, "error", request_data)
+        return response
+
     async def _process_response_for_pii(
         self,
         response: ModelResponse,
@@ -1188,12 +1366,17 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     async def _mask_output_response(
         self,
-        response: Union[ModelResponse, EmbeddingResponse, ImageResponse],
+        response: Union[ModelResponse, EmbeddingResponse, ImageResponse, ResponsesAPIResponse, dict],
         request_data: dict,
     ):
         """
         Apply Presidio masking on model responses (non-streaming).
         """
+
+        responses_response = self._get_responses_api_response(response)
+        if responses_response is not None:
+            return await self._process_responses_api_response_for_pii(responses_response, request_data)
+
         if not isinstance(response, ModelResponse):
             return response
 

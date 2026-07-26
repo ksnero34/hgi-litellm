@@ -15,6 +15,7 @@ import {
   choiceToSkipToolForCreate,
   getGuardrailProviders,
   getSupportedModesForProvider,
+  guardrailModeDescriptionKeys,
   guardrail_provider_map,
   guardrailLogoMap,
   populateGuardrailProviderMap,
@@ -33,16 +34,6 @@ import ToolPermissionRulesEditor, { ToolPermissionConfig } from "./tool_permissi
 
 const { Title, Text, Link } = Typography;
 const { Option } = Select;
-
-// Define human-friendly descriptions for each mode
-const modeDescriptionKeys = {
-  pre_call: "guardrails.modes.pre_call",
-  during_call: "guardrails.modes.during_call",
-  post_call: "guardrails.modes.post_call",
-  logging_only: "guardrails.modes.logging_only",
-  pre_mcp_call: "guardrails.modes.pre_mcp_call",
-  during_mcp_call: "guardrails.modes.during_mcp_call",
-} as const;
 
 interface GuardrailPreset {
   provider: string;
@@ -794,7 +785,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
                     )}
                   </div>
                   <div style={{ fontSize: "12px", color: "#888" }}>
-                    {t(modeDescriptionKeys[mode as keyof typeof modeDescriptionKeys])}
+                    {t(guardrailModeDescriptionKeys[mode as keyof typeof guardrailModeDescriptionKeys])}
                   </div>
                 </div>
               </Option>

@@ -8,17 +8,22 @@ import { copyToClipboard as utilCopyToClipboard } from "@/utils/dataUtils";
 import { CodeOutlined, EyeInvisibleOutlined, InfoCircleOutlined, StopOutlined } from "@ant-design/icons";
 import { ArrowLeftIcon } from "@heroicons/react/outline";
 import { Badge, Card, Grid, Tab, TabGroup, TabList, TabPanel, TabPanels, Text, Title } from "@tremor/react";
-import { Button, Divider, Form, Input, Select, Tooltip } from "antd";
+import { Button, Divider, Form, Input, Select, Tag, Tooltip } from "antd";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import ContentFilterManager, { formatContentFilterDataForAPI } from "./content_filter/ContentFilterManager";
 import CustomCodeModal, { EditGuardrailData } from "./custom_code/CustomCodeModal";
 import {
   getGuardrailLogoAndName,
+  getSupportedModesForProvider,
+  guardrailModeDescriptionKeys,
   guardrail_provider_map,
+  populateGuardrailProviderMap,
   skipSystemMessageToChoice,
   skipToolMessageToChoice,
+  toModeArray,
   type SkipSystemMessageChoice,
   type SkipToolMessageChoice,
 } from "./guardrail_info_helpers";
@@ -66,6 +71,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
       entities: string[];
     }>;
     supported_modes: string[];
+    supported_modes_by_provider?: Record<string, string[]>;
     content_filter_settings?: {
       prebuilt_patterns: Array<{
         name: string;
@@ -94,6 +100,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
   const [toolPermissionConfig, setToolPermissionConfig] = useState<ToolPermissionConfig>(emptyToolPermissionConfig);
   const [toolPermissionDirty, setToolPermissionDirty] = useState(false);
   const [customCodeModalVisible, setCustomCodeModalVisible] = useState(false);
+  const { t } = useTranslation();
 
   // Content Filter data ref (managed by ContentFilterManager)
   const contentFilterDataRef = React.useRef<{
@@ -173,6 +180,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
     try {
       if (!accessToken) return;
       const response = await getGuardrailProviderSpecificParams(accessToken);
+      populateGuardrailProviderMap(response);
       setGuardrailProviderSpecificParams(response);
     } catch (error) {
       console.error("Error fetching guardrail provider specific params:", error);
@@ -207,6 +215,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
       form.setFieldsValue({
         guardrail_name: guardrailData.guardrail_name,
         ...lp,
+        mode: toModeArray(guardrailData.litellm_params?.mode),
         skip_system_message_choice: skipSystemMessageToChoice(
           guardrailData.litellm_params?.skip_system_message_in_guardrail,
         ),
@@ -279,7 +288,13 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
         updateData.guardrail_name = values.guardrail_name;
       }
 
-      // Only include default_on if it has changed
+      const selectedModes = [...new Set(toModeArray(values.mode))];
+      const originalModes = [...new Set(toModeArray(guardrailData.litellm_params?.mode))].sort();
+      const nextModes = [...selectedModes].sort();
+      if (JSON.stringify(originalModes) !== JSON.stringify(nextModes)) {
+        updateData.litellm_params.mode = selectedModes;
+      }
+
       if (values.default_on !== guardrailData.litellm_params?.default_on) {
         updateData.litellm_params.default_on = values.default_on;
       }
@@ -486,6 +501,11 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
   };
 
   const isConfigGuardrail = guardrailData.guardrail_definition_location === "config";
+  const currentProvider =
+    Object.keys(guardrail_provider_map).find(
+      (key) => guardrail_provider_map[key] === guardrailData.litellm_params?.guardrail,
+    ) || null;
+  const modeDisplay = toModeArray(guardrailData.litellm_params?.mode).join(", ") || "-";
 
   return (
     <div className="p-4">
@@ -542,7 +562,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
               <Card>
                 <Text>Mode</Text>
                 <div className="mt-2">
-                  <Title>{guardrailData.litellm_params?.mode || "-"}</Title>
+                  <Title>{modeDisplay}</Title>
                   <Badge color={guardrailData.litellm_params?.default_on ? "green" : "gray"}>
                     {guardrailData.litellm_params?.default_on ? "Default On" : "Default Off"}
                   </Badge>
@@ -674,6 +694,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                         delete lp.skip_tool_message_in_guardrail;
                         return lp;
                       })(),
+                      mode: toModeArray(guardrailData.litellm_params?.mode),
                       skip_system_message_choice: skipSystemMessageToChoice(
                         guardrailData.litellm_params?.skip_system_message_in_guardrail,
                       ),
@@ -696,6 +717,33 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                       rules={[{ required: true, message: "Please input a guardrail name" }]}
                     >
                       <Input placeholder="Enter guardrail name" />
+                    </Form.Item>
+
+                    <Form.Item
+                      label={t("guardrails.form.mode")}
+                      name="mode"
+                      tooltip={t("guardrails.form.modeTooltip")}
+                      rules={[{ required: true, message: t("guardrails.form.modeRequired") }]}
+                    >
+                      <Select optionLabelProp="label" mode="multiple">
+                        {getSupportedModesForProvider(guardrailSettings, currentProvider)?.map((mode) => (
+                          <Select.Option key={mode} value={mode} label={mode}>
+                            <div>
+                              <div>
+                                <strong>{mode}</strong>
+                                {mode === "pre_call" && (
+                                  <Tag color="green" style={{ marginLeft: "8px" }}>
+                                    {t("guardrails.form.recommended")}
+                                  </Tag>
+                                )}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#888" }}>
+                                {t(guardrailModeDescriptionKeys[mode as keyof typeof guardrailModeDescriptionKeys])}
+                              </div>
+                            </div>
+                          </Select.Option>
+                        ))}
+                      </Select>
                     </Form.Item>
 
                     <Form.Item label="Default On" name="default_on">
@@ -766,11 +814,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                       <>
                         {/* Provider-specific fields */}
                         <GuardrailProviderFields
-                          selectedProvider={
-                            Object.keys(guardrail_provider_map).find(
-                              (key) => guardrail_provider_map[key] === guardrailData.litellm_params?.guardrail,
-                            ) || null
-                          }
+                          selectedProvider={currentProvider}
                           accessToken={accessToken}
                           providerParams={guardrailProviderSpecificParams}
                           value={guardrailData.litellm_params}
@@ -779,9 +823,6 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                         {/* Optional parameters */}
                         {guardrailProviderSpecificParams &&
                           (() => {
-                            const currentProvider = Object.keys(guardrail_provider_map).find(
-                              (key) => guardrail_provider_map[key] === guardrailData.litellm_params?.guardrail,
-                            );
                             if (!currentProvider) return null;
 
                             const providerKey = guardrail_provider_map[currentProvider]?.toLowerCase();
@@ -836,7 +877,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                     </div>
                     <div>
                       <Text className="font-medium">Mode</Text>
-                      <div>{guardrailData.litellm_params?.mode || "-"}</div>
+                      <div>{modeDisplay}</div>
                     </div>
                     <div>
                       <Text className="font-medium">Default On</Text>

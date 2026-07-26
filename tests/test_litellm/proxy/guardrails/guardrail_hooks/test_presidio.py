@@ -21,6 +21,7 @@ from litellm.proxy.guardrails.guardrail_hooks.presidio import (
 )
 from litellm.exceptions import BlockedPiiEntityError, GuardrailRaisedException
 from litellm.types.guardrails import LitellmParams, PiiAction, PiiEntityType
+from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.utils import Choices, Message, ModelResponse
 
 
@@ -629,6 +630,174 @@ async def test_logging_only_does_not_mask_pre_call_request(
 
 
 @pytest.mark.asyncio
+async def test_logging_only_masks_responses_api_output_without_mutating_live_response():
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        logging_only=True,
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("SECRET", "[MASKED]")
+
+    presidio.check_pii = mock_check_pii
+    response = {
+        "object": "response",
+        "status": "completed",
+        "output_text": "SECRET root",
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [{"type": "reasoning_text", "text": "SECRET reasoning"}],
+                "summary": [{"type": "summary_text", "text": "SECRET summary"}],
+            },
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "SECRET answer"}],
+            },
+            {
+                "type": "function_call",
+                "arguments": "{\"token\":\"SECRET\"}",
+            },
+            {
+                "type": "function_call_output",
+                "output": {"result": "SECRET tool output"},
+            },
+        ],
+        "error": {"message": "SECRET provider error"},
+    }
+    kwargs = {"standard_logging_object": {"response": response}}
+
+    logged_kwargs, logged_result = await presidio.async_logging_hook(
+        kwargs=kwargs,
+        result=response,
+        call_type="aresponses",
+    )
+
+    assert response["output"][0]["content"][0]["text"] == "SECRET reasoning"
+    assert logged_result["output"][0]["content"][0]["text"] == "[MASKED] reasoning"
+    assert logged_result["output"][0]["summary"][0]["text"] == "[MASKED] summary"
+    assert logged_result["output"][1]["content"][0]["text"] == "[MASKED] answer"
+    assert logged_result["output"][2]["arguments"] == "{\"token\":\"[MASKED]\"}"
+    assert logged_result["output"][3]["output"]["result"] == "[MASKED] tool output"
+    assert logged_result["output_text"] == "[MASKED] root"
+    assert logged_result["error"]["message"] == "[MASKED] provider error"
+    assert logged_kwargs["standard_logging_object"]["response"] == logged_result
+
+
+@pytest.mark.asyncio
+async def test_logging_only_masks_completed_stream_response_for_logging():
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        logging_only=True,
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("SECRET", "[MASKED]")
+
+    presidio.check_pii = mock_check_pii
+    completed_response = {
+        "object": "response",
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [{"type": "reasoning_text", "text": "SECRET stream reasoning"}],
+            }
+        ],
+    }
+    kwargs = {
+        "async_complete_streaming_response": completed_response,
+        "standard_logging_object": {},
+    }
+
+    logged_kwargs, _ = await presidio.async_logging_hook(
+        kwargs=kwargs,
+        result=None,
+        call_type="aresponses",
+    )
+
+    assert completed_response["output"][0]["content"][0]["text"] == "SECRET stream reasoning"
+    masked_stream = logged_kwargs["async_complete_streaming_response"]
+    assert masked_stream["output"][0]["content"][0]["text"] == "[MASKED] stream reasoning"
+    assert logged_kwargs["standard_logging_object"]["response"] == masked_stream
+
+    raw_events = [
+        {"type": "response.reasoning_text.delta", "delta": "SECRET raw reasoning"},
+        {"type": "response.output_text.delta", "delta": "SECRET raw output"},
+        {"type": "response.output_text.done", "text": "SECRET final output"},
+        {"type": "response.function_call_arguments.done", "arguments": "{\"value\":\"SECRET\"}"},
+    ]
+    raw_kwargs = {"standard_logging_object": {}}
+
+    raw_logged_kwargs, raw_logged_result = await presidio.async_logging_hook(
+        kwargs=raw_kwargs,
+        result=raw_events,
+        call_type="aresponses",
+    )
+
+    assert raw_events[0]["delta"] == "SECRET raw reasoning"
+    assert raw_logged_result[0]["delta"] == "[MASKED] raw reasoning"
+    assert raw_logged_result[1]["delta"] == "[MASKED] raw output"
+    assert raw_logged_kwargs["standard_logging_object"]["response"] == raw_logged_result
+    assert raw_logged_result[2]["text"] == "[MASKED] final output"
+    assert raw_logged_result[3]["arguments"] == "{\"value\":\"[MASKED]\"}"
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_masks_responses_api_response(mock_user_api_key):
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        apply_to_output=True,
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("SECRET", "[MASKED]")
+
+    presidio.check_pii = mock_check_pii
+    response = {
+        "object": "response",
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "SECRET answer"}]}],
+    }
+
+    result = await presidio.async_post_call_success_hook(
+        data={},
+        user_api_key_dict=mock_user_api_key,
+        response=response,
+    )
+
+    assert result["output"][0]["content"][0]["text"] == "[MASKED] answer"
+
+
+
+    typed_response = ResponsesAPIResponse(
+        id="resp_presidio",
+        created_at=0,
+        output=[
+            {
+                "type": "message",
+                "id": "msg_presidio",
+                "status": "completed",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "SECRET typed answer",
+                        "annotations": [],
+                    }
+                ],
+            }
+        ],
+    )
+    typed_result = await presidio.async_post_call_success_hook(
+        data={},
+        user_api_key_dict=mock_user_api_key,
+        response=typed_response,
+    )
+
+    assert typed_result.output_text == "[MASKED] typed answer"
+@pytest.mark.asyncio
 async def test_presidio_sets_guardrail_information_in_request_data():
     """
     Test that Presidio populates guardrail information into request_data metadata.
@@ -897,6 +1066,8 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
             apply_to_output: bool = False,
             event_hook=None,
             output_parse_pii: bool = False,
+            logging_only: bool = False,
+            presidio_filter_scope: str = "both",
             expand_event_hook_for_output_processing: bool = True,
             **kwargs,
         ):
@@ -906,6 +1077,8 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
             self.expand_event_hook_for_output_processing = (
                 expand_event_hook_for_output_processing
             )
+            self.logging_only = logging_only
+            self.presidio_filter_scope = presidio_filter_scope
             created.append(self)
 
         def update_in_memory_litellm_params(self, litellm_params):
@@ -941,6 +1114,20 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     cb = initialize_presidio(params_input, guardrail_dict)
     assert cb is created[0]
     assert created[0].apply_to_output is False
+
+    created.clear()
+    params_logging_only = LitellmParams(
+        guardrail="presidio",
+        mode="logging_only",
+        presidio_filter_scope="both",
+    )
+    cb = initialize_presidio(params_logging_only, guardrail_dict)
+    assert cb is created[0]
+    assert len(created) == 1
+    assert created[0].logging_only is True
+    assert created[0].event_hook == "logging_only"
+    assert created[0].apply_to_output is False
+    assert created[0].presidio_filter_scope == "both"
 
     # output-only
     created.clear()
