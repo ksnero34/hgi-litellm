@@ -44,11 +44,7 @@ export const parseMessages = (request: any, response: any): ParsedMessages => {
   // messages array itself.
   const requestMessages: ParsedMessage[] = [];
 
-  const requestMessageList = Array.isArray(request)
-    ? request
-    : Array.isArray(request?.messages)
-      ? request.messages
-      : [];
+  const requestMessageList = getRequestMessageList(request);
 
   requestMessageList.forEach((msg: any) => {
     requestMessages.push({
@@ -62,15 +58,63 @@ export const parseMessages = (request: any, response: any): ParsedMessages => {
   let responseMessage: ParsedMessage | null = null;
   const responseMsg = response?.choices?.[0]?.message;
 
+  const responseOutputMessages = Array.isArray(response?.output)
+    ? response.output.filter((item: any) => item?.type === "message")
+    : [];
+  const responseOutputContent = responseOutputMessages.map((item: any) => parseMessageContent(item.content)).join("\n");
+
   if (responseMsg) {
     responseMessage = {
       role: responseMsg.role || "assistant",
       content: responseMsg.content || "",
       toolCalls: parseToolCalls(responseMsg.tool_calls),
     };
+  } else if (responseOutputContent) {
+    responseMessage = {
+      role: responseOutputMessages[0]?.role || "assistant",
+      content: responseOutputContent,
+    };
   }
 
   return { requestMessages, responseMessage };
+};
+
+const getRequestMessageList = (request: unknown): unknown[] => {
+  if (Array.isArray(request)) return request;
+  if (typeof request !== "object" || request === null) return [];
+  const requestObject = request as Record<string, unknown>;
+  if (Array.isArray(requestObject.messages)) return requestObject.messages;
+  if (Array.isArray(requestObject.input)) {
+    const input = requestObject.input;
+    return input.every(isResponsesContentBlock) ? [{ role: "user", content: input }] : input;
+  }
+  if (typeof requestObject.input === "string") return [{ role: "user", content: requestObject.input }];
+  return [];
+};
+
+const isResponsesContentBlock = (item: unknown): boolean => {
+  if (typeof item !== "object" || item === null) return false;
+  const itemType = (item as Record<string, unknown>).type;
+  switch (itemType) {
+    case "text":
+    case "input_text":
+    case "input_image":
+    case "input_file":
+      return true;
+    default:
+      return false;
+  }
+};
+
+const isDisplayTextBlockType = (itemType: unknown): boolean => {
+  switch (itemType) {
+    case "text":
+    case "input_text":
+    case "output_text":
+      return true;
+    default:
+      return false;
+  }
 };
 
 /**
@@ -86,10 +130,12 @@ const parseMessageContent = (content: any): string => {
     return content
       .map((item) => {
         if (typeof item === "string") return item;
-        if (item.type === "text") return item.text;
+        if (isDisplayTextBlockType(item.type) && typeof item.text === "string") return item.text;
+        if (item.type === "reasoning_text") return "";
         if (item.type === "image_url") return "[Image]";
         return JSON.stringify(item);
       })
+      .filter(Boolean)
       .join("\n");
   }
 

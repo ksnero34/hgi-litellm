@@ -38,6 +38,49 @@ describe("PrettyMessagesView", () => {
     expect(screen.getByText("A quiet moment.")).toBeInTheDocument();
   });
 
+  it("renders Responses API input and output in the pretty view", () => {
+    const request = {
+      input: [{ role: "user", type: "message", content: "ㅎㅇㅎㅇ" }],
+      model: "openrouter/openai/gpt-oss-120b",
+    };
+    const response = {
+      object: "response",
+      output: [
+        {
+          type: "reasoning",
+          content: [{ type: "reasoning_text", text: "Internal reasoning" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [
+            { type: "reasoning_text", text: "Nested reasoning" },
+            { type: "output_text", text: "ㅎㅇ! 어떻게 도와줄까?" },
+          ],
+        },
+      ],
+    };
+
+    render(<PrettyMessagesView request={request} response={response} />);
+
+    expect(screen.getByText("ㅎㅇㅎㅇ")).toBeInTheDocument();
+    expect(screen.getByText("ㅎㅇ! 어떻게 도와줄까?")).toBeInTheDocument();
+    expect(screen.queryByText("Internal reasoning")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nested reasoning")).not.toBeInTheDocument();
+  });
+
+  it("renders a Responses API content block input as one user message", () => {
+    const request = { input: [{ type: "input_text", text: "Direct input" }] };
+    const response = {
+      output: [{ role: "assistant", type: "message", content: [{ type: "output_text", text: "Reply" }] }],
+    };
+
+    render(<PrettyMessagesView request={request} response={response} />);
+
+    expect(screen.getByText("Direct input")).toBeInTheDocument();
+    expect(screen.getByText("Reply")).toBeInTheDocument();
+  });
+
   it("should render the realtime pretty view for realtime API responses", () => {
     const request = {};
     const response = {
