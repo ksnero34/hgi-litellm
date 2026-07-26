@@ -420,6 +420,46 @@ async def test_assert_user_can_view_request_id_rejects_both_users_none():
     assert exc_info.value.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_assert_user_can_view_request_id_allows_owner():
+    row = MagicMock(user="user_1", team_id=None)
+    spend_logs = MagicMock()
+    spend_logs.find_unique = AsyncMock(return_value=row)
+    prisma = MagicMock()
+    prisma.db.litellm_spendlogs = spend_logs
+    auth = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        user_id="user_1",
+    )
+
+    await spend_management_endpoints._assert_user_can_view_request_id(
+        prisma,
+        auth,
+        "req-owned",
+    )
+
+
+@pytest.mark.asyncio
+async def test_assert_user_can_view_request_id_rejects_missing_row():
+    spend_logs = MagicMock()
+    spend_logs.find_unique = AsyncMock(return_value=None)
+    prisma = MagicMock()
+    prisma.db.litellm_spendlogs = spend_logs
+    auth = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        user_id="user_1",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await spend_management_endpoints._assert_user_can_view_request_id(
+            prisma,
+            auth,
+            "req-missing",
+        )
+
+    assert exc_info.value.status_code == 403
+
+
 def test_ui_view_request_response_forbids_non_admin_without_db(client, monkeypatch):
     """
     Without prisma, non-admins cannot be authorized to read request/response

@@ -304,6 +304,16 @@
       "remove_paths": []
     },
     {
+      "name": "spend-log-detail-access",
+      "commit": "fix(hgi): authorize owned spend log details",
+      "paths": [
+        "litellm/proxy/spend_tracking/spend_management_endpoints.py",
+        "tests/test_litellm/proxy/auth/test_route_checks.py",
+        "tests/test_litellm/proxy/spend_tracking/test_spend_management_endpoints.py"
+      ],
+      "remove_paths": []
+    },
+    {
       "name": "maintenance-tooling",
       "commit": "chore(hgi): add upstream synchronization tooling",
       "paths": [
