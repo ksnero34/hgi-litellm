@@ -11,8 +11,20 @@ interface ResponseItemsViewProps {
   state: ParsedResponseState | null;
 }
 
+const responseStatusTranslationKeys: Record<string, string> = {
+  completed: "observability.logs.response_status_value.completed",
+  failed: "observability.logs.response_status_value.failed",
+  incomplete: "observability.logs.response_status_value.incomplete",
+  in_progress: "observability.logs.response_status_value.in_progress",
+  queued: "observability.logs.response_status_value.queued",
+  cancelled: "observability.logs.response_status_value.cancelled",
+  canceled: "observability.logs.response_status_value.cancelled",
+};
+
 export function ResponseItemsView({ items, state }: ResponseItemsViewProps) {
   const { t } = useTranslation();
+  const statusTranslationKey = state?.status ? responseStatusTranslationKeys[state.status] : undefined;
+  const statusLabel = statusTranslationKey ? t(statusTranslationKey) : state?.status;
 
   return (
     <div>
@@ -20,7 +32,7 @@ export function ResponseItemsView({ items, state }: ResponseItemsViewProps) {
         <div style={{ marginBottom: 12, display: "grid", gap: 4 }}>
           {state.status && (
             <Text type="secondary">
-              {t("observability.logs.response_status")}: {state.status}
+              {t("observability.logs.response_status")}: {statusLabel}
             </Text>
           )}
           {state.error && (

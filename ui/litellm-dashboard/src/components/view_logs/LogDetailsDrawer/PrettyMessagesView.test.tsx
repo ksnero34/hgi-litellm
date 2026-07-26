@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import { i18n } from "@/i18n/i18n";
 import { PrettyMessagesView } from "./PrettyMessagesView";
 
 vi.mock("antd", async () => {
@@ -165,6 +166,35 @@ describe("PrettyMessagesView", () => {
 
     expect(screen.getByText("Fallback answer")).toBeInTheDocument();
     expect(screen.getByText(/Provider failed after partial output/)).toBeInTheDocument();
+  });
+
+  it("localizes Responses status and character count while keeping Reasoning in English", async () => {
+    await i18n.changeLanguage("ko");
+    const response = {
+      object: "response",
+      status: "completed",
+      output: [
+        {
+          type: "reasoning",
+          content: [{ type: "reasoning_text", text: "검토" }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "완료했습니다" }],
+        },
+      ],
+    };
+
+    const { unmount } = render(<PrettyMessagesView request={{ input: "확인" }} response={response} />);
+
+    expect(screen.getByText("Reasoning")).toBeInTheDocument();
+    expect(screen.getByText("상태: 완료")).toBeInTheDocument();
+    expect(screen.getByText("(2자)")).toBeInTheDocument();
+    expect(screen.queryByText("리저닝")).not.toBeInTheDocument();
+
+    unmount();
+    await i18n.changeLanguage("en");
   });
 
   it("aggregates raw Responses SSE text and reasoning deltas", () => {
