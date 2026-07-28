@@ -158,6 +158,8 @@
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.test.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.tsx",
+        "ui/litellm-dashboard/src/components/GuardrailsMonitor/LogViewer.test.tsx",
+        "ui/litellm-dashboard/src/components/GuardrailsMonitor/LogViewer.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.test.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/__tests__/fixtures.ts"

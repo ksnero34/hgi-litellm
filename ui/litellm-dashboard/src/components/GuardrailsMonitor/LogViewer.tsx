@@ -1,9 +1,7 @@
 import { CheckCircleOutlined, CloseOutlined, DownOutlined, WarningOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
 import moment from "moment";
 import { Button, Spin } from "antd";
 import React, { useState } from "react";
-import { uiSpendLogsCall } from "@/components/networking";
 import { LogDetailsDrawer } from "@/components/view_logs/LogDetailsDrawer";
 import type { LogEntry as ViewLogsLogEntry } from "@/components/view_logs/columns";
 import type { LogEntry } from "./mockData";
@@ -46,6 +44,34 @@ interface LogViewerProps {
   endDate?: string;
 }
 
+export const getGuardrailLogDateRange = (startDate: string, endDate: string) => ({
+  startTime: startDate
+    ? moment.utc(startDate, "YYYY-MM-DD").startOf("day").format("YYYY-MM-DD HH:mm:ss")
+    : moment.utc().subtract(24, "hours").format("YYYY-MM-DD HH:mm:ss"),
+  endTime: endDate
+    ? moment.utc(endDate, "YYYY-MM-DD").endOf("day").format("YYYY-MM-DD HH:mm:ss")
+    : moment.utc().format("YYYY-MM-DD HH:mm:ss"),
+});
+
+const toViewLogsLogEntry = (log: LogEntry): ViewLogsLogEntry => ({
+  request_id: log.id,
+  api_key: "",
+  team_id: "",
+  model: log.model ?? "",
+  model_id: "",
+  call_type: "guardrail",
+  spend: 0,
+  total_tokens: 0,
+  prompt_tokens: 0,
+  completion_tokens: 0,
+  startTime: log.timestamp,
+  endTime: log.timestamp,
+  cache_hit: "false",
+  messages: log.input_snippet ?? log.input ?? "",
+  response: log.output_snippet ?? log.output ?? "",
+  metadata: { status: log.action === "blocked" ? "failure" : "success" },
+});
+
 export function LogViewer({
   guardrailName,
   filterAction = "all",
@@ -58,7 +84,7 @@ export function LogViewer({
 }: LogViewerProps) {
   const [sampleSize, setSampleSize] = useState(10);
   const [activeFilter, setActiveFilter] = useState<string>(filterAction);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedLog, setSelectedLog] = useState<ViewLogsLogEntry | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const filteredLogs = logs.filter((log) => activeFilter === "all" || log.action === activeFilter);
@@ -67,40 +93,16 @@ export function LogViewer({
   const sampleSizes = [10, 50, 100];
   const filters: Array<"all" | "blocked" | "flagged" | "passed"> = ["all", "blocked", "flagged", "passed"];
 
-  const startTime = startDate
-    ? moment(startDate).utc().format("YYYY-MM-DD HH:mm:ss")
-    : moment().subtract(24, "hours").utc().format("YYYY-MM-DD HH:mm:ss");
-  const endTime = endDate
-    ? moment(endDate).utc().endOf("day").format("YYYY-MM-DD HH:mm:ss")
-    : moment().utc().format("YYYY-MM-DD HH:mm:ss");
-
-  const { data: fullLogResponse } = useQuery({
-    queryKey: ["spend-log-by-request", selectedRequestId, startTime, endTime],
-    queryFn: async () => {
-      if (!accessToken || !selectedRequestId) return null;
-      const res = await uiSpendLogsCall({
-        accessToken,
-        start_date: startTime,
-        end_date: endTime,
-        page: 1,
-        page_size: 10,
-        params: { request_id: selectedRequestId },
-      });
-      return res as { data: ViewLogsLogEntry[]; total: number };
-    },
-    enabled: Boolean(accessToken && selectedRequestId && drawerOpen),
-  });
-
-  const selectedLog: ViewLogsLogEntry | null = fullLogResponse?.data?.[0] ?? null;
+  const { startTime } = getGuardrailLogDateRange(startDate, endDate);
 
   const handleLogClick = (log: LogEntry) => {
-    setSelectedRequestId(log.id);
+    setSelectedLog(toViewLogsLogEntry(log));
     setDrawerOpen(true);
   };
 
   const handleCloseDrawer = () => {
     setDrawerOpen(false);
-    setSelectedRequestId(null);
+    setSelectedLog(null);
   };
 
   return (
