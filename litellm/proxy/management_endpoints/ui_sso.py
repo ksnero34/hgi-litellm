@@ -94,6 +94,11 @@ from litellm.proxy.common_utils.html_forms.ui_login import build_ui_login_form
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.customizations.oidc import resolve_generic_oidc_endpoints
 from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
+from litellm.proxy.customizations.sso_team_sync import (
+    normalize_sso_team_claim,
+    resolve_or_create_sso_teams,
+    sync_sso_team_memberships,
+)
 from litellm.proxy.management_endpoints.internal_user_endpoints import new_user
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
 from litellm.proxy.management_endpoints.sso_helper_utils import (
@@ -729,6 +734,7 @@ def process_sso_jwt_access_token(
     sso_jwt_handler: Optional[JWTHandler],
     result: Union[OpenID, dict, None],
     role_mappings: Optional["RoleMappings"] = None,
+    team_mappings: Optional["TeamMappings"] = None,
 ) -> Optional[dict]:
     """
     Process SSO JWT access token and extract team IDs and user role if available.
@@ -760,6 +766,25 @@ def process_sso_jwt_access_token(
                 "Access token is not a valid JWT (possibly an opaque token), skipping JWT-based extraction"
             )
             return None
+
+        if team_mappings is not None and team_mappings.team_ids_jwt_field and result:
+            raw_team_claim = get_nested_value(access_token_payload, team_mappings.team_ids_jwt_field)
+            if raw_team_claim is not None:
+                team_claim_values = normalize_sso_team_claim(raw_team_claim)
+                existing_claim_values = (
+                    result.get("sso_team_claim_values", [])
+                    if isinstance(result, dict)
+                    else getattr(result, "sso_team_claim_values", [])
+                )
+                merged_claim_values = list(dict.fromkeys([*existing_claim_values, *team_claim_values]))
+                if isinstance(result, dict):
+                    result["sso_team_claim_present"] = True
+                    result["sso_team_claim_values"] = merged_claim_values
+                    result["team_ids"] = list(dict.fromkeys([*(result.get("team_ids") or []), *team_claim_values]))
+                else:
+                    result.sso_team_claim_present = True
+                    result.sso_team_claim_values = merged_claim_values
+                    result.team_ids = list(dict.fromkeys([*(result.team_ids or []), *team_claim_values]))
 
         # Extract team IDs from access token if sso_jwt_handler is available
         if sso_jwt_handler:
@@ -956,16 +981,21 @@ def generic_response_convertor(
         team_ids = sso_jwt_handler.get_all_jwt_team_ids(cast(dict, response))
         all_teams.extend(team_ids)
 
-    if team_mappings is not None and team_mappings.team_ids_jwt_field is not None:
-        team_ids_from_db_mapping: Optional[List[str]] = get_nested_value(
+    sso_team_mapping_configured = team_mappings is not None and team_mappings.team_ids_jwt_field is not None
+    sso_team_claim_present = False
+    sso_team_claim_values: List[str] = []
+    if sso_team_mapping_configured and team_mappings is not None and team_mappings.team_ids_jwt_field is not None:
+        raw_team_claim: Any = get_nested_value(
             data=cast(dict, response),
             key_path=team_mappings.team_ids_jwt_field,
-            default=[],
+            default=None,
         )
-        if team_ids_from_db_mapping:
-            all_teams.extend(team_ids_from_db_mapping)
+        sso_team_claim_present = raw_team_claim is not None
+        sso_team_claim_values = normalize_sso_team_claim(raw_team_claim)
+        if sso_team_claim_values:
+            all_teams.extend(sso_team_claim_values)
             verbose_proxy_logger.debug(
-                f"Loaded team_ids from DB team_mappings.team_ids_jwt_field='{team_mappings.team_ids_jwt_field}': {team_ids_from_db_mapping}"
+                f"Loaded teams from DB team_mappings.team_ids_jwt_field='{team_mappings.team_ids_jwt_field}': {sso_team_claim_values}"
             )
     else:
         team_ids = jwt_handler.get_all_jwt_team_ids(cast(dict, response))
@@ -1035,6 +1065,9 @@ def generic_response_convertor(
         team_ids=all_teams,
         user_role=user_role,
         extra_fields=extra_fields,
+        sso_team_mapping_configured=sso_team_mapping_configured,
+        sso_team_claim_present=sso_team_claim_present,
+        sso_team_claim_values=sso_team_claim_values,
     )
 
 
@@ -1409,7 +1442,11 @@ async def get_generic_sso_response(
             access_token_str = generic_sso.access_token
 
         access_token_payload = process_sso_jwt_access_token(
-            access_token_str, sso_jwt_handler, result, role_mappings=role_mappings
+            access_token_str,
+            sso_jwt_handler,
+            result,
+            role_mappings=role_mappings,
+            team_mappings=team_mappings,
         )
         # Delete the single-use PKCE verifier only after all downstream processing
         # (response_convertor and process_sso_jwt_access_token) has completed
@@ -2749,6 +2786,27 @@ class SSOAuthenticationHandler:
         """
         if user_info is None:
             verbose_proxy_logger.debug("User not found in LiteLLM DB, skipping team member addition")
+            return
+        if getattr(result, "sso_team_mapping_configured", False):
+            if not getattr(result, "sso_team_claim_present", False):
+                verbose_proxy_logger.warning("Configured SSO team claim was absent; preserving existing memberships")
+                return
+            from litellm.proxy.proxy_server import prisma_client
+
+            if prisma_client is None:
+                verbose_proxy_logger.error("Prisma client not found, skipping SSO team synchronization")
+                return
+            team_claim_values = getattr(result, "sso_team_claim_values", [])
+            resolved_team_ids = await resolve_or_create_sso_teams(
+                prisma_client=prisma_client,
+                team_claim_values=team_claim_values,
+            )
+            await sync_sso_team_memberships(
+                prisma_client=prisma_client,
+                user_info=user_info,
+                target_team_ids=resolved_team_ids,
+            )
+            setattr(result, "team_ids", resolved_team_ids)
             return
         sso_teams = getattr(result, "team_ids", [])
         await add_missing_team_member(user_info=user_info, sso_teams=sso_teams)

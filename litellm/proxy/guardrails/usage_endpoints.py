@@ -61,6 +61,7 @@ class UsageDetailResponse(BaseModel):
     type: str
     provider: str
     requestsEvaluated: int
+    flaggedCount: int
     failRate: float
     avgScore: Optional[float]
     avgLatency: Optional[float]
@@ -377,6 +378,7 @@ async def guardrails_usage_detail(
 
     requests = sum(int(m.requests_evaluated or 0) for m in metrics)
     blocked = sum(int(m.blocked_count or 0) for m in metrics)
+    flagged = sum(int(m.flagged_count or 0) for m in metrics)
     fail_rate = (100.0 * blocked / requests) if requests else 0.0
 
     prev_blocked = sum(int(m.blocked_count or 0) for m in metrics_prev)
@@ -389,11 +391,18 @@ async def guardrails_usage_detail(
     for m in metrics:
         d = m.date
         if d not in ts_by_date:
-            ts_by_date[d] = {"passed": 0, "blocked": 0}
+            ts_by_date[d] = {"passed": 0, "blocked": 0, "flagged": 0}
         ts_by_date[d]["passed"] += int(m.passed_count or 0)
         ts_by_date[d]["blocked"] += int(m.blocked_count or 0)
+        ts_by_date[d]["flagged"] += int(m.flagged_count or 0)
     time_series = [
-        {"date": d, "passed": v["passed"], "blocked": v["blocked"], "score": None}
+        {
+            "date": d,
+            "passed": v["passed"],
+            "blocked": v["blocked"],
+            "flagged": v["flagged"],
+            "score": None,
+        }
         for d, v in sorted(ts_by_date.items())
     ]
     _litellm_params = getattr(guardrail, "litellm_params", None) or (
@@ -414,6 +423,7 @@ async def guardrails_usage_detail(
         type=str(guardrail_info.get("type", "Guardrail")),
         provider=str(litellm_params.get("guardrail", "Unknown")),
         requestsEvaluated=requests,
+        flaggedCount=flagged,
         failRate=round(fail_rate, 1),
         avgScore=None,
         avgLatency=None,

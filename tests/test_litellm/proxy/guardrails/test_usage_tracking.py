@@ -31,6 +31,13 @@ async def test_process_spend_logs_tracks_each_policy_once_and_prefers_usage_acti
         "guardrail_information": [
             {
                 "guardrail_name": "guard-a",
+                "guardrail_status": "success",
+                "usage_action": "flagged",
+                "guardrail_mode": "logging_only",
+                "policy_ids": ["policy-a", "policy-b"],
+            },
+            {
+                "guardrail_name": "guard-a",
                 "guardrail_status": "guardrail_intervened",
                 "usage_action": "passed",
                 "policy_ids": ["policy-a", "policy-b"],
@@ -61,6 +68,8 @@ async def test_process_spend_logs_tracks_each_policy_once_and_prefers_usage_acti
     guardrail_index.create_many.assert_awaited_once()
     guardrail_index_data = guardrail_index.create_many.await_args.kwargs["data"]
     assert guardrail_index_data[0]["policy_id"] == "policy-a"
+    guardrail_a_rows = [row for row in guardrail_index_data if row["guardrail_id"] == "guard-a"]
+    assert len(guardrail_a_rows) == 1
     assert (
         next(row for row in guardrail_index_data if row["guardrail_id"] == "guard-config")["policy_id"]
         == "config-policy"
@@ -78,11 +87,18 @@ async def test_process_spend_logs_tracks_each_policy_once_and_prefers_usage_acti
         },
     ]
     assert daily_policy.upsert.await_count == 2
+    guardrail_creates = {
+        call.kwargs["data"]["create"]["guardrail_id"]: call.kwargs["data"]["create"]
+        for call in daily_guardrail.upsert.await_args_list
+    }
+    assert guardrail_creates["guard-a"]["requests_evaluated"] == 1
+    assert guardrail_creates["guard-a"]["flagged_count"] == 1
     creates = {
         call.kwargs["data"]["create"]["policy_id"]: call.kwargs["data"]["create"]
         for call in daily_policy.upsert.await_args_list
     }
-    assert creates["policy-a"]["passed_count"] == 1
+    assert creates["policy-a"]["passed_count"] == 0
     assert creates["policy-a"]["blocked_count"] == 0
+    assert creates["policy-a"]["flagged_count"] == 1
     assert creates["policy-b"]["flagged_count"] == 1
     assert creates["policy-b"]["requests_evaluated"] == 1

@@ -2,7 +2,8 @@
   "schema_version": 1,
   "base_ref": "v1.93.0",
   "generated_paths": [
-    "ui/litellm-dashboard/src/lib/http/schema.d.ts"
+    "ui/litellm-dashboard/src/lib/http/schema.d.ts",
+    "litellm-hgi-1.93.0.2.tar.gz"
   ],
   "groups": [
     {
@@ -31,11 +32,14 @@
         "litellm/proxy/auth/user_api_key_auth.py",
         "litellm/proxy/customizations/oidc.py",
         "litellm/proxy/customizations/sso.py",
+        "litellm/proxy/customizations/sso_team_sync.py",
+        "litellm/proxy/management_endpoints/types.py",
         "litellm/proxy/management_endpoints/ui_sso.py",
         "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py",
         "litellm/types/proxy/management_endpoints/ui_sso.py",
         "tests/test_litellm/proxy/auth/test_user_api_key_auth.py",
         "tests/test_litellm/proxy/customizations/test_oidc.py",
+        "tests/test_litellm/proxy/customizations/test_sso_team_sync.py",
         "tests/test_litellm/proxy/management_endpoints/test_ui_sso.py",
         "tests/test_litellm/proxy/ui_crud_endpoints/test_proxy_setting_endpoints.py",
         "ui/litellm-dashboard/src/app/(dashboard)/hooks/sso/useEditSSOSettings.ts",
@@ -134,16 +138,29 @@
       "remove_paths": []
     },
     {
-      "name": "presidio-custom-entities",
-      "commit": "feat(hgi): allow custom Presidio PII entity types",
+      "name": "presidio-governance",
+      "commit": "feat(hgi): extend Presidio governance and audit",
       "paths": [
+        "litellm/llms/openai/chat/guardrail_translation/handler.py",
+        "litellm/llms/openai/responses/guardrail_translation/handler.py",
+        "litellm/litellm_core_utils/litellm_logging.py",
+        "litellm/proxy/common_request_processing.py",
         "litellm/proxy/guardrails/guardrail_hooks/presidio.py",
         "litellm/proxy/guardrails/guardrail_initializers.py",
+        "litellm/types/guardrails.py",
+        "litellm/utils.py",
+        "tests/test_litellm/llms/openai/chat/guardrail_translation/test_openai_guardrail_handler.py",
+        "tests/test_litellm/llms/openai/responses/test_openai_responses_guardrail_handler.py",
         "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio.py",
+        "tests/test_litellm/proxy/guardrails/test_deferred_guardrail_logging.py",
+        "tests/test_litellm/proxy/test_common_request_processing.py",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.test.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.test.tsx",
-        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.tsx"
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/pii_configuration.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.test.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/__tests__/fixtures.ts"
       ],
       "remove_paths": []
     },
@@ -300,6 +317,20 @@
         "litellm-proxy-extras/litellm_proxy_extras/utils.py",
         "tests/test_litellm/test_main.py",
         "litellm-proxy-extras/tests/test_setup_database_fail_fast.py"
+      ],
+      "remove_paths": []
+    },
+    {
+      "name": "prisma-v2-migrations",
+      "commit": "fix(hgi): harden Prisma v2 migrations",
+      "paths": [
+        "helm/litellm-helm/templates/migrations-job.yaml",
+        "helm/litellm-helm/tests/migrations-job_tests.yaml",
+        "litellm/proxy/db/prisma_client.py",
+        "litellm/proxy/prisma_migration.py",
+        "litellm/proxy/proxy_cli.py",
+        "tests/test_litellm/proxy/test_prisma_migration.py",
+        "tests/test_litellm/proxy/test_proxy_cli.py"
       ],
       "remove_paths": []
     },

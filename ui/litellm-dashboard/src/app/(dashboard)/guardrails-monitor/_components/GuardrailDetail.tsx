@@ -74,6 +74,7 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
         provider: detailData.provider,
         type: detailData.type,
         requestsEvaluated: detailData.requestsEvaluated,
+        flaggedCount: detailData.flaggedCount,
         failRate: detailData.failRate,
         avgScore: detailData.avgScore,
         avgLatency: detailData.avgLatency,
@@ -85,6 +86,7 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
         provider: "—",
         type: "—",
         requestsEvaluated: 0,
+        flaggedCount: 0,
         failRate: 0,
         avgScore: undefined as number | undefined,
         avgLatency: undefined as number | undefined,
@@ -156,13 +158,21 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
       {activeTab === "overview" && (
         <div className="space-y-6 mt-4">
           <Row gutter={[16, 16]}>
-            <Col xs={12} md={8}>
+            <Col xs={12} md={6}>
               <MetricCard
                 label={t("observabilityExtra.guardrails.requestsEvaluated")}
                 value={data.requestsEvaluated.toLocaleString()}
               />
             </Col>
-            <Col xs={12} md={8}>
+            <Col xs={12} md={6}>
+              <MetricCard
+                label={t("observabilityExtra.guardrails.auditDetections")}
+                value={data.flaggedCount.toLocaleString()}
+                valueColor={data.flaggedCount > 0 ? "text-amber-600" : "text-green-600"}
+                subtitle={t("observabilityExtra.guardrails.auditDetectionsHint")}
+              />
+            </Col>
+            <Col xs={12} md={6}>
               <MetricCard
                 label={t("observabilityExtra.guardrails.failRate")}
                 value={`${data.failRate}%`}
@@ -173,7 +183,7 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
                 icon={data.failRate > 15 ? <WarningOutlined className="text-red-400" /> : undefined}
               />
             </Col>
-            <Col xs={12} md={8}>
+            <Col xs={12} md={6}>
               <MetricCard
                 label={t("observabilityExtra.guardrails.avgLatency")}
                 value={data.avgLatency != null ? `${Math.round(data.avgLatency)}ms` : "—"}

@@ -110,6 +110,24 @@ def _parse_guardrail_info_from_payload(payload: dict[str, Any]) -> list[dict[str
     return [entry for entry in info if isinstance(entry, dict)]
 
 
+def _aggregate_request_guardrail_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    precedence = {"passed": 0, "flagged": 1, "blocked": 2}
+    identities = tuple(
+        dict.fromkeys(
+            entry.get("guardrail_id") or entry.get("guardrail_name")
+            for entry in entries
+            if entry.get("guardrail_id") or entry.get("guardrail_name")
+        )
+    )
+    return [
+        max(
+            (entry for entry in entries if (entry.get("guardrail_id") or entry.get("guardrail_name")) == identity),
+            key=lambda entry: precedence[_usage_action(entry)],
+        )
+        for identity in identities
+    ]
+
+
 def _date_str(dt: datetime) -> str:
     """YYYY-MM-DD in UTC."""
     if dt.tzinfo is None:
@@ -146,6 +164,7 @@ async def process_spend_logs_guardrail_usage(  # noqa: C901  # Aggregation keeps
         }
     )
     policy_index_rows: list[dict[str, Any]] = []
+    seen_request_guardrails: set[tuple[str, str]] = set()
     seen_request_policies: set[tuple[str, str]] = set()
 
     for payload in logs_to_process:
@@ -161,10 +180,15 @@ async def process_spend_logs_guardrail_usage(  # noqa: C901  # Aggregation keeps
         date_key = _date_str(start_time)
 
         guardrail_entries = _parse_guardrail_info_from_payload(payload)
-        for entry in guardrail_entries:
+        request_guardrail_entries = _aggregate_request_guardrail_entries(guardrail_entries)
+        for entry in request_guardrail_entries:
             guardrail_id = entry.get("guardrail_id") or entry.get("guardrail_name") or ""
             if not guardrail_id:
                 continue
+            request_guardrail = (str(request_id), guardrail_id)
+            if request_guardrail in seen_request_guardrails:
+                continue
+            seen_request_guardrails.add(request_guardrail)
             key = (guardrail_id, date_key)
             daily_guardrail[key]["requests_evaluated"] += 1
             action = _usage_action(entry)

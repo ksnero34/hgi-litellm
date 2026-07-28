@@ -317,6 +317,7 @@ const BaseSSOSettingsForm: React.FC<BaseSSOSettingsFormProps> = ({ form, onFormS
                 label={t("settings.sso.teamIdsJwtField")}
                 name="team_ids_jwt_field"
                 rules={[{ required: true, message: t("settings.sso.form.teamIdsJwtFieldRequired") }]}
+                extra={t("settings.sso.form.teamClaimHelp")}
               >
                 <TextInput />
               </Form.Item>

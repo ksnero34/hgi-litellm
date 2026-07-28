@@ -94,7 +94,7 @@ class TeamMappings(LiteLLMPydanticObjectBase):
 
     team_ids_jwt_field: Optional[str] = Field(
         default=None,
-        description="The field name in the SSO/JWT token that contains the team IDs array (e.g., 'groups', 'teams'). Supports dot notation for nested fields.",
+        description="The field name in the SSO/JWT token that contains team IDs or names. String, array, and JSON object values are supported. Supports dot notation for nested fields.",
     )
 
 

@@ -38,6 +38,8 @@ from litellm.completion_extras.litellm_responses_transformation.transformation i
     OpenAiResponsesToChatCompletionStreamIterator,
 )
 from litellm.llms.base_llm.guardrail_translation.base_translation import BaseTranslation
+from litellm.llms.base_llm.guardrail_translation.utils import effective_skip_system_message_for_guardrail
+from litellm.llms.openai.chat.guardrail_translation.handler import get_guardrail_input_scope
 from litellm.responses.litellm_completion_transformation.transformation import (
     LiteLLMCompletionResponsesConfig,
 )
@@ -52,7 +54,7 @@ from litellm.types.responses.main import (
     OutputFunctionToolCall,
     OutputText,
 )
-from litellm.types.utils import GenericGuardrailAPIInputs
+from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
@@ -105,11 +107,23 @@ class OpenAIResponsesHandler(BaseTranslation):
         if input_data is None:
             return data
 
+        await self._process_instructions(data, guardrail_to_apply, litellm_logging_obj)
+
         structured_messages = self.get_structured_messages(data)
 
         # Handle simple string input
         if isinstance(input_data, str):
-            inputs = GenericGuardrailAPIInputs(texts=[input_data])
+            inputs = GenericGuardrailAPIInputs(
+                texts=[input_data],
+                text_sources=[
+                    GuardrailInputSource(
+                        type="input",
+                        role="user",
+                        path="input",
+                        scope="current_user_prompt",
+                    )
+                ],
+            )
             original_tools: List[Dict[str, Any]] = []
 
             # Extract and transform tools if present
@@ -163,6 +177,23 @@ class OpenAIResponsesHandler(BaseTranslation):
         # Step 2: Apply guardrail to all texts in batch
         if texts_to_check:
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            latest_user_message_index = next(
+                (
+                    message_index
+                    for message_index in range(len(input_data) - 1, -1, -1)
+                    if isinstance(input_data[message_index], dict) and input_data[message_index].get("role") == "user"
+                ),
+                None,
+            )
+            inputs["text_sources"] = [
+                self._input_source(
+                    input_data=input_data,
+                    mapping=mapping,
+                    text=texts_to_check[text_index],
+                    latest_user_message_index=latest_user_message_index,
+                )
+                for text_index, mapping in enumerate(task_mappings)
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tools_to_check:
@@ -197,6 +228,70 @@ class OpenAIResponsesHandler(BaseTranslation):
         verbose_proxy_logger.debug("OpenAI Responses API: Processed input messages: %s", input_data)
 
         return data
+
+    async def _process_instructions(
+        self,
+        data: dict,
+        guardrail_to_apply: "CustomGuardrail",
+        litellm_logging_obj: Optional[Any],
+    ) -> None:
+        instructions = data.get("instructions")
+        if not isinstance(instructions, str) or effective_skip_system_message_for_guardrail(guardrail_to_apply):
+            return
+        instruction_inputs = GenericGuardrailAPIInputs(
+            texts=[instructions],
+            text_sources=[
+                GuardrailInputSource(
+                    type="instruction",
+                    role="developer",
+                    path="instructions",
+                    scope="system_prompt",
+                )
+            ],
+        )
+        guardrailed_instruction = await guardrail_to_apply.apply_guardrail(
+            inputs=instruction_inputs,
+            request_data=data,
+            input_type="request",
+            logging_obj=litellm_logging_obj,
+        )
+        instruction_texts = guardrailed_instruction.get("texts", [])
+        if instruction_texts:
+            data["instructions"] = instruction_texts[0]
+
+    def _input_source(
+        self,
+        input_data: List[Any],
+        mapping: InputTextMapping,
+        text: str,
+        latest_user_message_index: Optional[int],
+    ) -> GuardrailInputSource:
+        message_index, field, content_index = mapping
+        message = input_data[message_index]
+        role = str(message.get("role") or "unknown") if isinstance(message, dict) else "unknown"
+        item_type = message.get("type") if isinstance(message, dict) else None
+        scope = (
+            "tool_result"
+            if item_type == "function_call_output"
+            else get_guardrail_input_scope(
+                role=role,
+                message_index=message_index,
+                content_index=content_index,
+                text=text,
+                latest_user_message_index=latest_user_message_index,
+            )
+        )
+        path = f"input[{message_index}].{field}"
+        if content_index is not None:
+            path = f"{path}[{content_index}].text"
+        return GuardrailInputSource(
+            type=str(item_type or "message"),
+            message_index=message_index,
+            role=role,
+            content_index=content_index,
+            path=path,
+            scope=scope,
+        )
 
     def extract_request_tool_names(self, data: dict) -> List[str]:
         """Extract tool names from Responses API request (tools[].name for function
@@ -454,6 +549,16 @@ class OpenAIResponsesHandler(BaseTranslation):
                     request_data["litellm_metadata"] = user_metadata
 
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            inputs["text_sources"] = [
+                GuardrailInputSource(
+                    type="response",
+                    message_index=output_index,
+                    content_index=content_index,
+                    path=f"output[{output_index}].content[{content_index}].text",
+                    scope="other",
+                )
+                for output_index, content_index in task_mappings
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:

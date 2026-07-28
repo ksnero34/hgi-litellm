@@ -37,19 +37,18 @@ import aiohttp
 import litellm
 from litellm import get_secret
 from litellm._logging import verbose_proxy_logger
-from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
+from litellm.types.utils import CallTypes, GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 
 from litellm.caching.caching import DualCache
-from litellm.exceptions import BlockedPiiEntityError, GuardrailRaisedException
+from litellm.exceptions import BlockedPiiEntityError
 from litellm.integrations.custom_guardrail import (
     CustomGuardrail,
     log_guardrail_information,
 )
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.guardrails import (
     GuardrailEventHooks,
     LitellmParams,
@@ -57,6 +56,7 @@ from litellm.types.guardrails import (
     PiiEntityType,
     PresidioPerRequestConfig,
 )
+from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.proxy.guardrails.guardrail_hooks.presidio import (
     PresidioAnalyzeRequest,
     PresidioAnalyzeResponseItem,
@@ -77,6 +77,10 @@ class PresidioLogContext(TypedDict, total=False):
 
 
 _PRESIDIO_LOG_CONTEXT: ContextVar[Optional[PresidioLogContext]] = ContextVar("presidio_log_context", default=None)
+
+
+class _PresidioServiceError(Exception):
+    pass
 
 
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
@@ -130,6 +134,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_language: Optional[str] = None,
         presidio_score_thresholds: Optional[Dict[Union[PiiEntityType, str], float]] = None,
         presidio_entities_deny_list: Optional[List[Union[PiiEntityType, str]]] = None,
+        unreachable_fallback: Literal["fail_closed", "fail_open"] = "fail_open",
         **kwargs,
     ):
         if logging_only is True:
@@ -138,11 +143,13 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         kwargs.setdefault("supported_event_hooks", list(self.get_supported_event_hooks()))
         super().__init__(**kwargs)
         self.guardrail_provider = "presidio"
+        self.logging_only = logging_only is True
         self.pii_tokens: dict = {}  # mapping of PII token to original text - only used with Presidio `replace` operation
         self.mock_redacted_text = mock_redacted_text
         self.output_parse_pii = output_parse_pii or False
         self.apply_to_output = apply_to_output
         self.presidio_filter_scope = presidio_filter_scope
+        self.unreachable_fallback = unreachable_fallback
 
         # When output_parse_pii or apply_to_output is enabled, the guardrail must
         # also run on post_call to unmask/mask the response.  Expand the event_hook
@@ -391,16 +398,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     analyze_payload,
                 )
 
-                def _fail_on_invalid_response(
-                    reason: str,
-                ) -> List[PresidioAnalyzeResponseItem]:
-                    should_fail_closed = bool(self.pii_entities_config) or self.output_parse_pii or self.apply_to_output
-                    if should_fail_closed:
-                        raise GuardrailRaisedException(
-                            guardrail_name=self.guardrail_name,
-                            message=f"Presidio analyzer returned invalid response; cannot verify PII when PII protection is configured: {reason}",
-                            should_wrap_with_default_message=False,
-                        )
+                def _fail_on_invalid_response(reason: str) -> List[PresidioAnalyzeResponseItem]:
+                    has_pii_protection = bool(self.pii_entities_config) or self.output_parse_pii or self.apply_to_output
+                    if has_pii_protection:
+                        raise _PresidioServiceError(f"Presidio analyzer returned invalid response: {reason}")
                     verbose_proxy_logger.warning("Presidio analyzer %s, returning empty list", reason)
                     return []
 
@@ -472,9 +473,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         )
                         continue
                 return final_results
-        except GuardrailRaisedException:
-            # Re-raise GuardrailRaisedException without wrapping
+        except _PresidioServiceError:
             raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            raise _PresidioServiceError(f"Presidio PII analysis failed: {type(e).__name__}") from e
         except Exception as e:
             # Sanitize exception to avoid leaking the original text (which may
             # contain API keys or other secrets) in error responses.
@@ -497,7 +499,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             ) as response:
                 if response.status >= 400:
                     error_body = await response.text()
-                    raise Exception(f"Presidio anonymizer returned HTTP {response.status}: {error_body[:200]}")
+                    raise _PresidioServiceError(
+                        f"Presidio anonymizer returned HTTP {response.status}: {error_body[:200]}"
+                    )
                 content_type = getattr(
                     response,
                     "content_type",
@@ -505,7 +509,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 )
                 if "application/json" not in content_type:
                     error_body = await response.text()
-                    raise Exception(
+                    raise _PresidioServiceError(
                         f"Presidio anonymizer returned non-JSON Content-Type '{content_type}'; body: '{error_body[:200]}'"
                     )
                 return await response.json()
@@ -614,8 +618,12 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             # Sanitize exception to avoid leaking the original text (which may
             # contain API keys or other secrets) in error responses.
             error_str = str(e)
-            if "Invalid anonymizer response" in error_str or "Presidio anonymizer returned" in error_str:
+            if isinstance(e, (aiohttp.ClientError, asyncio.TimeoutError)):
+                raise _PresidioServiceError(f"Presidio PII anonymization failed: {type(e).__name__}") from e
+            if isinstance(e, _PresidioServiceError):
                 raise
+            if "Invalid anonymizer response" in error_str or "Presidio anonymizer returned" in error_str:
+                raise _PresidioServiceError(error_str) from e
             raise Exception(f"Presidio PII anonymization failed: {type(e).__name__}") from e
 
     def filter_analyze_results_by_score(
@@ -757,10 +765,20 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 )
                 return anonymized_text
             return redacted_text["text"]
-        except Exception as e:
+        except BlockedPiiEntityError as e:
+            status = "guardrail_intervened"
+            exception_str = str(e)
+            raise
+        except _PresidioServiceError as e:
             status = "guardrail_failed_to_respond"
             exception_str = str(e)
-            raise e
+            if self.unreachable_fallback == "fail_open":
+                verbose_proxy_logger.error(
+                    "Presidio service unavailable; allowing content because unreachable_fallback=fail_open: %s",
+                    type(e).__name__,
+                )
+                return text
+            raise
         finally:
             ####################################################
             # Create Guardrail Trace for logging on Langfuse, Datadog, etc.
@@ -784,6 +802,12 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 guardrail_run_id=log_context.get("guardrail_run_id"),
                 event_type=log_context.get("guardrail_event"),
                 input_source=log_context.get("input_source"),
+                usage_action=(
+                    "flagged"
+                    if self.logging_only and isinstance(analyze_results, list) and len(analyze_results) > 0
+                    else None
+                ),
+                enforcement_mode="observe" if self.logging_only else "enforce",
             )
 
     async def async_pre_call_hook(
@@ -908,84 +932,89 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         """
         Masks the input before logging to langfuse, datadog, etc.
         """
-        if (call_type == "completion" or call_type == "acompletion") and self.presidio_filter_scope in (
-            "input",
-            "both",
-        ):
-            messages: Optional[List] = kwargs.get("messages", None)
-            tasks = []
-            task_mappings: List[Tuple[int, Optional[int]]] = []  # Track (message_index, content_index) for each task
+        from litellm.llms import load_guardrail_translation_mappings
 
-            if messages is None:
-                messages = []
-
-            presidio_config = self.get_presidio_settings_from_request_data(kwargs)
-
-            for msg_idx, m in enumerate(messages):
-                content = m.get("content", None)
-                if content is None:
-                    continue
-                if isinstance(content, str):
-                    tasks.append(
-                        self.check_pii(
-                            text=content,
-                            output_parse_pii=False,
-                            presidio_config=presidio_config,
-                            request_data=kwargs,
-                        )
-                    )  # need to pass separately b/c presidio has context window limits
-                    task_mappings.append((msg_idx, None))  # None indicates string content
-                elif isinstance(content, list):
-                    for content_idx, c in enumerate(content):
-                        text_str = c.get("text", None)
-                        if text_str is None:
-                            continue
-                        tasks.append(
-                            self.check_pii(
-                                text=text_str,
-                                output_parse_pii=False,
-                                presidio_config=presidio_config,
-                                request_data=kwargs,
-                            )
-                        )
-                        task_mappings.append((msg_idx, int(content_idx)))
-
-            responses = await asyncio.gather(*tasks)
-
-            # Map responses back to the correct message and content item
-            for task_idx, r in enumerate(responses):
-                mapping = task_mappings[task_idx]
-                msg_idx = cast(int, mapping[0])
-                content_idx_optional = cast(Optional[int], mapping[1])
-                content = messages[msg_idx].get("content", None)
-                if content is None:
-                    continue
-                if isinstance(content, str) and content_idx_optional is None:
-                    messages[msg_idx]["content"] = r  # replace content with redacted string
-                elif isinstance(content, list) and content_idx_optional is not None:
-                    messages[msg_idx]["content"][content_idx_optional]["text"] = r
-
-            verbose_proxy_logger.debug(f"Presidio PII Masking: Redacted pii message: {messages}")
-            kwargs["messages"] = messages
-
-        if self.presidio_filter_scope == "input":
+        try:
+            normalized_call_type = CallTypes(call_type)
+        except ValueError:
             return kwargs, result
 
-        logged_result, logged_response = await self._mask_responses_copy_for_logging(result, kwargs)
-        complete_stream = kwargs.get("async_complete_streaming_response")
-        masked_stream, masked_stream_response = await self._mask_responses_copy_for_logging(complete_stream, kwargs)
-        if masked_stream_response is not None:
-            kwargs["async_complete_streaming_response"] = masked_stream
+        translation_class = load_guardrail_translation_mappings().get(normalized_call_type)
+        if translation_class is None or normalized_call_type not in {
+            CallTypes.completion,
+            CallTypes.acompletion,
+            CallTypes.responses,
+            CallTypes.aresponses,
+        }:
+            return kwargs, result
 
-        standard_logging_object = kwargs.get("standard_logging_object")
+        logged_kwargs = dict(kwargs)
+        for field in (
+            "messages",
+            "input",
+            "instructions",
+            "tools",
+            "metadata",
+            "litellm_metadata",
+            "async_complete_streaming_response",
+            "standard_logging_object",
+        ):
+            if field in kwargs:
+                logged_kwargs[field] = copy.deepcopy(kwargs[field])
+        logged_result = copy.deepcopy(result)
+        translation = translation_class()
+        logging_obj = kwargs.get("litellm_logging_obj")
+
+        if self.presidio_filter_scope in ("input", "both"):
+            logged_kwargs = await translation.process_input_messages(
+                data=logged_kwargs,
+                guardrail_to_apply=self,
+                litellm_logging_obj=logging_obj,
+            )
+
+        if self.presidio_filter_scope == "input":
+            return logged_kwargs, logged_result
+
+        complete_stream = logged_kwargs.get("async_complete_streaming_response")
+        standard_logging_object = logged_kwargs.get("standard_logging_object")
+        standard_response = (
+            standard_logging_object.get("response") if isinstance(standard_logging_object, dict) else None
+        )
+        output_to_audit = (
+            complete_stream
+            if complete_stream is not None
+            else logged_result
+            if logged_result is not None
+            else standard_response
+        )
+        if output_to_audit is None:
+            return logged_kwargs, logged_result
+        if isinstance(output_to_audit, list):
+            audited_output = await translation.process_output_streaming_response(
+                responses_so_far=output_to_audit,
+                guardrail_to_apply=self,
+                litellm_logging_obj=logging_obj,
+                request_data=logged_kwargs,
+            )
+        else:
+            audited_output = await translation.process_output_response(
+                response=output_to_audit,
+                guardrail_to_apply=self,
+                litellm_logging_obj=logging_obj,
+                request_data=logged_kwargs,
+            )
+
+        audited_output = await self._audit_extended_output_fields(audited_output, logged_kwargs)
+
+        if complete_stream is not None:
+            logged_kwargs["async_complete_streaming_response"] = audited_output
+        elif logged_result is not None:
+            logged_result = audited_output
+
         if isinstance(standard_logging_object, dict):
-            standard_response = standard_logging_object.get("response")
-            _, masked_standard_response = await self._mask_responses_copy_for_logging(standard_response, kwargs)
-            response_to_log = masked_standard_response or logged_response or masked_stream_response
-            if response_to_log is not None:
-                standard_logging_object["response"] = self._serialize_responses_api_response(response_to_log)
+            standard_logging_object["response"] = self._serialize_responses_api_response(audited_output)
 
-        return kwargs, logged_result
+        return logged_kwargs, logged_result
 
     async def async_post_call_success_hook(  # type: ignore
         self,
@@ -1260,11 +1289,13 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self,
         response: object,
         request_data: dict,
+        include_primary_content: bool = True,
     ) -> object:
         output = self._response_field(response, "output")
         if isinstance(output, list):
             for output_item in output:
-                await self._mask_responses_blocks(self._response_field(output_item, "content"), request_data)
+                if include_primary_content:
+                    await self._mask_responses_blocks(self._response_field(output_item, "content"), request_data)
                 await self._mask_responses_blocks(self._response_field(output_item, "summary"), request_data)
                 await self._mask_responses_payload_field(output_item, "reasoning_content", request_data)
                 await self._mask_responses_blocks(self._response_field(output_item, "reasoning_items"), request_data)
@@ -1279,6 +1310,43 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             await self._mask_responses_text_field(response, "output_text", request_data)
         if self._response_field(response, "error") is not None:
             await self._mask_responses_payload_field(response, "error", request_data)
+        return response
+
+    async def _audit_extended_output_fields(self, response: object, request_data: dict) -> object:
+        responses_response = self._get_responses_api_response(response)
+        if responses_response is not None:
+            await self._process_responses_api_response_for_pii(
+                responses_response,
+                request_data,
+                include_primary_content=False,
+            )
+            return response
+        if isinstance(response, list):
+            for event in response:
+                nested_response = self._get_responses_api_response(event)
+                if nested_response is not None:
+                    await self._process_responses_api_response_for_pii(
+                        nested_response,
+                        request_data,
+                        include_primary_content=False,
+                    )
+                for field in ("delta", "text", "arguments", "input", "output", "error"):
+                    await self._mask_responses_payload_field(event, field, request_data)
+                item = self._response_field(event, "item")
+                if item is not None:
+                    await self._mask_responses_blocks(self._response_field(item, "content"), request_data)
+                    await self._mask_responses_blocks(self._response_field(item, "summary"), request_data)
+                    for field in ("arguments", "input", "output"):
+                        await self._mask_responses_payload_field(item, field, request_data)
+            return response
+        if not isinstance(response, ModelResponse):
+            return response
+        for choice in response.choices:
+            message = getattr(choice, "message", None)
+            if message is None:
+                continue
+            for field in ("reasoning_content", "thinking_blocks", "reasoning_items"):
+                await self._mask_responses_payload_field(message, field, request_data)
         return response
 
     async def _process_response_for_pii(
@@ -1750,6 +1818,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         Update the guardrails litellm params in memory
         """
         super().update_in_memory_litellm_params(litellm_params)
+        self.unreachable_fallback = (
+            litellm_params.unreachable_fallback
+            if "unreachable_fallback" in litellm_params.model_fields_set
+            else "fail_open"
+        )
         if litellm_params.pii_entities_config:
             self.pii_entities_config = litellm_params.pii_entities_config
         if litellm_params.presidio_score_thresholds:

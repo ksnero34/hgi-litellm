@@ -46,7 +46,7 @@ def _get_message_role(message: Mapping[str, object]) -> str:
     return role if isinstance(role, str) else "unknown"
 
 
-def _get_guardrail_input_scope(
+def get_guardrail_input_scope(
     role: str,
     message_index: int,
     content_index: Optional[int],
@@ -150,7 +150,7 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
                         if content_index is None
                         else f"messages[{message_index}].content[{content_index}].text"
                     ),
-                    "scope": _get_guardrail_input_scope(
+                    "scope": get_guardrail_input_scope(
                         role=_get_message_role(messages[message_index]),
                         message_index=message_index,
                         content_index=content_index,
@@ -416,6 +416,20 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
                     request_data["litellm_metadata"] = user_metadata
 
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            inputs["text_sources"] = [
+                GuardrailInputSource(
+                    type="response",
+                    message_index=choice_index,
+                    content_index=content_index,
+                    path=(
+                        f"choices[{choice_index}].message.content"
+                        if content_index is None
+                        else f"choices[{choice_index}].message.content[{content_index}].text"
+                    ),
+                    scope="other",
+                )
+                for choice_index, content_index in text_task_mappings
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:

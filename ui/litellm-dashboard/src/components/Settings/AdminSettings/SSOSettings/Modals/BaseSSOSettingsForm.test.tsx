@@ -232,7 +232,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Team IDs JWT Field")).toBeInTheDocument();
+      expect(screen.getByText("Team JWT Claim Field")).toBeInTheDocument();
     });
   });
 

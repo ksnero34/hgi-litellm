@@ -20,6 +20,8 @@ export const observabilityExtraMessages: MessageCatalog = {
   "observabilityExtra.guardrails.failedLoad": "Failed to load guardrail details.",
   "observabilityExtra.guardrails.evaluationSettings": "Evaluation Settings",
   "observabilityExtra.guardrails.requestsEvaluated": "Requests Evaluated",
+  "observabilityExtra.guardrails.auditDetections": "Audit Detections",
+  "observabilityExtra.guardrails.auditDetectionsHint": "Detected in observe-only audit",
   "observabilityExtra.guardrails.failRate": "Fail Rate",
   "observabilityExtra.guardrails.avgLatency": "Avg. latency added",
   "observabilityExtra.guardrails.noData": "No data",

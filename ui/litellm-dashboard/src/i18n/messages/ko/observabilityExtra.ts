@@ -20,6 +20,8 @@ export const observabilityExtraMessages: MessageCatalog = {
   "observabilityExtra.guardrails.failedLoad": "가드레일 세부 정보를 불러오지 못했습니다.",
   "observabilityExtra.guardrails.evaluationSettings": "평가 설정",
   "observabilityExtra.guardrails.requestsEvaluated": "평가된 요청",
+  "observabilityExtra.guardrails.auditDetections": "감사 탐지",
+  "observabilityExtra.guardrails.auditDetectionsHint": "관찰 전용 감사에서 탐지됨",
   "observabilityExtra.guardrails.failRate": "실패율",
   "observabilityExtra.guardrails.avgLatency": "평균 추가 지연 시간",
   "observabilityExtra.guardrails.noData": "데이터 없음",
