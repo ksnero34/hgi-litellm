@@ -313,11 +313,9 @@
     },
     {
       "name": "upstream-runtime-fixes",
-      "commit": "fix(hgi): backport responses and spend reliability fixes",
+      "commit": "fix(hgi): backport spend reliability fixes",
       "paths": [
-        "litellm/main.py",
         "litellm-proxy-extras/litellm_proxy_extras/utils.py",
-        "tests/test_litellm/test_main.py",
         "litellm-proxy-extras/tests/test_setup_database_fail_fast.py"
       ],
       "remove_paths": []
