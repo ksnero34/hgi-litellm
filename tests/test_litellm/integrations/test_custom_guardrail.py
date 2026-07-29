@@ -1251,6 +1251,35 @@ class TestEventTypeLogging:
         assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
 
     @pytest.mark.asyncio
+    async def test_log_guardrail_information_infers_event_type_from_apply_guardrail(self):
+        from litellm.integrations.custom_guardrail import log_guardrail_information
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        class TestGuardrail(CustomGuardrail):
+            def __init__(self):
+                super().__init__(
+                    guardrail_name="test_apply_guardrail_event",
+                    event_hook=[GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call],
+                )
+
+            @log_guardrail_information
+            async def apply_guardrail(self, inputs, request_data, input_type):
+                return inputs
+
+        guardrail = TestGuardrail()
+        request_data = {"metadata": {}}
+
+        await guardrail.apply_guardrail(
+            inputs={"texts": ["response"]},
+            request_data=request_data,
+            input_type="response",
+        )
+
+        logged_info = request_data["metadata"]["standard_logging_guardrail_information"]
+        assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
+        assert logged_info[0]["guardrail_event"] == GuardrailEventHooks.post_call
+
+    @pytest.mark.asyncio
     async def test_log_guardrail_information_returns_none_for_unknown_function_name(
         self,
     ):
@@ -1614,8 +1643,6 @@ class TestGuardrailInterventionClassification:
 
         slg = request_data["metadata"]["standard_logging_guardrail_information"][0]
         assert slg["guardrail_status"] == "guardrail_intervened"
-
-
 class _ApplyStyleGuardrail(CustomGuardrail):
     """Overrides only apply_guardrail, like openai_moderation; async_pre_call_hook stays the CustomLogger no-op."""
 
@@ -1716,3 +1743,35 @@ class TestApplyGuardrailStyleDeploymentDispatch:
                 await guardrail.async_pre_call_deployment_hook(kwargs, CallTypes.acompletion)
 
         assert guardrail.apply_called is False
+
+
+def test_standard_guardrail_information_includes_policy_owners_and_usage_semantics():
+    guardrail = CustomGuardrail(guardrail_name="shared")
+    request_data = {
+        "metadata": {
+            "_guardrail_policy_map": {
+                "shared": [
+                    {"policy_name": "one", "policy_id": "id-one"},
+                    {"policy_name": "two", "policy_id": "id-two"},
+                    {"policy_name": "one", "policy_id": "id-one"},
+                ]
+            }
+        }
+    }
+
+    guardrail.add_standard_logging_guardrail_information_to_request_data(
+        guardrail_json_response="observed",
+        request_data=request_data,
+        guardrail_status="guardrail_intervened",
+        usage_action="flagged",
+        enforcement_mode="observe",
+    )
+
+    information = request_data["metadata"]["standard_logging_guardrail_information"][0]
+    assert information["policy_names"] == ["one", "two"]
+    assert information["policy_ids"] == ["id-one", "id-two"]
+    assert information["policy_name"] == "one"
+    assert information["policy_id"] == "id-one"
+    assert information["guardrail_status"] == "guardrail_intervened"
+    assert information["usage_action"] == "flagged"
+    assert information["enforcement_mode"] == "observe"

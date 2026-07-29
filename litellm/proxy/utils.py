@@ -2645,12 +2645,7 @@ def jsonify_object(data: dict) -> dict:
     return db_data
 
 
-# In-memory cache for deprecated key lookups:
-# maps old_token_hash -> (active_token_id, cache_expires_at_ts, revoke_at_ts).
-# Avoids a DB query on every auth request for non-deprecated keys.
-# Bounded to prevent memory leaks from accumulated rotations.
 _deprecated_key_cache: LimitedSizeOrderedDict = LimitedSizeOrderedDict(max_size=1000)
-_DEPRECATED_KEY_CACHE_TTL_SECONDS = 60
 
 
 async def _lookup_deprecated_key(
@@ -2661,18 +2656,11 @@ async def _lookup_deprecated_key(
     Check if a token exists in the deprecated keys table and is still within its grace period.
 
     Returns the active_token_id if found and valid, otherwise None.
-    Uses an in-memory cache to avoid DB queries on every auth request.
+
+    Deprecated mappings are intentionally read from the database on every
+    lookup so all proxy workers observe rotation-chain updates immediately.
     """
     now = datetime.now(timezone.utc)
-    now_ts = now.timestamp()
-
-    # Check cache first
-    cached = _deprecated_key_cache.get(hashed_token)
-    if cached is not None:
-        active_token_id, cache_expires_at_ts, revoke_at_ts = cached
-        if now_ts < cache_expires_at_ts and now_ts < revoke_at_ts:
-            return active_token_id
-        _deprecated_key_cache.pop(hashed_token, None)
 
     try:
         deprecated_row = await db.litellm_deprecatedverificationtoken.find_first(
@@ -2682,15 +2670,7 @@ async def _lookup_deprecated_key(
             }
         )
         if deprecated_row and deprecated_row.active_token_id:
-            revoke_at = deprecated_row.revoke_at
-            _deprecated_key_cache[hashed_token] = (
-                deprecated_row.active_token_id,
-                now_ts + _DEPRECATED_KEY_CACHE_TTL_SECONDS,
-                revoke_at.timestamp(),
-            )
             return deprecated_row.active_token_id
-        # Only cache positive results; negative lookups are fast on indexed columns
-        # and caching them risks evicting real deprecated key entries.
     except Exception as e:
         verbose_proxy_logger.debug("Deprecated key lookup skipped: %s", e)
 

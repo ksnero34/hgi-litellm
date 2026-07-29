@@ -2016,17 +2016,23 @@ async def test_prepare_key_update_data_disable_global_guardrails_false_no_premiu
 
 
 @pytest.mark.asyncio
-async def test_prepare_key_update_data_disable_global_guardrails_true_requires_premium(
+async def test_prepare_key_update_data_guardrails_and_policies_without_license(
     monkeypatch,
 ):
-    """Control: enabling the premium feature (True) without a license still 403s."""
     monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", False)
-    data = UpdateKeyRequest(key="sk-1", disable_global_guardrails=True)
+    data = UpdateKeyRequest(
+        key="sk-1",
+        disable_global_guardrails=True,
+        guardrails=["pii-filter"],
+        policies=["internal-policy"],
+    )
     existing_key = LiteLLM_VerificationToken(token="hashed")
 
-    with pytest.raises(HTTPException) as exc_info:
-        await prepare_key_update_data(data=data, existing_key_row=existing_key)
-    assert exc_info.value.status_code == 403
+    result = await prepare_key_update_data(data=data, existing_key_row=existing_key)
+
+    assert result["metadata"]["disable_global_guardrails"] is True
+    assert result["metadata"]["guardrails"] == ["pii-filter"]
+    assert result["metadata"]["policies"] == ["internal-policy"]
 
 
 @pytest.mark.asyncio
@@ -3851,10 +3857,6 @@ async def test_generate_key_foreign_org_with_mismatched_team_still_enforces_memb
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints.validate_key_search_tools_against_team",
             new_callable=AsyncMock,
-        ),
-        patch(
-            "litellm_enterprise.proxy.management_endpoints.key_management_endpoints.apply_enterprise_key_management_params",
-            side_effect=lambda data, team_table: data,
         ),
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._validate_caller_can_assign_key_org",
@@ -11697,11 +11699,7 @@ class TestAllowedRoutesCallerPermission:
         assert "allowed_routes" in str(exc_info.value.message)
 
     @pytest.mark.asyncio
-    async def test_non_admin_regenerate_key_allowed_routes_rejected_before_enterprise_gate(self):
-        """`regenerate_key_fn` runs `_check_allowed_routes_caller_permission`
-        before the `premium_user` check, so a non-premium proxy still returns
-        the allowed_routes rejection (403) rather than the enterprise-license
-        error (500) when a non-admin sends `allowed_routes`."""
+    async def test_non_admin_regenerate_key_allowed_routes_rejected(self):
         from litellm.proxy._types import RegenerateKeyRequest
         from litellm.proxy.management_endpoints.key_management_endpoints import (
             regenerate_key_fn,
@@ -12025,8 +12023,10 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
     pre-hashed token ID.
     """
     from litellm.proxy.management_endpoints.key_management_endpoints import (
+        DeprecatedKeyRotationResult,
         _execute_virtual_key_regeneration,
     )
+    from datetime import datetime, timezone
 
     token_hash = "abc123def456"
 
@@ -12068,6 +12068,8 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
         api_key="sk-admin",
         user_id="admin-user",
     )
+    revoke_at = datetime(2026, 7, 26, 5, 30, tzinfo=timezone.utc)
+    ancestor_hash = "ancestor-token-hash"
 
     with (
         patch(
@@ -12078,6 +12080,10 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._insert_deprecated_key",
             new_callable=AsyncMock,
+            return_value=DeprecatedKeyRotationResult(
+                revoke_at=revoke_at,
+                token_hashes=[token_hash, ancestor_hash],
+            ),
         ),
         patch(
             "litellm.proxy.management_endpoints.key_management_endpoints._delete_cache_key_object",
@@ -12093,7 +12099,7 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
             return_value={},
         ),
     ):
-        await _execute_virtual_key_regeneration(
+        response = await _execute_virtual_key_regeneration(
             prisma_client=mock_prisma_client,
             key_in_db=existing_key,
             hashed_api_key=token_hash,
@@ -12105,10 +12111,118 @@ async def test_execute_virtual_key_regeneration_cache_invalidation_with_token_ha
             proxy_logging_obj=mock_proxy_logging_obj,
         )
 
-        mock_delete_cache.assert_called_once()
-        call_kwargs = mock_delete_cache.call_args.kwargs
-        # The token hash should be passed as-is, NOT double-hashed
-        assert call_kwargs["hashed_token"] == token_hash
+        assert mock_delete_cache.await_count == 2
+        deleted_hashes = {
+            call.kwargs["hashed_token"]
+            for call in mock_delete_cache.await_args_list
+        }
+        assert deleted_hashes == {token_hash, ancestor_hash}
+        assert response.previous_key_revoke_at == revoke_at
+
+
+@pytest.mark.asyncio
+async def test_insert_deprecated_key_repoints_unexpired_ancestors():
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        DeprecatedKeyRotationResult,
+        _insert_deprecated_key,
+    )
+
+    prisma_client = MagicMock()
+    table = prisma_client.db.litellm_deprecatedverificationtoken
+    table.find_many = AsyncMock(
+        return_value=[
+            SimpleNamespace(token="oldest-hash"),
+            SimpleNamespace(token="older-hash"),
+        ]
+    )
+    table.upsert = AsyncMock()
+    table.update_many = AsyncMock()
+    before = datetime.now(timezone.utc)
+
+    result = await _insert_deprecated_key(
+        prisma_client=prisma_client,
+        old_token_hash="current-hash",
+        new_token_hash="new-hash",
+        grace_period="72h",
+    )
+
+    assert isinstance(result, DeprecatedKeyRotationResult)
+    assert before + timedelta(hours=72) <= result.revoke_at
+    assert result.revoke_at <= datetime.now(timezone.utc) + timedelta(hours=72)
+    assert result.token_hashes == [
+        "current-hash",
+        "oldest-hash",
+        "older-hash",
+    ]
+    table.find_many.assert_awaited_once()
+    assert (
+        table.find_many.await_args.kwargs["where"]["active_token_id"]
+        == "current-hash"
+    )
+    table.update_many.assert_awaited_once_with(
+        where={"token": {"in": ["oldest-hash", "older-hash"]}},
+        data={"active_token_id": "new-hash"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_virtual_key_regeneration_does_not_repoint_on_update_failure():
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        _execute_virtual_key_regeneration,
+    )
+
+    token_hash = "current-token-hash"
+    existing_key = LiteLLM_VerificationToken(
+        token=token_hash,
+        user_id="user-1",
+        models=[],
+        team_id=None,
+        max_budget=None,
+        tags=None,
+    )
+    prisma_client = AsyncMock()
+    prisma_client.jsonify_object = MagicMock(side_effect=lambda data: data)
+    prisma_client.db.litellm_verificationtoken.update = AsyncMock(
+        side_effect=RuntimeError("update failed")
+    )
+
+    with (
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.get_new_token",
+            new_callable=AsyncMock,
+            return_value="sk-newtoken1234ab12",
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.prepare_key_update_data",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints._insert_deprecated_key",
+            new_callable=AsyncMock,
+        ) as mock_insert_deprecated_key,
+        pytest.raises(RuntimeError, match="update failed"),
+    ):
+        await _execute_virtual_key_regeneration(
+            prisma_client=prisma_client,
+            key_in_db=existing_key,
+            hashed_api_key=token_hash,
+            key=token_hash,
+            data=None,
+            user_api_key_dict=UserAPIKeyAuth(
+                user_role=LitellmUserRoles.PROXY_ADMIN,
+                api_key="sk-admin",
+                user_id="admin-user",
+            ),
+            litellm_changed_by=None,
+            user_api_key_cache=MagicMock(),
+            proxy_logging_obj=MagicMock(),
+        )
+
+    mock_insert_deprecated_key.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -12838,31 +12952,6 @@ async def test_regenerate_user_id_rebind_guard(
 
 
 @pytest.mark.asyncio
-async def test_regenerate_premium_gate_requires_actual_master_key():
-    # ``regenerate_key_fn``'s decorator wraps the underlying ValueError
-    # into a ProxyException with empty ``message``. The exception type
-    # alone confirms the premium gate fired.
-    from litellm.proxy._types import RegenerateKeyRequest
-    from litellm.proxy.management_endpoints.key_management_endpoints import (
-        regenerate_key_fn,
-    )
-
-    data = RegenerateKeyRequest(key="sk-not-master", new_master_key="anything")
-
-    with (
-        patch("litellm.proxy.proxy_server.premium_user", False),
-        patch("litellm.proxy.proxy_server.master_key", "sk-the-real-master-key"),
-        patch("litellm.proxy.proxy_server.prisma_client", AsyncMock()),
-        pytest.raises((ValueError, HTTPException, ProxyException)),
-    ):
-        await regenerate_key_fn(
-            key="sk-not-master",
-            data=data,
-            user_api_key_dict=_non_admin_user_api_key_dict(),
-        )
-
-
-@pytest.mark.asyncio
 async def test_regenerate_premium_gate_allows_actual_master_key_holder():
     from litellm.proxy._types import RegenerateKeyRequest
     from litellm.proxy.management_endpoints.key_management_endpoints import (
@@ -12895,7 +12984,7 @@ async def test_regenerate_premium_gate_allows_actual_master_key_holder():
 
 
 @pytest.mark.asyncio
-async def test_regenerate_applies_normalized_mcp_object_permission():
+async def test_regenerate_without_license_applies_normalized_mcp_object_permission():
     from litellm.proxy._types import (
         LiteLLM_ObjectPermissionBase,
         RegenerateKeyRequest,
@@ -12915,7 +13004,7 @@ async def test_regenerate_applies_normalized_mcp_object_permission():
     execute_mock = AsyncMock(return_value=MagicMock())
 
     with (
-        patch("litellm.proxy.proxy_server.premium_user", True),
+        patch("litellm.proxy.proxy_server.premium_user", False),
         patch("litellm.proxy.proxy_server.master_key", None),
         patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
         patch("litellm.proxy.proxy_server.proxy_logging_obj", MagicMock()),
@@ -13220,6 +13309,10 @@ async def test_ghsa_q775_ui_session_token_team_key_exempt_from_budget_ceiling():
         patch("litellm.proxy.proxy_server.llm_router", None),
         patch("litellm.proxy.proxy_server.premium_user", False),
         patch("litellm.proxy.proxy_server.litellm_proxy_admin_name", "default_user_id"),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.generate_key_helper_fn",
+            new=AsyncMock(return_value={"key": "sk-team-key", "token_id": "team-key"}),
+        ),
     ):
         try:
             await _common_key_generation_helper(

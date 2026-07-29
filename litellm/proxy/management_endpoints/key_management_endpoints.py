@@ -14,13 +14,12 @@ import copy
 import inspect
 import json
 import math
-import os
 import re
 import secrets
 import traceback
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, cast
 
 import fastapi
 import yaml
@@ -31,6 +30,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm._uuid import uuid
 from litellm.constants import (
     LENGTH_OF_LITELLM_GENERATED_KEY,
+    LITELLM_KEY_ROTATION_GRACE_PERIOD,
     LITELLM_PROXY_ADMIN_NAME,
     MINIMUM_CUSTOM_KEY_LENGTH,
     UI_SESSION_TOKEN_TEAM_ID,
@@ -60,6 +60,9 @@ from litellm.proxy.common_utils.callback_utils import (
 from litellm.proxy.common_utils.rbac_utils import check_org_admin_can_generate_keys
 from litellm.proxy.common_utils.timezone_utils import get_budget_reset_time
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.feature_policy import (
+    is_oss_virtual_key_metadata_field,
+)
 from litellm.proxy.hooks.key_management_event_hooks import KeyManagementEventHooks
 from litellm.proxy.hooks.model_max_budget_limiter import (
     VIRTUAL_KEY_SPEND_CACHE_KEY_PREFIX,
@@ -127,6 +130,15 @@ from litellm.types.utils import (
     PersonalUIKeyGenerationConfig,
     TeamUIKeyGenerationConfig,
 )
+
+
+def _set_virtual_key_metadata_field(object_data: Any, field_name: str, value: Any) -> None:
+    if not is_oss_virtual_key_metadata_field(field_name):
+        _set_object_metadata_field(object_data=object_data, field_name=field_name, value=value)
+        return
+
+    object_data.metadata = object_data.metadata or {}
+    object_data.metadata[field_name] = value
 
 
 async def _check_custom_key_allowed(custom_key_value: Optional[str]) -> None:
@@ -899,7 +911,7 @@ async def _common_key_generation_helper(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -1862,9 +1874,9 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
                 else:
                     casted_metadata[k] = v
             if k in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
-                from litellm.proxy.utils import _premium_user_check
+                if not is_oss_virtual_key_metadata_field(k) and v:
+                    from litellm.proxy.utils import _premium_user_check
 
-                if v:
                     _premium_user_check(k)
                 casted_metadata[k] = v
 
@@ -1899,7 +1911,7 @@ async def prepare_key_update_data(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -4383,12 +4395,17 @@ async def get_new_token(data: Optional[RegenerateKeyRequest]) -> str:
     return new_token
 
 
+class DeprecatedKeyRotationResult(NamedTuple):
+    revoke_at: datetime
+    token_hashes: list[str]
+
+
 async def _insert_deprecated_key(
     prisma_client: "PrismaClient",
     old_token_hash: str,
     new_token_hash: str,
     grace_period: Optional[str],
-) -> None:
+) -> DeprecatedKeyRotationResult | None:
     """
     Insert old key into deprecated table so it remains valid during grace period.
 
@@ -4398,11 +4415,11 @@ async def _insert_deprecated_key(
         prisma_client: DB client
         old_token_hash: Hash of the old key being rotated out
         new_token_hash: Hash of the new replacement key
-        grace_period: Duration string (e.g. "24h", "2d") or None/empty for immediate revoke
+        grace_period: Duration string (e.g. "24h", "2d") or None/empty for the configured default
     """
-    grace_period_value = grace_period or os.getenv("LITELLM_KEY_ROTATION_GRACE_PERIOD", "")
+    grace_period_value = grace_period or LITELLM_KEY_ROTATION_GRACE_PERIOD
     if not grace_period_value:
-        return
+        return None
 
     try:
         grace_seconds = duration_in_seconds(grace_period_value)
@@ -4411,14 +4428,23 @@ async def _insert_deprecated_key(
             "Invalid grace_period format: %s. Expected format like '24h', '2d'.",
             grace_period_value,
         )
-        return
+        return None
 
     if grace_seconds <= 0:
-        return
+        return None
 
     try:
-        revoke_at = datetime.now(timezone.utc) + timedelta(seconds=grace_seconds)
-        await DeprecatedVerificationTokenRepository(prisma_client).table.upsert(
+        now = datetime.now(timezone.utc)
+        revoke_at = now + timedelta(seconds=grace_seconds)
+        deprecated_table = DeprecatedVerificationTokenRepository(prisma_client).table
+        ancestor_rows = await deprecated_table.find_many(
+            where={
+                "active_token_id": old_token_hash,
+                "revoke_at": {"gt": now},
+            }
+        )
+        ancestor_hashes = [row.token for row in ancestor_rows if row.token]
+        await deprecated_table.upsert(
             where={"token": old_token_hash},
             data={
                 "create": {
@@ -4432,16 +4458,26 @@ async def _insert_deprecated_key(
                 },
             },
         )
+        if ancestor_hashes:
+            await deprecated_table.update_many(
+                where={"token": {"in": ancestor_hashes}},
+                data={"active_token_id": new_token_hash},
+            )
         verbose_proxy_logger.debug(
             "Deprecated key retained for %s (revoke_at: %s)",
             grace_period_value,
             revoke_at,
+        )
+        return DeprecatedKeyRotationResult(
+            revoke_at=revoke_at,
+            token_hashes=[old_token_hash, *ancestor_hashes],
         )
     except Exception as deprecated_err:
         verbose_proxy_logger.warning(
             "Failed to insert deprecated key for grace period: %s",
             deprecated_err,
         )
+        return None
 
 
 async def _execute_virtual_key_regeneration(
@@ -4500,25 +4536,29 @@ async def _execute_virtual_key_regeneration(
     update_data.update(non_default_values)
     update_data = prisma_client.jsonify_object(data=update_data)
 
-    # If grace period set, insert deprecated key so old key remains valid
-    await _insert_deprecated_key(
+    updated_token = await VerificationTokenRepository(prisma_client).table.update(
+        where={"token": hashed_api_key},
+        data=update_data,  # type: ignore
+    )
+    deprecated_key_result = await _insert_deprecated_key(
         prisma_client=prisma_client,
         old_token_hash=hashed_api_key,
         new_token_hash=new_token_hash,
         grace_period=data.grace_period if data else None,
     )
-
-    updated_token = await VerificationTokenRepository(prisma_client).table.update(
-        where={"token": hashed_api_key},
-        data=update_data,  # type: ignore
-    )
     updated_token_dict = dict(updated_token) if updated_token is not None else {}
     updated_token_dict["key"] = new_token
     updated_token_dict["token_id"] = updated_token_dict.pop("token")
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        updated_token_dict["previous_key_revoke_at"] = deprecated_key_result.revoke_at
 
-    if hashed_api_key or key:
+    cache_token_hashes = {hashed_api_key}
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        cache_token_hashes.update(deprecated_key_result.token_hashes)
+    cache_token_hashes.discard("")
+    for cache_token_hash in cache_token_hashes:
         await _delete_cache_key_object(
-            hashed_token=_hash_token_if_needed(key),
+            hashed_token=cache_token_hash,
             user_api_key_cache=user_api_key_cache,
             proxy_logging_obj=proxy_logging_obj,
         )
@@ -4587,7 +4627,7 @@ async def regenerate_key_fn(
         - permissions: Optional[dict] - Key-specific permissions
         - guardrails: Optional[List[str]] - List of active guardrails for the key
         - blocked: Optional[bool] - Whether the key is blocked
-        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = immediate revoke. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
+        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = 72h by default. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
 
 
     Returns:
@@ -4605,13 +4645,11 @@ async def regenerate_key_fn(
     }'
     ```
 
-    Note: This is an Enterprise feature. It requires a premium license to use.
     """
     try:
         from litellm.proxy.proxy_server import (
             hash_token,
             master_key,
-            premium_user,
             prisma_client,
             proxy_logging_obj,
             user_api_key_cache,
@@ -4644,25 +4682,6 @@ async def regenerate_key_fn(
                 allowed_routes=handle_key_type(data, {}).get("allowed_routes"),
                 user_api_key_dict=user_api_key_dict,
                 allow_safe_presets=True,
-            )
-
-        # Premium-gate bypass for master-key rotation must verify the
-        # caller actually holds the master key, not just that the request
-        # body has a ``new_master_key`` field. A presence-only check let
-        # any non-premium caller skip the enterprise gate by sending any
-        # value in that field.
-        regenerate_target_key = data.key if data and data.key else key
-        is_master_key_regeneration = (
-            data is not None
-            and data.new_master_key is not None
-            and _is_master_key(api_key=regenerate_target_key, _master_key=master_key)
-        )
-
-        if (
-            premium_user is not True and not is_master_key_regeneration
-        ):  # allow master key regeneration for non-premium users
-            raise ValueError(
-                f"Regenerating Virtual Keys is an Enterprise feature, {CommonProxyErrors.not_premium_user.value}"
             )
 
         # Check if key exists, raise exception if key is not in the DB

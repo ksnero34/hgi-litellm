@@ -15,9 +15,9 @@ from typing import (
 )
 
 from litellm._logging import verbose_logger
-from litellm.litellm_core_utils.core_helpers import redact_nested_match_and_regex_keys
 from litellm.caching import DualCache
 from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils.core_helpers import redact_nested_match_and_regex_keys
 from litellm.secret_managers.main import str_to_bool
 from litellm.types.guardrails import (
     DynamicGuardrailParams,
@@ -30,8 +30,11 @@ from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigM
 from litellm.types.utils import (
     CallTypes,
     GenericGuardrailAPIInputs,
+    GuardrailEnforcementMode,
+    GuardrailInputSource,
     GuardrailStatus,
     GuardrailTracingDetail,
+    GuardrailUsageAction,
     LLMResponseTypes,
     StandardLoggingGuardrailInformation,
 )
@@ -768,7 +771,11 @@ class CustomGuardrail(CustomLogger):
         masked_entity_count: Optional[Dict[str, int]] = None,
         guardrail_provider: Optional[str] = None,
         event_type: Optional[GuardrailEventHooks] = None,
+        guardrail_run_id: Optional[str] = None,
+        input_source: Optional[GuardrailInputSource] = None,
         tracing_detail: Optional[GuardrailTracingDetail] = None,
+        usage_action: GuardrailUsageAction | None = None,
+        enforcement_mode: GuardrailEnforcementMode | None = None,
     ) -> None:
         """
         Builds `StandardLoggingGuardrailInformation` and adds it to the request metadata so it can be used for logging to DataDog, Langfuse, etc.
@@ -820,16 +827,56 @@ class CustomGuardrail(CustomLogger):
 
         clean_guardrail_response = mask_credentials_in_payload(clean_guardrail_response)
 
+        metadata = request_data.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = request_data.get("litellm_metadata")
+        policy_map = metadata.get("_guardrail_policy_map", {}) if isinstance(metadata, dict) else {}
+        policy_entries = policy_map.get(self.guardrail_name, []) if isinstance(policy_map, dict) else []
+        if not isinstance(policy_entries, list):
+            policy_entries = []
+        policy_names = list(
+            dict.fromkeys(
+                entry["policy_name"]
+                for entry in policy_entries
+                if isinstance(entry, dict) and isinstance(entry.get("policy_name"), str)
+            )
+        )
+        policy_ids = list(
+            dict.fromkeys(
+                entry["policy_id"]
+                for entry in policy_entries
+                if isinstance(entry, dict) and isinstance(entry.get("policy_id"), str)
+            )
+        )
+        resolved_usage_action: GuardrailUsageAction
+        if usage_action is not None:
+            resolved_usage_action = usage_action
+        elif guardrail_status == "success":
+            resolved_usage_action = "passed"
+        elif guardrail_status == "guardrail_intervened":
+            resolved_usage_action = "blocked"
+        else:
+            resolved_usage_action = "flagged"
+
         slg = StandardLoggingGuardrailInformation(
             guardrail_name=self.guardrail_name,
             guardrail_provider=guardrail_provider,
             guardrail_mode=guardrail_mode,
+            guardrail_run_id=guardrail_run_id,
+            guardrail_event=event_type,
+            input_source=input_source,
             guardrail_response=clean_guardrail_response,
             guardrail_status=guardrail_status,
             start_time=start_time,
             end_time=end_time,
             duration=duration,
             masked_entity_count=masked_entity_count,
+            usage_action=resolved_usage_action,
+            enforcement_mode=enforcement_mode or "enforce",
+            policy_names=policy_names,
+            policy_ids=policy_ids,
+            policy_id=policy_ids[0] if policy_ids else None,
+            policy_name=policy_names[0] if policy_names else None,
             **(tracing_detail or {}),
         )
 
@@ -1175,6 +1222,12 @@ def log_guardrail_information(func):
         self: CustomGuardrail = args[0]
         request_data: dict = kwargs.get("data") or kwargs.get("request_data") or {}
         event_type = _infer_event_type_from_function_name(func.__name__)
+        if event_type is None and func.__name__ == "apply_guardrail":
+            input_type = kwargs.get("input_type")
+            if input_type == "request":
+                event_type = GuardrailEventHooks.pre_call
+            elif input_type == "response":
+                event_type = GuardrailEventHooks.post_call
 
         # Store original inputs for comparison (for apply_guardrail functions)
         original_inputs = None

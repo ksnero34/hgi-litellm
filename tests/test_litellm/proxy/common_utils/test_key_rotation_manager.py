@@ -21,6 +21,11 @@ from litellm.proxy.common_utils.key_rotation_manager import KeyRotationManager
 class TestKeyRotationManager:
     """Test the KeyRotationManager class functionality."""
 
+    def test_default_grace_period_is_72_hours(self):
+        from litellm.constants import LITELLM_KEY_ROTATION_GRACE_PERIOD
+
+        assert LITELLM_KEY_ROTATION_GRACE_PERIOD == "72h"
+
     @pytest.mark.asyncio
     async def test_should_rotate_key_logic(self):
         """

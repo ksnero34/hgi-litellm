@@ -450,3 +450,18 @@ class TestGetPolicyRegistrySingleton:
         a = get_policy_registry()
         b = get_policy_registry()
         assert a is b
+
+
+@pytest.mark.asyncio
+async def test_sync_caches_production_policy_identity_for_request_attribution():
+    registry = PolicyRegistry()
+    prisma = MagicMock()
+    production = _make_row(policy_id="production-id", policy_name="production-policy")
+    prisma.db.litellm_policytable.find_many = AsyncMock(side_effect=[[production], []])
+
+    await registry.sync_policies_from_db(prisma)
+
+    assert registry.get_production_policy_id("production-policy") == "production-id"
+    cached = registry.get_policy_by_id_for_request("production-id")
+    assert cached is not None
+    assert cached[0] == "production-policy"

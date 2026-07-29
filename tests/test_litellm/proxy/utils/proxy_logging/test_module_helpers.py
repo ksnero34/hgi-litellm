@@ -288,7 +288,7 @@ def test_jsonify_object_non_dict_input_raises():
 
 
 @pytest.mark.asyncio
-async def test_lookup_deprecated_key_returns_active_token_id_and_caches(monkeypatch):
+async def test_lookup_deprecated_key_returns_active_token_id_without_caching(monkeypatch):
     from litellm.caching.dual_cache import LimitedSizeOrderedDict
 
     fresh = LimitedSizeOrderedDict(max_size=1000)
@@ -303,16 +303,13 @@ async def test_lookup_deprecated_key_returns_active_token_id_and_caches(monkeypa
     db.litellm_deprecatedverificationtoken.find_first = AsyncMock(return_value=deprecated_row)
 
     result = await _lookup_deprecated_key(db=db, hashed_token="hash-abc")
-    cached_value = fresh.get("hash-abc")
     snapshot = {
         "result": result,
-        "cache_active_token_id": cached_value[0],
-        "cache_has_3_tuple": isinstance(cached_value, tuple) and len(cached_value) == 3,
+        "cache_value": fresh.get("hash-abc"),
     }
     assert snapshot == {
         "result": "active-123",
-        "cache_active_token_id": "active-123",
-        "cache_has_3_tuple": True,
+        "cache_value": None,
     }
 
 
@@ -338,7 +335,7 @@ async def test_lookup_deprecated_key_db_error_returns_none(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lookup_deprecated_key_uses_cache_within_ttl(monkeypatch):
+async def test_lookup_deprecated_key_ignores_stale_cache_within_ttl(monkeypatch):
     from litellm.caching.dual_cache import LimitedSizeOrderedDict
 
     cache = LimitedSizeOrderedDict(max_size=10)
@@ -349,5 +346,5 @@ async def test_lookup_deprecated_key_uses_cache_within_ttl(monkeypatch):
     db = MagicMock()
     db.litellm_deprecatedverificationtoken.find_first = AsyncMock(return_value=None)
     result = await _lookup_deprecated_key(db=db, hashed_token="hashY")
-    assert result == "active-from-cache"
-    db.litellm_deprecatedverificationtoken.find_first.assert_not_called()
+    assert result is None
+    db.litellm_deprecatedverificationtoken.find_first.assert_called_once()
