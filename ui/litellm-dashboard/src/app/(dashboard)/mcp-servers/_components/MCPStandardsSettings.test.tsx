@@ -14,7 +14,12 @@ const makeServer = (overrides: Partial<MCPServer> = {}): MCPServer => ({
 describe("FIELD_GROUPS", () => {
   it("should contain four groups", () => {
     expect(FIELD_GROUPS).toHaveLength(4);
-    expect(FIELD_GROUPS.map((g) => g.label)).toEqual(["Documentation", "Source", "Connection", "Security"]);
+    expect(FIELD_GROUPS.map((g) => g.labelKey)).toEqual([
+      "toolsModels.mcp.standards.groups.documentation",
+      "toolsModels.mcp.standards.groups.source",
+      "toolsModels.mcp.standards.groups.connection",
+      "toolsModels.mcp.standards.groups.security",
+    ]);
   });
 });
 

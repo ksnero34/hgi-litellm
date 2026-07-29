@@ -4,6 +4,7 @@ import { fetchDiscoverableMCPServers } from "@/components/networking";
 import { DiscoverableMCPServer, DiscoverMCPServersResponse } from "@/components/mcp_tools/types";
 import { mcpLogoImg } from "./create_mcp_server";
 import { resolveLogoSrc } from "@/lib/assetPaths";
+import { useTranslation } from "react-i18next";
 
 const { Search } = Input;
 const { Text } = Typography;
@@ -15,6 +16,9 @@ interface MCPDiscoveryProps {
   onCustomServer: () => void;
   accessToken: string | null;
 }
+
+const ALL_CATEGORY = "All";
+const OTHER_CATEGORY = "Other";
 
 const INITIAL_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16"];
 
@@ -31,12 +35,13 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
   onCustomServer,
   accessToken,
 }) => {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<DiscoverableMCPServer[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORY);
 
   useEffect(() => {
     if (isVisible && accessToken) {
@@ -48,24 +53,24 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
           setCategories(data.categories || []);
         })
         .catch((err: Error) => {
-          setError(err.message || "Failed to load MCP servers");
+          setError(err.message || t("toolsModels.mcp.discovery.loadError"));
         })
         .finally(() => {
           setLoading(false);
         });
     }
-  }, [isVisible, accessToken]);
+  }, [isVisible, accessToken, t]);
 
   useEffect(() => {
     if (isVisible) {
       setSearchQuery("");
-      setSelectedCategory("All");
+      setSelectedCategory(ALL_CATEGORY);
     }
   }, [isVisible]);
 
   const filteredServers = useMemo(() => {
     let result = servers;
-    if (selectedCategory !== "All") {
+    if (selectedCategory !== ALL_CATEGORY) {
       result = result.filter((s) => s.category === selectedCategory);
     }
     if (searchQuery.trim()) {
@@ -83,7 +88,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
   const groupedServers = useMemo(() => {
     const groups: Record<string, DiscoverableMCPServer[]> = {};
     for (const server of filteredServers) {
-      const cat = server.category || "Other";
+      const cat = server.category || OTHER_CATEGORY;
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(server);
     }
@@ -97,7 +102,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
           <div className="flex items-center space-x-3">
             <img
               src={resolveLogoSrc(mcpLogoImg)}
-              alt="MCP Logo"
+              alt={t("toolsModels.mcp.discovery.logoAlt")}
               className="w-8 h-8 object-contain"
               style={{
                 height: "20px",
@@ -106,13 +111,13 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
                 objectFit: "contain",
               }}
             />
-            <h2 className="text-xl font-semibold text-gray-900">Add MCP Server</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{t("toolsModels.mcp.discovery.addServer")}</h2>
           </div>
           <button
             onClick={onCustomServer}
             className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer bg-transparent border-none font-medium"
           >
-            + Custom Server
+            {t("toolsModels.mcp.discovery.customServer")}
           </button>
         </div>
       }
@@ -128,7 +133,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
     >
       {/* Filter pills */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-        {["All", ...categories].map((cat) => {
+        {[ALL_CATEGORY, ...categories].map((cat) => {
           const isSelected = selectedCategory === cat;
           return (
             <button
@@ -146,7 +151,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
                 lineHeight: "20px",
               }}
             >
-              {cat}
+              {cat === ALL_CATEGORY ? t("toolsModels.mcp.discovery.allCategories") : cat}
             </button>
           );
         })}
@@ -154,7 +159,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
 
       {/* Search */}
       <Search
-        placeholder="Search servers..."
+        placeholder={t("toolsModels.mcp.discovery.searchPlaceholder")}
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         style={{ marginBottom: 16 }}
@@ -179,16 +184,16 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
 
       {error && (
         <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af" }}>
-          <Text>Failed to load servers: {error}</Text>
+          <Text>{t("toolsModels.mcp.discovery.loadErrorWithDetail", { error })}</Text>
         </div>
       )}
 
       {!loading && !error && filteredServers.length === 0 && (
         <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af" }}>
           <Text>
-            No servers found.{" "}
+            {t("toolsModels.mcp.discovery.noServers")}{" "}
             <a onClick={onCustomServer} style={{ color: "#2563eb", cursor: "pointer" }}>
-              Add a custom server
+              {t("toolsModels.mcp.discovery.addCustomServer")}
             </a>
           </Text>
         </div>
@@ -211,7 +216,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
                 marginBottom: 4,
               }}
             >
-              {category}
+              {category === OTHER_CATEGORY ? t("toolsModels.mcp.discovery.otherCategory") : category}
             </div>
             <div
               style={{
