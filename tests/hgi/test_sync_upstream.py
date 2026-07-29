@@ -65,17 +65,19 @@ def test_load_manifest_rejects_duplicate_path_ownership(tmp_path):
 def test_load_project_manifest():
     manifest = sync_upstream.load_manifest(Path(__file__).parents[2] / "customizations" / "manifest.json")
 
-    assert manifest["base_ref"] == "v1.93.0"
+    assert manifest["base_ref"] == "38f2e023f1179d06a199f3d5f02702c89c1a8a58"
     assert {group["name"] for group in manifest["groups"]} == {
         "license-boundary",
         "oidc",
         "virtual-key-controls",
         "purview",
         "closed-network-ui",
-        "presidio-custom-entities",
+        "presidio-governance",
         "dashboard-i18n",
         "usage-performance-metrics",
         "upstream-runtime-fixes",
+        "prisma-v2-migrations",
+        "spend-log-detail-access",
         "maintenance-tooling",
     }
 
