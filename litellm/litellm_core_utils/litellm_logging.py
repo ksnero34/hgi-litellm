@@ -409,6 +409,11 @@ class Logging(LiteLLMLoggingBaseClass):
         # enqueue closure here instead of firing it immediately.
         self._defer_async_logging: bool = False
         self._enqueue_deferred_logging: Optional[Callable[[], None]] = None
+        self._deferred_logging_result: Optional[Any] = None
+
+    def set_deferred_logging_result(self, result: Any) -> None:
+        if getattr(self, "_deferred_logging_result", None) is None:
+            self._deferred_logging_result = result
 
     def process_dynamic_callbacks(self):
         """

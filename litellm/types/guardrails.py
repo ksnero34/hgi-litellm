@@ -11,11 +11,20 @@ from litellm.types.proxy.guardrails.guardrail_hooks.akto import (
 from litellm.types.proxy.guardrails.guardrail_hooks.block_code_execution import (
     BlockCodeExecutionGuardrailConfigModel,
 )
+from litellm.types.proxy.guardrails.guardrail_hooks.cisco_ai_defense import (
+    CiscoAIDefenseGuardrailConfigModel,
+)
 from litellm.types.proxy.guardrails.guardrail_hooks.enkryptai import (
     EnkryptAIGuardrailConfigs,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.grayswan import (
     GraySwanGuardrailConfigModel,
+)
+from litellm.types.proxy.guardrails.guardrail_hooks.headroom import (
+    HeadroomGuardrailConfigModel,
+)
+from litellm.types.proxy.guardrails.guardrail_hooks.hiddenlayer import (
+    HiddenlayerGuardrailConfigModel,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.ibm import (
     IBMGuardrailsBaseConfigModel,
@@ -29,23 +38,17 @@ from litellm.types.proxy.guardrails.guardrail_hooks.ovalix import (
 from litellm.types.proxy.guardrails.guardrail_hooks.promptguard import (
     PromptGuardConfigModel,
 )
-from litellm.types.proxy.guardrails.guardrail_hooks.xecguard import (
-    XecGuardConfigModel,
+from litellm.types.proxy.guardrails.guardrail_hooks.qohash import (
+    QostodianNexusConfigModel,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.qualifire import (
     QualifireGuardrailConfigModel,
 )
-from litellm.types.proxy.guardrails.guardrail_hooks.tool_permission import (
-    ToolPermissionGuardrailConfigModel,
-)
-from litellm.types.proxy.guardrails.guardrail_hooks.hiddenlayer import (
-    HiddenlayerGuardrailConfigModel,
-)
-from litellm.types.proxy.guardrails.guardrail_hooks.qohash import (
-    QostodianNexusConfigModel,
-)
 from litellm.types.proxy.guardrails.guardrail_hooks.repelloai import (
     RepelloAIGuardrailConfigModel,
+)
+from litellm.types.proxy.guardrails.guardrail_hooks.tool_permission import (
+    ToolPermissionGuardrailConfigModel,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.vigil_guard import (
     VigilGuardGuardrailConfigModel,
@@ -58,6 +61,9 @@ from litellm.types.proxy.guardrails.guardrail_hooks.singulr import (
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.headroom import (
     HeadroomGuardrailConfigModel,
+)
+from litellm.types.proxy.guardrails.guardrail_hooks.xecguard import (
+    XecGuardConfigModel,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.compresr import (
     CompresrGuardrailConfigModel,
@@ -823,8 +829,10 @@ class BaseLitellmParams(ContentFilterConfigModel):  # works for new and patch up
         default="fail_closed",
         description=(
             "Behavior when a guardrail endpoint is unreachable due to network errors. "
-            "Implemented by guardrail='generic_guardrail_api', 'akto', 'vigil_guard', 'repelloai', 'headroom', and 'compresr'. "
-            "'fail_closed' raises an error (default). 'fail_open' logs a critical error and allows the request to proceed."
+            "Implemented by guardrail='generic_guardrail_api', 'akto', 'vigil_guard', 'repelloai', 'headroom', and "
+            "'compresr', and 'presidio'. Most providers default to 'fail_closed'; Presidio defaults to 'fail_open' "
+            "when this field is omitted. 'fail_closed' raises an error. 'fail_open' logs the failure and allows the request "
+            "to proceed."
         ),
     )
 
