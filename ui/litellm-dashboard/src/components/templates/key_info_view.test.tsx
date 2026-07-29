@@ -10,6 +10,8 @@ import { KeyResponse, Team } from "../key_team_helpers/key_list";
 import { keyDeleteCall, keyUpdateCall } from "../networking";
 import { QueryClient } from "@tanstack/react-query";
 import KeyInfoView from "./key_info_view";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 
 const editViewMocks = vi.hoisted(() => ({
   onSubmit: undefined as ((v: Record<string, any>) => Promise<void>) | undefined,
@@ -59,6 +61,8 @@ vi.mock("@/utils/dataUtils", () => ({
 
 describe("KeyInfoView", () => {
   beforeEach(() => {
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
     vi.mocked(useTeams).mockReturnValue({
       teams: [],
       setTeams: vi.fn(),
@@ -202,7 +206,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Regenerate Key")).toBeInTheDocument();
+      expect(screen.getByText("Rotate Key")).toBeInTheDocument();
       expect(screen.getByText("Delete Key")).toBeInTheDocument();
     });
   });
@@ -247,7 +251,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Regenerate Key")).toBeInTheDocument();
+      expect(screen.getByText("Rotate Key")).toBeInTheDocument();
       expect(screen.getByText("Delete Key")).toBeInTheDocument();
     });
   });
@@ -271,7 +275,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Regenerate Key")).toBeInTheDocument();
+      expect(screen.getByText("Rotate Key")).toBeInTheDocument();
       expect(screen.getByText("Delete Key")).toBeInTheDocument();
     });
   });
@@ -294,7 +298,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Regenerate Key")).not.toBeInTheDocument();
+      expect(screen.queryByText("Rotate Key")).not.toBeInTheDocument();
       expect(screen.queryByText("Delete Key")).not.toBeInTheDocument();
     });
   });
@@ -318,7 +322,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Regenerate Key")).not.toBeInTheDocument();
+      expect(screen.queryByText("Rotate Key")).not.toBeInTheDocument();
       expect(screen.queryByText("Delete Key")).not.toBeInTheDocument();
     });
   });
@@ -362,7 +366,7 @@ describe("KeyInfoView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Regenerate Key")).not.toBeInTheDocument();
+      expect(screen.queryByText("Rotate Key")).not.toBeInTheDocument();
       expect(screen.queryByText("Delete Key")).not.toBeInTheDocument();
     });
   });

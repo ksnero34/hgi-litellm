@@ -258,7 +258,7 @@ it("should show 'No keys found' message when the key list is empty", () => {
 
   renderWithProviders(<VirtualKeysTable />);
 
-  expect(screen.getByText("No keys found")).toBeInTheDocument();
+  expect(screen.getByText("키가 없습니다")).toBeInTheDocument();
 });
 
 it("collapses models beyond the visible limit into a '+N more' badge", () => {
@@ -521,7 +521,7 @@ describe("Status column reflects blocked / expiry / scim metadata", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     await waitFor(() => {
-      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("Blocked");
+      expect(screen.getByTestId(`key-status-${mockKey.token_id}`)).toHaveTextContent("차단됨");
     });
     expect(screen.queryByText(/Blocked by SCIM/i)).not.toBeInTheDocument();
   });
@@ -532,12 +532,12 @@ describe("Status column reflects blocked / expiry / scim metadata", () => {
     renderWithProviders(<VirtualKeysTable />);
 
     const tag = await screen.findByTestId(`key-status-${mockKey.token_id}`);
-    expect(tag).toHaveTextContent("Blocked");
+    expect(tag).toHaveTextContent("차단됨");
 
     const user = userEvent.setup();
     await user.hover(tag);
     await waitFor(() => {
-      expect(screen.getByText(/Blocked by SCIM/i)).toBeInTheDocument();
+      expect(screen.getByText(/SCIM에 의해 차단됨/)).toBeInTheDocument();
     });
   });
 });

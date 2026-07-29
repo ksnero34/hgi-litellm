@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon, Button, Col, Text, Grid } from "@tremor/react";
 import { RefreshIcon } from "@heroicons/react/outline";
 import TagInfoView from "./tag_info";
@@ -27,6 +28,7 @@ interface TagProps {
 }
 
 const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) => {
+  const { t } = useTranslation();
   const [tags, setTags] = useState<Tag[]>([]);
   const [isLoadingTags, setIsLoadingTags] = useState(true);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -73,7 +75,7 @@ const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) =>
         rpm_limit: formValues.rpm_limit,
         budget_duration: formValues.budget_duration,
       });
-      NotificationsManager.success("Tag created successfully");
+      NotificationsManager.success(t("operations.tags.createdSuccess"));
       setIsCreateModalVisible(false);
       fetchTags();
     } catch (error) {
@@ -92,7 +94,7 @@ const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) =>
     setIsDeleting(true);
     try {
       await tagDeleteCall(accessToken, tagToDelete);
-      NotificationsManager.success("Tag deleted successfully");
+      NotificationsManager.success(t("operations.tags.deletedSuccess"));
       fetchTags();
     } catch (error) {
       console.error("Error deleting tag:", error);
@@ -141,9 +143,9 @@ const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) =>
       ) : (
         <div className="gap-2 p-8 h-[75vh] w-full mt-2">
           <div className="flex justify-between mt-2 w-full items-center mb-4">
-            <h1>Tag Management</h1>
+            <h1>{t("operations.tags.title")}</h1>
             <div className="flex items-center space-x-2">
-              {lastRefreshed && <Text>Last Refreshed: {lastRefreshed}</Text>}
+              {lastRefreshed && <Text>{t("operations.tags.lastRefreshed", { value: lastRefreshed })}</Text>}
               <Icon
                 icon={RefreshIcon}
                 variant="shadow"
@@ -155,19 +157,18 @@ const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) =>
           </div>
 
           <Text className="mb-4">
-            Click on a tag name to view and edit its details.
+            {t("operations.tags.description")}
             <p>
-              You can use tags to restrict the usage of certain LLMs based on tags passed in the request. Read more
-              about tag routing{" "}
+              {t("operations.tags.routingDescription")}{" "}
               <a href="https://docs.litellm.ai/docs/proxy/tag_routing" target="_blank" rel="noopener noreferrer">
-                here
+                {t("operations.tags.here")}
               </a>
               .
             </p>
           </Text>
 
           <Button className="mb-4" onClick={() => setIsCreateModalVisible(true)}>
-            + Create New Tag
+            {t("operations.tags.create")}
           </Button>
 
           <Grid numItems={1} className="gap-2 pt-2 pb-2 h-[75vh] w-full mt-2">
@@ -196,10 +197,10 @@ const TagManagement: React.FC<TagProps> = ({ accessToken, userID, userRole }) =>
           {/* Delete Confirmation Modal */}
           <DeleteResourceModal
             isOpen={isDeleteModalOpen}
-            title="Delete Tag"
-            message="Are you sure you want to delete this tag? This action cannot be undone."
-            resourceInformationTitle="Tag Information"
-            resourceInformation={[{ label: "Tag Name", value: tagToDelete, code: true }]}
+            title={t("operations.tags.deleteTitle")}
+            message={t("operations.tags.deleteMessage")}
+            resourceInformationTitle={t("operations.tags.details")}
+            resourceInformation={[{ label: t("operations.tags.name"), value: tagToDelete, code: true }]}
             onCancel={() => {
               setIsDeleteModalOpen(false);
               setTagToDelete(null);

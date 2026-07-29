@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from "react";
-import { Card, Title, Text, Grid, Button as TremorButton, Callout, TextInput, Divider } from "@tremor/react";
-import { Form } from "antd";
-import { keyCreateCall } from "./networking";
-import { CopyToClipboard } from "react-copy-to-clipboard";
+import React, { useEffect, useState } from "react";
 import {
-  LinkOutlined,
-  KeyOutlined,
   CopyOutlined,
   ExclamationCircleOutlined,
+  KeyOutlined,
+  LinkOutlined,
   PlusCircleOutlined,
 } from "@ant-design/icons";
-import { parseErrorMessage } from "./shared/errorUtils";
+import { Form } from "antd";
+import { Button as TremorButton, Callout, Card, Divider, Grid, Text, TextInput, Title } from "@tremor/react";
+import { CopyToClipboard } from "react-copy-to-clipboard";
+import { useTranslation } from "react-i18next";
 import NotificationsManager from "./molecules/notifications_manager";
+import { keyCreateCall } from "./networking";
+import { parseErrorMessage } from "./shared/errorUtils";
 
 interface SCIMConfigProps {
   accessToken: string | null;
@@ -20,6 +21,7 @@ interface SCIMConfigProps {
 }
 
 const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySettings }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [isCreatingToken, setIsCreatingToken] = useState(false);
   const [tokenData, setTokenData] = useState<any>(null);
@@ -31,7 +33,6 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
     if (proxySettings && proxySettings.PROXY_BASE_URL && proxySettings.PROXY_BASE_URL !== undefined) {
       url = proxySettings.PROXY_BASE_URL;
     } else if (typeof window !== "undefined") {
-      // Use the current origin as the base URL if no proxy URL is set
       url = window.location.origin;
     }
 
@@ -42,7 +43,9 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
 
   const handleCreateSCIMToken = async (values: any) => {
     if (!accessToken || !userID) {
-      NotificationsManager.fromBackend("You need to be logged in to create a SCIM token");
+      NotificationsManager.fromBackend(
+        t("auth.scim.errors.notLoggedIn", { defaultValue: "You need to be logged in to create a SCIM token" }),
+      );
       return;
     }
 
@@ -50,7 +53,7 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
       setIsCreatingToken(true);
 
       const formData = {
-        key_alias: values.key_alias || "SCIM Access Token",
+        key_alias: values.key_alias || t("auth.scim.defaultTokenName", { defaultValue: "SCIM Access Token" }),
         team_id: null,
         models: [],
         allowed_routes: ["/scim/*"],
@@ -58,10 +61,17 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
 
       const response = await keyCreateCall(accessToken, userID, formData);
       setTokenData(response);
-      NotificationsManager.success("SCIM token created successfully");
+      NotificationsManager.success(
+        t("auth.scim.notifications.created", { defaultValue: "SCIM token created successfully" }),
+      );
     } catch (error: any) {
       console.error("Error creating SCIM token:", error);
-      NotificationsManager.fromBackend("Failed to create SCIM token: " + parseErrorMessage(error));
+      NotificationsManager.fromBackend(
+        t("auth.scim.errors.createToken", {
+          defaultValue: "Failed to create SCIM token: {{message}}",
+          message: parseErrorMessage(error),
+        }),
+      );
     } finally {
       setIsCreatingToken(false);
     }
@@ -71,17 +81,18 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
     <Grid numItems={1}>
       <Card>
         <div className="flex items-center mb-4">
-          <Title>SCIM Configuration</Title>
+          <Title>{t("auth.scim.title", { defaultValue: "SCIM Configuration" })}</Title>
         </div>
         <Text className="text-gray-600">
-          System for Cross-domain Identity Management (SCIM) allows you to automatically provision and manage users and
-          groups in LiteLLM.
+          {t("auth.scim.description", {
+            defaultValue:
+              "System for Cross-domain Identity Management (SCIM) allows you to automatically provision and manage users and groups in LiteLLM.",
+          })}
         </Text>
 
         <Divider />
 
         <div className="space-y-8">
-          {/* Step 1: SCIM URL */}
           <div>
             <div className="flex items-center mb-2">
               <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 mr-2">
@@ -89,27 +100,32 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
               </div>
               <Title className="text-lg flex items-center">
                 <LinkOutlined className="h-5 w-5 mr-2" />
-                SCIM Tenant URL
+                {t("auth.scim.tenantUrlTitle", { defaultValue: "SCIM Tenant URL" })}
               </Title>
             </div>
             <Text className="text-gray-600 mb-3">
-              Use this URL in your identity provider SCIM integration settings.
+              {t("auth.scim.tenantUrlDescription", {
+                defaultValue: "Use this URL in your identity provider SCIM integration settings.",
+              })}
             </Text>
             <div className="flex items-center">
               <TextInput value={scimBaseUrl} disabled={true} className="grow" />
               <CopyToClipboard
                 text={scimBaseUrl}
-                onCopy={() => NotificationsManager.success("URL copied to clipboard")}
+                onCopy={() =>
+                  NotificationsManager.success(
+                    t("auth.scim.notifications.urlCopied", { defaultValue: "URL copied to clipboard" }),
+                  )
+                }
               >
                 <TremorButton variant="primary" className="ml-2 flex items-center">
                   <CopyOutlined className="h-4 w-4 mr-1" />
-                  Copy
+                  {t("auth.scim.actions.copy", { defaultValue: "Copy" })}
                 </TremorButton>
               </CopyToClipboard>
             </div>
           </div>
 
-          {/* Step 2: SCIM Token */}
           <div>
             <div className="flex items-center mb-2">
               <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 mr-2">
@@ -117,13 +133,15 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
               </div>
               <Title className="text-lg flex items-center">
                 <KeyOutlined className="h-5 w-5 mr-2" />
-                Authentication Token
+                {t("auth.scim.authTokenTitle", { defaultValue: "Authentication Token" })}
               </Title>
             </div>
 
-            <Callout title="Using SCIM" color="blue" className="mb-4">
-              You need a SCIM token to authenticate with the SCIM API. Create one below and use it in your SCIM provider
-              configuration.
+            <Callout title={t("auth.scim.calloutTitle", { defaultValue: "Using SCIM" })} color="blue" className="mb-4">
+              {t("auth.scim.calloutDescription", {
+                defaultValue:
+                  "You need a SCIM token to authenticate with the SCIM API. Create one below and use it in your SCIM provider configuration.",
+              })}
             </Callout>
 
             {!tokenData ? (
@@ -131,10 +149,17 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
                 <Form form={form} onFinish={handleCreateSCIMToken} layout="vertical">
                   <Form.Item
                     name="key_alias"
-                    label="Token Name"
-                    rules={[{ required: true, message: "Please enter a name for your token" }]}
+                    label={t("auth.scim.tokenName", { defaultValue: "Token Name" })}
+                    rules={[
+                      {
+                        required: true,
+                        message: t("auth.scim.validation.enterTokenName", {
+                          defaultValue: "Please enter a name for your token",
+                        }),
+                      },
+                    ]}
                   >
-                    <TextInput placeholder="SCIM Access Token" />
+                    <TextInput placeholder={t("auth.scim.defaultTokenName", { defaultValue: "SCIM Access Token" })} />
                   </Form.Item>
                   <Form.Item>
                     <TremorButton
@@ -144,7 +169,7 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
                       className="flex items-center"
                     >
                       <KeyOutlined className="h-4 w-4 mr-1" />
-                      Create SCIM Token
+                      {t("auth.scim.actions.create", { defaultValue: "Create SCIM Token" })}
                     </TremorButton>
                   </Form.Item>
                 </Form>
@@ -153,26 +178,34 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
               <Card className="border border-yellow-300 bg-yellow-50">
                 <div className="flex items-center mb-2 text-yellow-800">
                   <ExclamationCircleOutlined className="h-5 w-5 mr-2" />
-                  <Title className="text-lg text-yellow-800">Your SCIM Token</Title>
+                  <Title className="text-lg text-yellow-800">
+                    {t("auth.scim.yourTokenTitle", { defaultValue: "Your SCIM Token" })}
+                  </Title>
                 </div>
                 <Text className="text-yellow-800 mb-4 font-medium">
-                  Make sure to copy this token now. You will not be able to see it again.
+                  {t("auth.scim.copyNowWarning", {
+                    defaultValue: "Make sure to copy this token now. You will not be able to see it again.",
+                  })}
                 </Text>
                 <div className="flex items-center">
                   <TextInput value={tokenData.key} className="grow mr-2 bg-white" type="password" disabled={true} />
                   <CopyToClipboard
                     text={tokenData.key}
-                    onCopy={() => NotificationsManager.success("Token copied to clipboard")}
+                    onCopy={() =>
+                      NotificationsManager.success(
+                        t("auth.scim.notifications.tokenCopied", { defaultValue: "Token copied to clipboard" }),
+                      )
+                    }
                   >
                     <TremorButton variant="primary" className="flex items-center">
                       <CopyOutlined className="h-4 w-4 mr-1" />
-                      Copy
+                      {t("auth.scim.actions.copy", { defaultValue: "Copy" })}
                     </TremorButton>
                   </CopyToClipboard>
                 </div>
                 <TremorButton className="mt-4 flex items-center" variant="secondary" onClick={() => setTokenData(null)}>
                   <PlusCircleOutlined className="h-4 w-4 mr-1" />
-                  Create Another Token
+                  {t("auth.scim.actions.createAnother", { defaultValue: "Create Another Token" })}
                 </TremorButton>
               </Card>
             )}

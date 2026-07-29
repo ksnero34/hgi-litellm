@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TextInput, Icon, Text } from "@tremor/react";
 import { TrashIcon, PencilAltIcon, CheckIcon, XIcon } from "@heroicons/react/outline";
 import { SimpleTable } from "@/components/common_components/simple_table";
@@ -21,6 +22,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
   onMarginChange,
   onRemoveProvider,
 }) => {
+  const { t } = useTranslation();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editPercentage, setEditPercentage] = useState<string>("");
   const [editFixedAmount, setEditFixedAmount] = useState<string>("");
@@ -106,7 +108,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
       data={data}
       columns={[
         {
-          header: "Provider",
+          header: t("operations.cost.provider"),
           cell: (row) => {
             if (row.provider === "global") {
               return (
@@ -132,7 +134,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
           },
         },
         {
-          header: "Margin",
+          header: t("operations.cost.margin"),
           cell: (row) => (
             <div className="flex items-center gap-2">
               {editingProvider === row.provider ? (
@@ -184,7 +186,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
           width: "350px",
         },
         {
-          header: "Actions",
+          header: t("operations.cost.actions"),
           cell: (row) => {
             const displayName = row.provider === "global" ? "Global" : getProviderDisplayInfo(row.provider).displayName;
             return (
@@ -200,7 +202,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
         },
       ]}
       getRowKey={(row) => row.provider}
-      emptyMessage="No provider margins configured"
+      emptyMessage={t("operations.cost.noMargins")}
     />
   );
 };

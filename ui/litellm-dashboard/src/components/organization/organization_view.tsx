@@ -10,6 +10,7 @@ import { Button, Form, Input, Select, Tabs, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import MemberTable from "../common_components/MemberTable";
 import UserSearchModal from "../common_components/user_search_modal";
 import MCPServerSelector from "../mcp_server_management/MCPServerSelector";
@@ -47,6 +48,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
   userModels,
   editOrg,
 }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: orgData, isLoading: loading } = useOrganization(organizationId);
   const [form] = Form.useForm();
@@ -74,12 +76,12 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
       };
       const response = await organizationMemberAddCall(accessToken, organizationId, member);
 
-      NotificationsManager.success("Organization member added successfully");
+      NotificationsManager.success(t("identityAdmin.organization.memberAdded"));
       setIsAddMemberModalVisible(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
     } catch (error) {
-      NotificationsManager.fromBackend("Failed to add organization member");
+      NotificationsManager.fromBackend(t("identityAdmin.organization.memberAddFailed"));
       console.error("Error adding organization member:", error);
     }
   };
@@ -95,12 +97,12 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
       };
 
       const response = await organizationMemberUpdateCall(accessToken, organizationId, member);
-      NotificationsManager.success("Organization member updated successfully");
+      NotificationsManager.success(t("identityAdmin.organization.memberUpdated"));
       setIsEditMemberModalVisible(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
     } catch (error) {
-      NotificationsManager.fromBackend("Failed to update organization member");
+      NotificationsManager.fromBackend(t("identityAdmin.organization.memberUpdateFailed"));
       console.error("Error updating organization member:", error);
     }
   };
@@ -110,12 +112,12 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
       if (!accessToken) return;
 
       await organizationMemberDeleteCall(accessToken, organizationId, values.user_id);
-      NotificationsManager.success("Organization member deleted successfully");
+      NotificationsManager.success(t("identityAdmin.organization.memberDeleted"));
       setIsEditMemberModalVisible(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
     } catch (error) {
-      NotificationsManager.fromBackend("Failed to delete organization member");
+      NotificationsManager.fromBackend(t("identityAdmin.organization.memberDeleteFailed"));
       console.error("Error deleting organization member:", error);
     }
   };
@@ -161,11 +163,11 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
 
       const response = await organizationUpdateCall(accessToken, updateData);
 
-      NotificationsManager.success("Organization settings updated successfully");
+      NotificationsManager.success(t("identityAdmin.organization.settingsUpdated"));
       setIsEditing(false);
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
     } catch (error) {
-      NotificationsManager.fromBackend("Failed to update organization settings");
+      NotificationsManager.fromBackend(t("identityAdmin.organization.settingsUpdateFailed"));
       console.error("Error updating organization:", error);
     } finally {
       setIsOrgSaving(false);
@@ -173,11 +175,11 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
   };
 
   if (loading) {
-    return <div className="p-4">Loading...</div>;
+    return <div className="p-4">{t("identityAdmin.organization.loading")}</div>;
   }
 
   if (!orgData) {
-    return <div className="p-4">Organization not found</div>;
+    return <div className="p-4">{t("identityAdmin.organization.notFound")}</div>;
   }
 
   const copyToClipboard = async (text: string | null | undefined, key: string) => {
@@ -192,7 +194,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
 
   const orgExtraColumns: ColumnsType<Member> = [
     {
-      title: "Spend (USD)",
+      title: t("identityAdmin.organization.spend"),
       key: "spend",
       render: (_: unknown, record: Member) => {
         const orgMember =
@@ -201,7 +203,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
       },
     },
     {
-      title: "Created At",
+      title: t("identityAdmin.organization.createdAt"),
       key: "created_at",
       render: (_: unknown, record: Member) => {
         const orgMember =
@@ -246,11 +248,11 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
         items={[
           {
             key: "overview",
-            label: "Overview",
+            label: t("identityAdmin.organization.overview"),
             children: (
               <Grid numItems={1} numItemsSm={2} numItemsLg={3} className="gap-6">
                 <Card>
-                  <Text>Organization Details</Text>
+                  <Text>{t("identityAdmin.organization.details")}</Text>
                   <div className="mt-2">
                     <Text>Created: {new Date(orgData.created_at).toLocaleDateString()}</Text>
                     <Text>Updated: {new Date(orgData.updated_at).toLocaleDateString()}</Text>
@@ -259,13 +261,13 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text>Budget Status</Text>
+                  <Text>{t("identityAdmin.organization.budgetStatus")}</Text>
                   <div className="mt-2">
                     <Title>${formatNumberWithCommas(orgData.spend, 4)}</Title>
                     <Text>
                       of{" "}
                       {orgData.litellm_budget_table.max_budget === null
-                        ? "Unlimited"
+                        ? t("identityAdmin.common.unlimited")
                         : `$${formatNumberWithCommas(orgData.litellm_budget_table.max_budget, 4)}`}
                     </Text>
                     {orgData.litellm_budget_table.budget_duration && (
@@ -275,7 +277,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text>Rate Limits</Text>
+                  <Text>{t("identityAdmin.organization.rateLimits")}</Text>
                   <div className="mt-2">
                     <Text>TPM: {orgData.litellm_budget_table.tpm_limit || "Unlimited"}</Text>
                     <Text>RPM: {orgData.litellm_budget_table.rpm_limit || "Unlimited"}</Text>
@@ -286,10 +288,10 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text>Models</Text>
+                  <Text>{t("identityAdmin.organization.models")}</Text>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {orgData.models.length === 0 ? (
-                      <Badge color="red">All proxy models</Badge>
+                      <Badge color="red">{t("identityAdmin.organization.allProxyModels")}</Badge>
                     ) : (
                       orgData.models.map((model, index) => (
                         <Badge key={index} color="red">
@@ -300,7 +302,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                   </div>
                 </Card>
                 <Card>
-                  <Text>Teams</Text>
+                  <Text>{t("identityAdmin.organization.teams")}</Text>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {orgData.teams?.map((team, index) => (
                       <Badge key={index} color="red">
@@ -320,7 +322,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
           },
           {
             key: "members",
-            label: "Members",
+            label: t("identityAdmin.organization.members"),
             children: (
               <div className="space-y-4">
                 <MemberTable
@@ -336,22 +338,24 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                   }}
                   onDelete={(member) => handleMemberDelete(member)}
                   onAddMember={() => setIsAddMemberModalVisible(true)}
-                  roleColumnTitle="Organization Role"
+                  roleColumnTitle={t("identityAdmin.organization.memberRole")}
                   extraColumns={orgExtraColumns}
-                  emptyText="No members found"
+                  emptyText={t("identityAdmin.organization.noMembers")}
                 />
               </div>
             ),
           },
           {
             key: "settings",
-            label: "Settings",
+            label: t("identityAdmin.organization.settings"),
             children: (
               <Card className="overflow-y-auto max-h-[65vh]">
                 <div className="flex justify-between items-center mb-4">
-                  <Title>Organization Settings</Title>
+                  <Title>{t("identityAdmin.organization.settingsTitle")}</Title>
                   {canEditOrg && !isEditing && (
-                    <TremorButton onClick={() => setIsEditing(true)}>Edit Settings</TremorButton>
+                    <TremorButton onClick={() => setIsEditing(true)}>
+                      {t("identityAdmin.organization.editSettings")}
+                    </TremorButton>
                   )}
                 </div>
 

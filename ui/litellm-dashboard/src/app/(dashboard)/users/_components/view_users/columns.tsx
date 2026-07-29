@@ -4,6 +4,7 @@ import { Tooltip, Checkbox, Tag } from "antd";
 import { UserInfo } from "@/components/networking";
 import { PencilAltIcon, TrashIcon, InformationCircleIcon, RefreshIcon } from "@heroicons/react/outline";
 import { DateCell, IdCell, MoneyCell } from "@/components/shared/table_cells";
+import { i18n } from "@/i18n/i18n";
 
 interface SelectionOptions {
   selectedUsers: UserInfo[];
@@ -25,20 +26,20 @@ export const columns = (
   // Backend sortable columns: user_id, user_email, created_at, spend, user_alias, user_role
   const baseColumns: ColumnDef<UserInfo>[] = [
     {
-      header: "User ID",
+      header: i18n.t("identityAdmin.users.userId"),
       accessorKey: "user_id",
       enableSorting: true,
       cell: ({ row }) => <IdCell value={row.original.user_id} variant="plain" copyable />,
     },
     {
-      header: "Email",
+      header: i18n.t("identityAdmin.users.email"),
       accessorKey: "user_email",
       enableSorting: true,
       cell: ({ row }) => <span className="text-xs">{row.original.user_email || "-"}</span>,
     },
     {
       id: "status",
-      header: "Status",
+      header: i18n.t("identityAdmin.users.status"),
       enableSorting: false,
       cell: ({ row }) => {
         const isScimInactive =
@@ -47,26 +48,26 @@ export const columns = (
           return (
             <Tooltip title="Deactivated via SCIM (external identity provider). The user's virtual keys are blocked.">
               <Tag color="red" data-testid={`user-status-${row.original.user_id}`}>
-                Inactive
+                {i18n.t("identityAdmin.users.inactive")}
               </Tag>
             </Tooltip>
           );
         }
         return (
           <Tag color="green" data-testid={`user-status-${row.original.user_id}`}>
-            Active
+            {i18n.t("identityAdmin.users.active")}
           </Tag>
         );
       },
     },
     {
-      header: "Global Proxy Role",
+      header: i18n.t("identityAdmin.users.globalRole"),
       accessorKey: "user_role",
       enableSorting: true,
       cell: ({ row }) => <span className="text-xs">{possibleUIRoles?.[row.original.user_role]?.ui_label || "-"}</span>,
     },
     {
-      header: "User Alias",
+      header: i18n.t("identityAdmin.users.alias"),
       accessorKey: "user_alias",
       enableSorting: false,
       cell: ({ row }) => <span className="text-xs">{row.original.user_alias || "-"}</span>,
@@ -78,7 +79,7 @@ export const columns = (
       cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={4} />,
     },
     {
-      header: "Budget (USD)",
+      header: i18n.t("identityAdmin.users.budget"),
       accessorKey: "max_budget",
       enableSorting: false,
       cell: ({ row }) => <MoneyCell value={row.original.max_budget} decimals={2} emptyText="Unlimited" showZero />,
@@ -99,7 +100,7 @@ export const columns = (
       ),
     },
     {
-      header: "Virtual Keys",
+      header: i18n.t("identityAdmin.users.virtualKeys"),
       accessorKey: "key_count",
       enableSorting: false,
       cell: ({ row }) => (
@@ -117,24 +118,24 @@ export const columns = (
       ),
     },
     {
-      header: "Created At",
+      header: i18n.t("identityAdmin.users.createdAt"),
       accessorKey: "created_at",
       enableSorting: true,
       cell: ({ row }) => <DateCell value={row.original.created_at} precision="date" />,
     },
     {
-      header: "Updated At",
+      header: i18n.t("identityAdmin.users.updatedAt"),
       accessorKey: "updated_at",
       enableSorting: false,
       cell: ({ row }) => <DateCell value={row.original.updated_at} precision="date" />,
     },
     {
       id: "actions",
-      header: "Actions",
+      header: i18n.t("identityAdmin.users.actions"),
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex gap-2">
-          <Tooltip title="Edit user details">
+          <Tooltip title={i18n.t("identityAdmin.users.edit")}>
             <Icon
               icon={PencilAltIcon}
               size="sm"

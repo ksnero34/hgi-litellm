@@ -26,6 +26,7 @@ import {
 import { ExportOutlined, LoadingOutlined } from "@ant-design/icons";
 import { Alert, Button } from "antd";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import TeamMultiSelect from "@/components/common_components/team_multi_select";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import { UsageExportHeader } from "@/components/EntityUsageExport";
@@ -108,6 +109,7 @@ const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
 };
 
 const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, entityId, entityList, dateValue }) => {
+  const { t } = useTranslation();
   const { teams } = useTeams();
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [topKeysLimit, setTopKeysLimit] = useState<number>(5);
@@ -396,15 +398,11 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     }));
   };
 
-  const getFilterLabel = (entityType: string) => {
-    return `Filter by ${entityType}`;
-  };
+  const getFilterLabel = (entityType: string) => t("observability.usage.filter_by_entity", { entityType });
 
-  const getFilterPlaceholder = (entityType: string) => {
-    return `Select ${entityType} to filter...`;
-  };
+  const getFilterPlaceholder = (entityType: string) => t("observability.usage.select_entity_to_filter", { entityType });
 
-  const capitalizedEntityLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1);
+  const capitalizedEntityLabel = t(`observability.usage.entity.${entityType}`);
 
   return (
     <div style={{ width: "100%" }} className="relative">
@@ -417,16 +415,17 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
             <div className="flex items-center justify-between">
               <span>
                 <LoadingOutlined spin className="mr-2" />
-                Currently fetching spend data: fetched {progress.currentPage} / {progress.totalPages} pages. Charts will
-                update periodically as data loads. Moving off of this page will stop and reset this. To continue using
-                the UI in the meantime,{" "}
+                {t("observability.usage.fetching_spend_data", {
+                  current: progress.currentPage,
+                  total: progress.totalPages,
+                })}{" "}
                 <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  open a new tab <ExportOutlined />
+                  {t("observability.usage.open_new_tab")} <ExportOutlined />
                 </a>
                 .
               </span>
               <Button type="primary" danger onClick={cancel}>
-                Stop
+                {t("observability.usage.stop")}
               </Button>
             </div>
           }
@@ -439,7 +438,10 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           className="mb-2"
           message={
             <span>
-              Showing partial data ({progress.currentPage}/{progress.totalPages} pages loaded)
+              {t("observability.usage.showing_partial_data", {
+                current: progress.currentPage,
+                total: progress.totalPages,
+              })}
             </span>
           }
         />
@@ -453,16 +455,17 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
             <div className="flex items-center justify-between">
               <span>
                 <LoadingOutlined spin className="mr-2" />
-                Currently fetching agent data: fetched {agentProgress.currentPage} / {agentProgress.totalPages} pages.
-                Charts will update periodically as data loads. Moving off of this page will stop and reset this. To
-                continue using the UI in the meantime,{" "}
+                {t("observability.usage.fetching_agent_data", {
+                  current: agentProgress.currentPage,
+                  total: agentProgress.totalPages,
+                })}{" "}
                 <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  open a new tab <ExportOutlined />
+                  {t("observability.usage.open_new_tab")} <ExportOutlined />
                 </a>
                 .
               </span>
               <Button type="primary" danger onClick={agentCancel}>
-                Stop
+                {t("observability.usage.stop")}
               </Button>
             </div>
           }
@@ -475,14 +478,17 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           className="mb-2"
           message={
             <span>
-              Showing partial agent data ({agentProgress.currentPage}/{agentProgress.totalPages} pages loaded)
+              {t("observability.usage.showing_partial_agent_data", {
+                current: agentProgress.currentPage,
+                total: agentProgress.totalPages,
+              })}
             </span>
           }
         />
       )}
       {entityType === "team" && (
         <div className="mb-4">
-          <Text className="mb-2">Filter by team</Text>
+          <Text className="mb-2">{t("observability.usage.filter_by_team")}</Text>
           <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} />
         </div>
       )}
@@ -501,11 +507,15 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
       />
       <TabGroup>
         <TabList variant="solid" className="mt-1">
-          <Tab>Cost</Tab>
-          <Tab>{entityType === "agent" ? "Request / Token Consumption" : "Model Activity"}</Tab>
-          {entityType === "team" ? <Tab>Agent Activity</Tab> : <></>}
-          <Tab>Key Activity</Tab>
-          <Tab>Endpoint Activity</Tab>
+          <Tab>{t("observability.usage.cost_tab")}</Tab>
+          <Tab>
+            {entityType === "agent"
+              ? t("observability.usage.request_token_consumption_tab")
+              : t("observability.usage.model_activity_tab")}
+          </Tab>
+          {entityType === "team" ? <Tab>{t("observability.usage.agent_activity_tab")}</Tab> : <></>}
+          <Tab>{t("observability.usage.key_activity_tab")}</Tab>
+          <Tab>{t("observability.usage.endpoint_activity_tab")}</Tab>
         </TabList>
         <TabPanels>
           <TabPanel>
@@ -513,34 +523,36 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               {/* Total Spend Card */}
               <Col numColSpan={2}>
                 <Card>
-                  <Title>{capitalizedEntityLabel} Spend Overview</Title>
+                  <Title>
+                    {t("observability.usage.entity_spend_overview", { entityLabel: capitalizedEntityLabel })}
+                  </Title>
                   <Grid numItems={5} className="gap-4 mt-4">
                     <Card>
-                      <Title>Total Spend</Title>
+                      <Title>{t("observability.usage.total_spend_label")}</Title>
                       <Text className="text-2xl font-bold mt-2">
                         ${formatNumberWithCommas(spendData.metadata.total_spend, 2)}
                       </Text>
                     </Card>
                     <Card>
-                      <Title>Total Requests</Title>
+                      <Title>{t("observability.usage.total_requests_label")}</Title>
                       <Text className="text-2xl font-bold mt-2">
                         {spendData.metadata.total_api_requests.toLocaleString()}
                       </Text>
                     </Card>
                     <Card>
-                      <Title>Successful Requests</Title>
+                      <Title>{t("observability.usage.successful_requests_label")}</Title>
                       <Text className="text-2xl font-bold mt-2 text-green-600">
                         {spendData.metadata.total_successful_requests.toLocaleString()}
                       </Text>
                     </Card>
                     <Card>
-                      <Title>Failed Requests</Title>
+                      <Title>{t("observability.usage.failed_requests_label")}</Title>
                       <Text className="text-2xl font-bold mt-2 text-red-600">
                         {spendData.metadata.total_failed_requests.toLocaleString()}
                       </Text>
                     </Card>
                     <Card>
-                      <Title>Total Tokens</Title>
+                      <Title>{t("observability.usage.total_tokens_label")}</Title>
                       <Text className="text-2xl font-bold mt-2">
                         {spendData.metadata.total_tokens.toLocaleString()}
                       </Text>
@@ -553,7 +565,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               <Col numColSpan={2}>
                 <ShadcnCard>
                   <CardHeader>
-                    <CardTitle className="text-base font-semibold">Daily Spend</CardTitle>
+                    <CardTitle className="text-base font-semibold">{t("observability.usage.daily_spend")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <BarChart
@@ -574,17 +586,34 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                           <div className="bg-white p-4 shadow-lg rounded-lg border">
                             <p className="font-bold">{data.date}</p>
                             <p className="text-cyan-500">
-                              Total Spend: ${formatNumberWithCommas(data.metrics.spend, 2)}
+                              {t("observability.usage.daily_total_spend", {
+                                amount: `$${formatNumberWithCommas(data.metrics.spend, 2)}`,
+                              })}
                             </p>
-                            <p className="text-gray-600">Total Requests: {data.metrics.api_requests}</p>
-                            <p className="text-gray-600">Successful: {data.metrics.successful_requests}</p>
-                            <p className="text-gray-600">Failed: {data.metrics.failed_requests}</p>
-                            <p className="text-gray-600">Total Tokens: {data.metrics.total_tokens}</p>
                             <p className="text-gray-600">
-                              Total {capitalizedEntityLabel}s: {entityCount}
+                              {t("observability.usage.daily_total_requests", { count: data.metrics.api_requests })}
+                            </p>
+                            <p className="text-gray-600">
+                              {t("observability.usage.daily_successful", { count: data.metrics.successful_requests })}
+                            </p>
+                            <p className="text-gray-600">
+                              {t("observability.usage.daily_failed", { count: data.metrics.failed_requests })}
+                            </p>
+                            <p className="text-gray-600">
+                              {t("observability.usage.daily_total_tokens", { count: data.metrics.total_tokens })}
+                            </p>
+                            <p className="text-gray-600">
+                              {t("observability.usage.daily_total_entities", {
+                                entityLabel: capitalizedEntityLabel,
+                                count: entityCount,
+                              })}
                             </p>
                             <div className="mt-2 border-t pt-2">
-                              <p className="font-semibold">Spend by {capitalizedEntityLabel}:</p>
+                              <p className="font-semibold">
+                                {t("observability.usage.daily_spend_by_entity", {
+                                  entityLabel: capitalizedEntityLabel,
+                                })}
+                              </p>
                               {Object.entries(data.breakdown.entities || {})
                                 .sort(([, a], [, b]) => {
                                   const spendA = (a as EntityMetrics).metrics.spend;
@@ -602,7 +631,9 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                                   );
                                 })}
                               {entityCount > 5 && (
-                                <p className="text-sm text-gray-500 italic">...and {entityCount - 5} more</p>
+                                <p className="text-sm text-gray-500 italic">
+                                  {t("observability.usage.daily_more_entities", { count: entityCount - 5 })}
+                                </p>
                               )}
                             </div>
                           </div>
@@ -618,15 +649,21 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                 <Card>
                   <div className="flex flex-col space-y-4">
                     <div className="flex flex-col space-y-2">
-                      <Title>Spend Per {capitalizedEntityLabel}</Title>
-                      <Subtitle className="text-xs">Showing Top 5 by Spend</Subtitle>
+                      <Title>
+                        {t("observability.usage.spend_per_entity", { entityLabel: capitalizedEntityLabel })}
+                      </Title>
+                      <Subtitle className="text-xs">
+                        {t("observability.usage.showing_top_by_spend", { count: 5 })}
+                      </Subtitle>
                       <div className="flex items-center text-sm text-gray-500">
-                        <span>Get Started by Tracking cost per {capitalizedEntityLabel} </span>
+                        <span>
+                          {t("observability.usage.get_started_tracking_cost", { entityLabel: capitalizedEntityLabel })}{" "}
+                        </span>
                         <a
                           href="https://docs.litellm.ai/docs/proxy/enterprise#spend-tracking"
                           className="text-blue-500 hover:text-blue-700 ml-1"
                         >
-                          here
+                          {t("observability.usage.here")}
                         </a>
                       </div>
                     </div>
@@ -648,13 +685,23 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                             return (
                               <div className="bg-white p-4 shadow-lg rounded-lg border">
                                 <p className="font-bold">{data.metadata.alias}</p>
-                                <p className="text-cyan-500">Spend: ${formatNumberWithCommas(data.metrics.spend, 4)}</p>
-                                <p className="text-gray-600">Requests: {data.metrics.api_requests.toLocaleString()}</p>
-                                <p className="text-green-600">
-                                  Successful: {data.metrics.successful_requests.toLocaleString()}
+                                <p className="text-cyan-500">
+                                  {t("observability.top_keys.spend")} ${formatNumberWithCommas(data.metrics.spend, 4)}
                                 </p>
-                                <p className="text-red-600">Failed: {data.metrics.failed_requests.toLocaleString()}</p>
-                                <p className="text-gray-600">Tokens: {data.metrics.total_tokens.toLocaleString()}</p>
+                                <p className="text-gray-600">
+                                  {t("observability.usage.requests_label")}:{" "}
+                                  {data.metrics.api_requests.toLocaleString()}
+                                </p>
+                                <p className="text-green-600">
+                                  {t("observability.usage.successful")}:{" "}
+                                  {data.metrics.successful_requests.toLocaleString()}
+                                </p>
+                                <p className="text-red-600">
+                                  {t("observability.usage.failed")}: {data.metrics.failed_requests.toLocaleString()}
+                                </p>
+                                <p className="text-gray-600">
+                                  {t("observability.usage.tokens")}: {data.metrics.total_tokens.toLocaleString()}
+                                </p>
                               </div>
                             );
                           }}
@@ -666,10 +713,14 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                             <TableHead>
                               <TableRow>
                                 <TableHeaderCell>{capitalizedEntityLabel}</TableHeaderCell>
-                                <TableHeaderCell>Spend</TableHeaderCell>
-                                <TableHeaderCell className="text-green-600">Successful</TableHeaderCell>
-                                <TableHeaderCell className="text-red-600">Failed</TableHeaderCell>
-                                <TableHeaderCell>Tokens</TableHeaderCell>
+                                <TableHeaderCell>{t("observability.usage.spend")}</TableHeaderCell>
+                                <TableHeaderCell className="text-green-600">
+                                  {t("observability.usage.successful")}
+                                </TableHeaderCell>
+                                <TableHeaderCell className="text-red-600">
+                                  {t("observability.usage.failed")}
+                                </TableHeaderCell>
+                                <TableHeaderCell>{t("observability.usage.tokens")}</TableHeaderCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -702,7 +753,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               {/* Top API Keys */}
               <Col numColSpan={1}>
                 <Card>
-                  <Title>Top Virtual Keys</Title>
+                  <Title>{t("observability.usage.top_virtual_keys")}</Title>
                   <TopKeyView
                     topKeys={getTopAPIKeys()}
                     teams={null}
@@ -716,7 +767,9 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               {/* Top Models */}
               <Col numColSpan={1}>
                 <Card>
-                  <Title>{entityType === "agent" ? "Top Agents" : "Top Models"}</Title>
+                  <Title>
+                    {entityType === "agent" ? t("observability.usage.top_agents") : t("observability.usage.top_models")}
+                  </Title>
                   <TopModelView
                     topModels={getTopModels()}
                     topModelsLimit={topModelsLimit}
@@ -729,7 +782,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               {entityType === "team" && (
                 <Col numColSpan={2}>
                   <Card>
-                    <Title>Top Agents Driving Spend</Title>
+                    <Title>{t("observability.usage.top_agents_driving_spend")}</Title>
                     <TopModelView
                       topModels={getTopAgents()}
                       topModelsLimit={topAgentsLimit}
@@ -743,7 +796,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               <Col numColSpan={2}>
                 <Card>
                   <div className="flex flex-col space-y-4">
-                    <Title>Provider Usage</Title>
+                    <Title>{t("observability.usage.provider_usage")}</Title>
                     <Grid numItems={2}>
                       <Col numColSpan={1}>
                         <DonutChart
@@ -762,11 +815,15 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
                         <Table>
                           <TableHead>
                             <TableRow>
-                              <TableHeaderCell>Provider</TableHeaderCell>
-                              <TableHeaderCell>Spend</TableHeaderCell>
-                              <TableHeaderCell className="text-green-600">Successful</TableHeaderCell>
-                              <TableHeaderCell className="text-red-600">Failed</TableHeaderCell>
-                              <TableHeaderCell>Tokens</TableHeaderCell>
+                              <TableHeaderCell>{t("observability.usage.provider")}</TableHeaderCell>
+                              <TableHeaderCell>{t("observability.usage.spend")}</TableHeaderCell>
+                              <TableHeaderCell className="text-green-600">
+                                {t("observability.usage.successful")}
+                              </TableHeaderCell>
+                              <TableHeaderCell className="text-red-600">
+                                {t("observability.usage.failed")}
+                              </TableHeaderCell>
+                              <TableHeaderCell>{t("observability.usage.tokens")}</TableHeaderCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>

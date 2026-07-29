@@ -1,5 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "@/i18n/i18n";
+import { renderWithProviders } from "../../../../../../../tests/test-utils";
 import * as networking from "@/components/networking";
 import EntityUsage from "./EntityUsage";
 
@@ -364,14 +366,18 @@ describe("EntityUsage", () => {
   });
 
   it("should render with tag entity type and display spend metrics", async () => {
-    render(<EntityUsage {...defaultProps} />);
+    renderWithProviders(<EntityUsage {...defaultProps} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Tag Spend Overview")).toBeInTheDocument();
-    expect(screen.getByText("Total Spend")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", { entityLabel: i18n.t("observability.usage.entity.tag") }),
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.total_spend_label"))).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$100.50");
@@ -382,14 +388,18 @@ describe("EntityUsage", () => {
   });
 
   it("should render with team entity type and call team API", async () => {
-    render(<EntityUsage {...defaultProps} entityType="team" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
     });
 
     // Check that it shows team-specific label
-    expect(screen.getByText("Team Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", { entityLabel: i18n.t("observability.usage.entity.team") }),
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$100.50");
@@ -398,13 +408,19 @@ describe("EntityUsage", () => {
   });
 
   it("should render with organization entity type and call organization API", async () => {
-    render(<EntityUsage {...defaultProps} entityType="organization" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="organization" />);
 
     await waitFor(() => {
       expect(mockOrganizationDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Organization Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", {
+          entityLabel: i18n.t("observability.usage.entity.organization"),
+        }),
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$100.50");
@@ -413,13 +429,19 @@ describe("EntityUsage", () => {
   });
 
   it("should render with customer entity type and call customer API", async () => {
-    render(<EntityUsage {...defaultProps} entityType="customer" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="customer" />);
 
     await waitFor(() => {
       expect(mockCustomerDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Customer Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", {
+          entityLabel: i18n.t("observability.usage.entity.customer"),
+        }),
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$100.50");
@@ -428,13 +450,19 @@ describe("EntityUsage", () => {
   });
 
   it("should render with agent entity type and call agent API", async () => {
-    render(<EntityUsage {...defaultProps} entityType="agent" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="agent" />);
 
     await waitFor(() => {
       expect(mockAgentDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Agent Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", {
+          entityLabel: i18n.t("observability.usage.entity.agent"),
+        }),
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$444.30");
@@ -443,13 +471,17 @@ describe("EntityUsage", () => {
   });
 
   it("should render with user entity type and call user API", async () => {
-    render(<EntityUsage {...defaultProps} entityType="user" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="user" />);
 
     await waitFor(() => {
       expect(mockUserDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("User Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", { entityLabel: i18n.t("observability.usage.entity.user") }),
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       const spendElements = screen.getAllByText("$100.50");
@@ -458,22 +490,26 @@ describe("EntityUsage", () => {
   });
 
   it("should switch between tabs", async () => {
-    render(<EntityUsage {...defaultProps} />);
+    renderWithProviders(<EntityUsage {...defaultProps} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Tag Spend Overview")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("observability.usage.entity_spend_overview", { entityLabel: i18n.t("observability.usage.entity.tag") }),
+      ),
+    ).toBeInTheDocument();
 
-    const modelActivityTab = screen.getByText("Model Activity");
+    const modelActivityTab = screen.getByText(i18n.t("observability.usage.model_activity_tab"));
     act(() => {
       fireEvent.click(modelActivityTab);
     });
 
     expect(screen.getAllByText("Activity Metrics")[0]).toBeInTheDocument();
 
-    const keyActivityTab = screen.getByText("Key Activity");
+    const keyActivityTab = screen.getByText(i18n.t("observability.usage.key_activity_tab"));
     act(() => {
       fireEvent.click(keyActivityTab);
     });
@@ -495,57 +531,61 @@ describe("EntityUsage", () => {
 
     mockTagDailyActivityCall.mockResolvedValue(emptyData);
 
-    render(<EntityUsage {...defaultProps} />);
+    renderWithProviders(<EntityUsage {...defaultProps} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(await screen.findByText("Tag Spend Overview")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        i18n.t("observability.usage.entity_spend_overview", { entityLabel: i18n.t("observability.usage.entity.tag") }),
+      ),
+    ).toBeInTheDocument();
     expect(await screen.findByText("$0.00")).toBeInTheDocument();
-    expect(screen.getByText("Total Spend")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.total_spend_label"))).toBeInTheDocument();
     expect(screen.getAllByText("0")[0]).toBeInTheDocument();
   });
 
   it("should display Model Activity tab for non-agent entity types", async () => {
-    render(<EntityUsage {...defaultProps} entityType="tag" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="tag" />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Model Activity")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.model_activity_tab"))).toBeInTheDocument();
   });
 
   it("should display Request / Token Consumption tab for agent entity type", async () => {
-    render(<EntityUsage {...defaultProps} entityType="agent" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="agent" />);
 
     await waitFor(() => {
       expect(mockAgentDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Request / Token Consumption")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.request_token_consumption_tab"))).toBeInTheDocument();
   });
 
   it("should display Top Models title for non-agent entity types", async () => {
-    render(<EntityUsage {...defaultProps} entityType="tag" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="tag" />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    const topModelsElements = screen.getAllByText("Top Models");
+    const topModelsElements = screen.getAllByText(i18n.t("observability.usage.top_models"));
     expect(topModelsElements.length).toBeGreaterThan(0);
   });
 
   it("should display Top Agents title for agent entity type", async () => {
-    render(<EntityUsage {...defaultProps} entityType="agent" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="agent" />);
 
     await waitFor(() => {
       expect(mockAgentDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Top Agents")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.top_agents"))).toBeInTheDocument();
   });
 
   it("should use entityList label when entityList is provided and entity exists", async () => {
@@ -554,7 +594,7 @@ describe("EntityUsage", () => {
       { label: "Tag 2", value: "tag-2" },
     ];
 
-    render(<EntityUsage {...defaultProps} entityList={customEntityList} />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityList={customEntityList} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -568,7 +608,7 @@ describe("EntityUsage", () => {
   it("should fallback to team_alias when entityList is provided but entity does not exist", async () => {
     const customEntityList = [{ label: "Tag 2", value: "tag-2" }];
 
-    render(<EntityUsage {...defaultProps} entityList={customEntityList} />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityList={customEntityList} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -580,7 +620,7 @@ describe("EntityUsage", () => {
   });
 
   it("should fallback to team_alias when entityList is null", async () => {
-    render(<EntityUsage {...defaultProps} entityList={null} />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityList={null} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -592,47 +632,47 @@ describe("EntityUsage", () => {
   });
 
   it("should display Agent Activity tab for team entity type", async () => {
-    render(<EntityUsage {...defaultProps} entityType="team" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Agent Activity")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.agent_activity_tab"))).toBeInTheDocument();
   });
 
   it("should not display Agent Activity tab for non-team entity types", async () => {
-    render(<EntityUsage {...defaultProps} entityType="tag" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="tag" />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.queryByText("Agent Activity")).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t("observability.usage.agent_activity_tab"))).not.toBeInTheDocument();
   });
 
   it("should display Top Agents Driving Spend card for team entity type", async () => {
-    render(<EntityUsage {...defaultProps} entityType="team" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("Top Agents Driving Spend")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.usage.top_agents_driving_spend"))).toBeInTheDocument();
   });
 
   it("should not display Top Agents Driving Spend card for non-team entity types", async () => {
-    render(<EntityUsage {...defaultProps} entityType="tag" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="tag" />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
     });
 
-    expect(screen.queryByText("Top Agents Driving Spend")).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t("observability.usage.top_agents_driving_spend"))).not.toBeInTheDocument();
   });
 
   it("should fetch agent activity data when entity type is team", async () => {
-    render(<EntityUsage {...defaultProps} entityType="team" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
       expect(mockAgentDailyActivityCall).toHaveBeenCalledWith(
@@ -646,7 +686,7 @@ describe("EntityUsage", () => {
   });
 
   it("should not fetch agent activity data for non-team entity types", async () => {
-    render(<EntityUsage {...defaultProps} entityType="tag" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="tag" />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -656,13 +696,13 @@ describe("EntityUsage", () => {
   });
 
   it("should switch to Agent Activity tab for team entity type", async () => {
-    render(<EntityUsage {...defaultProps} entityType="team" />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
     });
 
-    const agentActivityTab = screen.getByText("Agent Activity");
+    const agentActivityTab = screen.getByText(i18n.t("observability.usage.agent_activity_tab"));
     act(() => {
       fireEvent.click(agentActivityTab);
     });
@@ -693,7 +733,7 @@ describe("EntityUsage", () => {
 
     mockTagDailyActivityCall.mockResolvedValue(spendDataWithoutAlias);
 
-    render(<EntityUsage {...defaultProps} entityList={null} />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityList={null} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -705,7 +745,7 @@ describe("EntityUsage", () => {
   });
 
   it("renders daily spend bars, per-entity bars, and the provider donut with cyan fills and a $ center total", async () => {
-    const { container } = render(<EntityUsage {...defaultProps} />);
+    const { container } = renderWithProviders(<EntityUsage {...defaultProps} />);
 
     await waitFor(() => {
       expect(mockTagDailyActivityCall).toHaveBeenCalled();
@@ -754,7 +794,7 @@ describe("EntityUsage", () => {
     mockUserDailyActivityCall.mockResolvedValue(spendDataForUser);
 
     // entityList is null to simulate a spender missing from the paginated user list
-    render(<EntityUsage {...defaultProps} entityType="user" entityList={null} />);
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="user" entityList={null} />);
 
     await waitFor(() => {
       expect(mockUserDailyActivityCall).toHaveBeenCalled();

@@ -20,6 +20,7 @@ import {
   TableHeaderSortDropdown,
 } from "@/components/common_components/TableHeaderSortDropdown/TableHeaderSortDropdown";
 import { DateCell, IdCell } from "@/components/shared/table_cells";
+import { useTranslation } from "react-i18next";
 import { AccessGroupDetail } from "./AccessGroupsDetailsPage";
 import { AccessGroupCreateModal } from "./AccessGroupsModal/AccessGroupCreateModal";
 import { AccessGroup } from "./types";
@@ -103,6 +104,7 @@ function buildAntdColumns(
 }
 
 export function AccessGroupsPage() {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
   const { userRole } = useAuthorized();
   // Admin Viewer follows the read-parity rule: see access groups, no writes.
@@ -141,7 +143,7 @@ export function AccessGroupsPage() {
       {
         id: "id",
         accessorKey: "id",
-        header: () => <span>ID</span>,
+        header: () => <span>{t("identity.accessGroups.columns.id", { defaultValue: "ID" })}</span>,
         enableSorting: false,
         size: 170,
         cell: ({ row }) => <IdCell value={row.original.id} onClick={setSelectedGroupId} />,
@@ -149,13 +151,13 @@ export function AccessGroupsPage() {
       {
         id: "name",
         accessorKey: "name",
-        header: () => <span>Name</span>,
+        header: () => <span>{t("identity.accessGroups.columns.name", { defaultValue: "Name" })}</span>,
         enableSorting: true,
         cell: ({ getValue }) => getValue() as string,
       },
       {
         id: "resources",
-        header: () => <span>Resources</span>,
+        header: () => <span>{t("identity.accessGroups.columns.resources", { defaultValue: "Resources" })}</span>,
         enableSorting: false,
         cell: ({ row }) => {
           const record = row.original;
@@ -164,7 +166,12 @@ export function AccessGroupsPage() {
           const agentIds = record.agentIds ?? [];
           return (
             <Flex gap={12} align="center">
-              <Tooltip title={`${modelIds?.length} Models`}>
+              <Tooltip
+                title={t("identity.accessGroups.resources.models", {
+                  defaultValue: "{{count}} Models",
+                  count: modelIds.length,
+                })}
+              >
                 <Tag color="blue" style={{ fontSize: 14, padding: "2px 8px", margin: 0 }}>
                   <Flex align="center" gap={6}>
                     <LayersIcon size={14} />
@@ -172,7 +179,12 @@ export function AccessGroupsPage() {
                   </Flex>
                 </Tag>
               </Tooltip>
-              <Tooltip title={`${mcpServerIds?.length} MCP Servers`}>
+              <Tooltip
+                title={t("identity.accessGroups.resources.mcpServers", {
+                  defaultValue: "{{count}} MCP Servers",
+                  count: mcpServerIds.length,
+                })}
+              >
                 <Tag color="cyan" style={{ fontSize: 14, padding: "2px 8px", margin: 0 }}>
                   <Flex align="center" gap={6}>
                     <ServerIcon size={14} />
@@ -180,7 +192,12 @@ export function AccessGroupsPage() {
                   </Flex>
                 </Tag>
               </Tooltip>
-              <Tooltip title={`${agentIds?.length} Agents`}>
+              <Tooltip
+                title={t("identity.accessGroups.resources.agents", {
+                  defaultValue: "{{count}} Agents",
+                  count: agentIds.length,
+                })}
+              >
                 <Tag color="purple" style={{ fontSize: 14, padding: "2px 8px", margin: 0 }}>
                   <Flex align="center" gap={6}>
                     <BotIcon size={14} />
@@ -195,7 +212,7 @@ export function AccessGroupsPage() {
       {
         id: "createdAt",
         accessorKey: "createdAt",
-        header: () => <span>Created</span>,
+        header: () => <span>{t("identity.accessGroups.columns.created", { defaultValue: "Created" })}</span>,
         enableSorting: true,
         sortingFn: "datetime",
         cell: ({ getValue }) => <DateCell value={getValue() as string} precision="date" />,
@@ -204,7 +221,7 @@ export function AccessGroupsPage() {
       {
         id: "updatedAt",
         accessorKey: "updatedAt",
-        header: () => <span>Updated</span>,
+        header: () => <span>{t("identity.accessGroups.columns.updated", { defaultValue: "Updated" })}</span>,
         enableSorting: false,
         cell: ({ getValue }) => <DateCell value={getValue() as string} precision="date" />,
         meta: { responsive: ["xl"] },
@@ -213,13 +230,13 @@ export function AccessGroupsPage() {
         ? [
             {
               id: "actions",
-              header: () => <span>Actions</span>,
+              header: () => <span>{t("identity.accessGroups.columns.actions", { defaultValue: "Actions" })}</span>,
               enableSorting: false,
               cell: ({ row }: { row: Row<AccessGroup> }) => (
                 <Space>
                   <TableIconActionButton
                     variant="Delete"
-                    tooltipText="Delete access group"
+                    tooltipText={t("identity.accessGroups.actions.delete", { defaultValue: "Delete access group" })}
                     onClick={() => setGroupToDelete(row.original)}
                   />
                 </Space>
@@ -230,7 +247,7 @@ export function AccessGroupsPage() {
     ],
     // setSelectedGroup is stable (useState setter)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canModify],
+    [canModify, t],
   );
 
   // ---------- TanStack table instance ----------
@@ -268,13 +285,17 @@ export function AccessGroupsPage() {
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={0}>
           <Title level={2} style={{ margin: 0 }}>
-            Access Groups
+            {t("identity.accessGroups.title", { defaultValue: "Access Groups" })}
           </Title>
-          <Text type="secondary">Manage resource permissions for your organization</Text>
+          <Text type="secondary">
+            {t("identity.accessGroups.subtitle", {
+              defaultValue: "Manage resource permissions for your organization",
+            })}
+          </Text>
         </Space>
         {canModify && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalVisible(true)}>
-            Create Access Group
+            {t("identity.accessGroups.create", { defaultValue: "Create Access Group" })}
           </Button>
         )}
       </Flex>
@@ -289,7 +310,9 @@ export function AccessGroupsPage() {
         >
           <Input
             prefix={<SearchIcon size={16} />}
-            placeholder="Search groups by name, ID, or description..."
+            placeholder={t("identity.accessGroups.search", {
+              defaultValue: "Search groups by name, ID, or description...",
+            })}
             style={{ maxWidth: 400 }}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
@@ -301,7 +324,12 @@ export function AccessGroupsPage() {
             pageSize={pageSize}
             onChange={(page) => setCurrentPage(page)}
             size="small"
-            showTotal={(total) => `${total} groups`}
+            showTotal={(total) =>
+              t("identity.accessGroups.count", {
+                defaultValue: "{{count}} groups",
+                count: total,
+              })
+            }
             showSizeChanger={false}
           />
         </Flex>
@@ -312,13 +340,22 @@ export function AccessGroupsPage() {
 
       <DeleteResourceModal
         isOpen={!!groupToDelete}
-        title="Delete Access Group"
-        message="Are you sure you want to delete this access group? This action cannot be undone."
-        resourceInformationTitle="Access Group Information"
+        title={t("identity.accessGroups.delete.title", { defaultValue: "Delete Access Group" })}
+        message={t("identity.accessGroups.delete.message", {
+          defaultValue: "Are you sure you want to delete this access group? This action cannot be undone.",
+        })}
+        resourceInformationTitle={t("identity.accessGroups.delete.info", { defaultValue: "Access Group Information" })}
         resourceInformation={[
-          { label: "ID", value: groupToDelete?.id, code: true },
-          { label: "Name", value: groupToDelete?.name },
-          { label: "Description", value: groupToDelete?.description || "—" },
+          {
+            label: t("identity.accessGroups.columns.id", { defaultValue: "ID" }),
+            value: groupToDelete?.id,
+            code: true,
+          },
+          { label: t("identity.accessGroups.columns.name", { defaultValue: "Name" }), value: groupToDelete?.name },
+          {
+            label: t("identity.accessGroups.details.description", { defaultValue: "Description" }),
+            value: groupToDelete?.description || t("identity.common.none", { defaultValue: "—" }),
+          },
         ]}
         onCancel={() => setGroupToDelete(null)}
         onOk={() => {

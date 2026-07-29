@@ -4,6 +4,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { Button, Flex, Input, Layout, Space, theme, Typography } from "antd";
 import { SearchIcon } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CreateProjectModal } from "./ProjectModals/CreateProjectModal";
 import { ProjectDetail } from "./ProjectDetailsPage";
 import { ProjectsTable } from "./ProjectsTable";
@@ -12,6 +13,7 @@ const { Title, Text } = Typography;
 const { Content } = Layout;
 
 export function ProjectsPage() {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
   const { data: projects, isLoading } = useProjects();
   const { data: teams, isLoading: isTeamsLoading } = useTeams();
@@ -19,7 +21,6 @@ export function ProjectsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
-
   const teamAliasMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const team of teams ?? []) {
@@ -52,19 +53,19 @@ export function ProjectsPage() {
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={0}>
           <Title level={2} style={{ margin: 0 }}>
-            Projects
+            {t("access.projects.title")}
           </Title>
-          <Text type="secondary">Manage projects within your teams</Text>
+          <Text type="secondary">{t("access.projects.subtitle")}</Text>
         </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalVisible(true)}>
-          Create Project
+          {t("access.projects.create")}
         </Button>
       </Flex>
 
       <Flex align="center" style={{ marginBottom: 12 }}>
         <Input
           prefix={<SearchIcon size={16} />}
-          placeholder="Search projects by name, ID, description, or team..."
+          placeholder={t("access.projects.search")}
           style={{ maxWidth: 400 }}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}

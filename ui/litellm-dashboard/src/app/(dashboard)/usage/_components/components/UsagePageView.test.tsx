@@ -1062,7 +1062,7 @@ describe("UsagePage", () => {
 
       // Title should change to "Top Litellm Models"
       await waitFor(() => {
-        expect(screen.getByText("Top Litellm Models")).toBeInTheDocument();
+        expect(screen.getByText("Top LiteLLM Models")).toBeInTheDocument();
       });
     });
 
@@ -1080,7 +1080,7 @@ describe("UsagePage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Top Litellm Models")).toBeInTheDocument();
+        expect(screen.getByText("Top LiteLLM Models")).toBeInTheDocument();
       });
 
       // Switch back to groups

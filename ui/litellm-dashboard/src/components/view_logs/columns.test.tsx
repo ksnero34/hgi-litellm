@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { i18n } from "@/i18n/i18n";
 
 import { createColumns, type LogEntry } from "./columns";
 import { DataTable } from "./table";
@@ -65,6 +66,6 @@ describe("Cost column", () => {
     render(<DataTable data={[logEntry(overrides)]} columns={createColumns()} getRowId={(r) => r.request_id} />);
     expect(screen.getByText("$0.060000")).toBeInTheDocument();
     expect(screen.queryByText("$0.010000")).not.toBeInTheDocument();
-    expect(screen.getByText("session total")).toBeInTheDocument();
+    expect(screen.getByText(i18n.t("observability.logs.columns.session_total"))).toBeInTheDocument();
   });
 });

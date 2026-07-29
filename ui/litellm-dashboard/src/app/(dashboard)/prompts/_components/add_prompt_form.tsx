@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal, Form, Select, Upload, Button, Divider } from "antd";
 import { TextInput } from "@tremor/react";
 import { UploadOutlined } from "@ant-design/icons";
@@ -22,6 +23,7 @@ interface PromptFormData {
 }
 
 const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessToken, onSuccess }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -39,12 +41,12 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
       const values = await form.validateFields();
 
       if (!accessToken) {
-        NotificationsManager.fromBackend("Access token is required");
+        NotificationsManager.fromBackend(t("interactionExtra.prompts.tokenRequired"));
         return;
       }
 
       if (promptIntegration === "dotprompt" && fileList.length === 0) {
-        NotificationsManager.fromBackend("Please upload a .prompt file");
+        NotificationsManager.fromBackend(t("interactionExtra.prompts.uploadRequired"));
         return;
       }
 
@@ -73,7 +75,7 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
           };
         } catch (conversionError) {
           console.error("Error converting prompt file:", conversionError);
-          NotificationsManager.fromBackend("Failed to convert prompt file to JSON");
+          NotificationsManager.fromBackend(t("interactionExtra.prompts.convertFailed"));
           setLoading(false);
           return;
         }
@@ -82,12 +84,12 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
       // Create the prompt
       try {
         await createPromptCall(accessToken, promptData);
-        NotificationsManager.success("Prompt created successfully!");
+        NotificationsManager.success(t("interactionExtra.prompts.created"));
         handleCancel();
         onSuccess();
       } catch (createError) {
         console.error("Error creating prompt:", createError);
-        NotificationsManager.fromBackend("Failed to create prompt");
+        NotificationsManager.fromBackend(t("interactionExtra.prompts.createFailed"));
       }
     } catch (error) {
       console.error("Form validation error:", error);
@@ -99,7 +101,7 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
   const uploadProps: UploadProps = {
     beforeUpload: (file) => {
       if (!file.name.endsWith(".prompt")) {
-        NotificationsManager.fromBackend("Please upload a .prompt file");
+        NotificationsManager.fromBackend(t("interactionExtra.prompts.uploadRequired"));
         return false;
       }
       return false; // Prevent automatic upload
@@ -115,35 +117,35 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
 
   return (
     <Modal
-      title="Add New Prompt"
+      title={t("interactionExtra.prompts.addTitle")}
       open={visible}
       onCancel={handleCancel}
       footer={[
         <Button key="cancel" onClick={handleCancel}>
-          Cancel
+          {t("interactionExtra.prompts.cancel")}
         </Button>,
         <Button key="submit" loading={loading} onClick={handleSubmit}>
-          Create Prompt
+          {t("interactionExtra.prompts.create")}
         </Button>,
       ]}
       width={600}
     >
       <Form form={form} layout="vertical" requiredMark={false}>
         <Form.Item
-          label="Prompt ID"
+          label={t("interactionExtra.prompts.id")}
           name="prompt_id"
           rules={[
-            { required: true, message: "Please enter a prompt ID" },
+            { required: true, message: t("interactionExtra.prompts.idRequired") },
             {
               pattern: /^[a-zA-Z0-9_-]+$/,
-              message: "Prompt ID can only contain letters, numbers, underscores, and hyphens",
+              message: t("interactionExtra.prompts.idInvalid"),
             },
           ]}
         >
-          <TextInput placeholder="Enter unique prompt ID (e.g., my_prompt_id)" />
+          <TextInput placeholder={t("interactionExtra.prompts.idPlaceholder")} />
         </Form.Item>
 
-        <Form.Item label="Prompt Integration" name="prompt_integration" initialValue="dotprompt">
+        <Form.Item label={t("interactionExtra.prompts.integration")} name="prompt_integration" initialValue="dotprompt">
           <Select value={promptIntegration} onChange={setPromptIntegration}>
             <Option value="dotprompt">dotprompt</Option>
           </Select>
@@ -152,11 +154,15 @@ const AddPromptForm: React.FC<AddPromptFormProps> = ({ visible, onClose, accessT
         {promptIntegration === "dotprompt" && (
           <>
             <Divider />
-            <Form.Item label="Prompt File" extra="Upload a .prompt file that follows the Dotprompt specification">
+            <Form.Item label={t("interactionExtra.prompts.file")} extra={t("interactionExtra.prompts.fileHelp")}>
               <Upload {...uploadProps}>
-                <Button icon={<UploadOutlined />}>Select .prompt File</Button>
+                <Button icon={<UploadOutlined />}>{t("interactionExtra.prompts.selectFile")}</Button>
               </Upload>
-              {fileList.length > 0 && <div className="mt-2 text-sm text-gray-600">Selected: {fileList[0].name}</div>}
+              {fileList.length > 0 && (
+                <div className="mt-2 text-sm text-gray-600">
+                  {t("interactionExtra.prompts.selected", { name: fileList[0].name })}
+                </div>
+              )}
             </Form.Item>
           </>
         )}

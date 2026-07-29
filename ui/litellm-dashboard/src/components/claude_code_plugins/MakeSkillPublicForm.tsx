@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal, Form, Steps, Button, Checkbox } from "antd";
 import { Text, Title, Badge } from "@tremor/react";
 import { enableClaudeCodePlugin, disableClaudeCodePlugin } from "../networking";
@@ -22,6 +23,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
   skillsList,
   onSuccess,
 }) => {
+  const { t } = useTranslation();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -36,7 +38,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
 
   const handleNext = () => {
     if (selectedSkills.size === 0) {
-      NotificationsManager.fromBackend("Please select at least one skill");
+      NotificationsManager.fromBackend(t("hubSkills.publish.selectRequired"));
       return;
     }
     setCurrentStep(1);
@@ -69,7 +71,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
 
   const handleSubmit = async () => {
     if (selectedSkills.size === 0) {
-      NotificationsManager.fromBackend("Please select at least one skill");
+      NotificationsManager.fromBackend(t("hubSkills.publish.selectRequired"));
       return;
     }
 
@@ -94,7 +96,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
       onSuccess();
     } catch (error) {
       console.error("Error publishing skills:", error);
-      NotificationsManager.fromBackend("Failed to update skills. Please try again.");
+      NotificationsManager.fromBackend(t("hubSkills.publish.updateError"));
     } finally {
       setLoading(false);
     }
@@ -106,7 +108,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
   const renderStep1 = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Title>Select Skills to Publish</Title>
+        <Title>{t("hubSkills.publish.selectTitle")}</Title>
         <Checkbox
           checked={allSelected}
           indeterminate={isIndeterminate}
@@ -125,7 +127,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
         <div className="space-y-3">
           {skillsList.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <Text>No skills registered yet.</Text>
+              <Text>{t("hubSkills.publish.empty")}</Text>
             </div>
           ) : (
             skillsList.map((skill) => (
@@ -170,17 +172,16 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
 
   const renderStep2 = () => (
     <div className="space-y-4">
-      <Title>Confirm Publish to Skill Hub</Title>
+      <Title>{t("hubSkills.publish.confirmTitle")}</Title>
 
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
         <Text className="text-sm text-yellow-800">
-          <strong>Note:</strong> Published skills will be visible to all users in the Skill Hub tab. Skills not in the
-          list below will be unpublished.
+          <strong>{t("hubSkills.publish.note")}</strong> {t("hubSkills.publish.noteText")}
         </Text>
       </div>
 
       <div className="space-y-3">
-        <Text className="font-medium">Skills to be published:</Text>
+        <Text className="font-medium">{t("hubSkills.publish.selected")}</Text>
         <div className="max-h-48 overflow-y-auto border rounded-lg p-3">
           <div className="space-y-2">
             {Array.from(selectedSkills).map((name) => {
@@ -210,7 +211,7 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
 
   return (
     <Modal
-      title="Publish to Skill Hub"
+      title={t("hubSkills.publish.title")}
       open={visible}
       onCancel={handleClose}
       footer={null}
@@ -219,15 +220,15 @@ const MakeSkillPublicForm: React.FC<MakeSkillPublicFormProps> = ({
     >
       <Form form={form} layout="vertical">
         <Steps current={currentStep} className="mb-6">
-          <Step title="Select Skills" />
-          <Step title="Confirm" />
+          <Step title={t("hubSkills.publish.selectStep")} />
+          <Step title={t("hubSkills.publish.confirmStep")} />
         </Steps>
 
         {currentStep === 0 ? renderStep1() : renderStep2()}
 
         <div className="flex justify-between mt-6">
           <Button onClick={currentStep === 0 ? handleClose : () => setCurrentStep(0)}>
-            {currentStep === 0 ? "Cancel" : "Previous"}
+            {currentStep === 0 ? t("hubSkills.common.cancel") : t("hubSkills.common.previous")}
           </Button>
           <div className="flex space-x-2">
             {currentStep === 0 && (

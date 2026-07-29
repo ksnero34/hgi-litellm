@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button, Collapse, Drawer, Empty, Spin, Tooltip, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
@@ -67,14 +68,6 @@ const STATUS_DOT: Record<RunStatus, string> = {
 };
 
 const RUN_STATUS_OPTIONS: RunStatus[] = ["pending", "running", "paused", "completed", "failed"];
-const STATUS_LABELS: Record<RunStatus, string> = {
-  pending: "Pending",
-  running: "Running",
-  paused: "Paused",
-  completed: "Completed",
-  failed: "Failed",
-};
-
 const EVENT_COLOR: Record<string, { bar: string; border: string; text: string }> = {
   "step.started": { bar: "#f0fdf4", border: "#86efac", text: "#16a34a" },
   "step.failed": { bar: "#fef2f2", border: "#fca5a5", text: "#dc2626" },
@@ -491,6 +484,14 @@ const MessageRow: React.FC<{ msg: WorkflowRunMessage }> = ({ msg }) => {
 // ── main component ────────────────────────────────────────────────────────────
 
 const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
+  const { t } = useTranslation();
+  const statusLabels: Record<RunStatus, string> = {
+    pending: t("interactionExtra.workflows.pending"),
+    running: t("interactionExtra.workflows.running"),
+    paused: t("interactionExtra.workflows.paused"),
+    completed: t("interactionExtra.workflows.completed"),
+    failed: t("interactionExtra.workflows.failed"),
+  };
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [selectedRun, setSelectedRun] = useState<WorkflowRun | null>(null);
@@ -567,8 +568,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       {
         id: "run",
         accessorFn: (row) => `${runTitle(row)} ${row.run_id}`,
-        header: "Run",
-        meta: { title: "Run", skeleton: "twoLine" },
+        header: t("interactionExtra.workflows.run"),
+        meta: { title: t("interactionExtra.workflows.run"), skeleton: "twoLine" },
         cell: ({ row }) => {
           const run = row.original;
           return (
@@ -584,8 +585,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       },
       {
         accessorKey: "workflow_type",
-        header: "Type",
-        meta: { title: "Type" },
+        header: t("interactionExtra.workflows.type"),
+        meta: { title: t("interactionExtra.workflows.type") },
         filterFn: "includesString",
         cell: ({ row }) => (
           <span style={{ fontFamily: "monospace", fontSize: 12, color: "#71717a" }}>{row.original.workflow_type}</span>
@@ -594,8 +595,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       {
         id: "status",
         accessorKey: "status",
-        header: "Status",
-        meta: { title: "Status" },
+        header: t("interactionExtra.workflows.status"),
+        meta: { title: t("interactionExtra.workflows.status") },
         filterFn: "equalsString",
         cell: ({ row }) => {
           const run = row.original;
@@ -611,12 +612,12 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       },
       {
         accessorKey: "created_at",
-        header: "Created",
-        meta: { title: "Created" },
+        header: t("interactionExtra.workflows.created"),
+        meta: { title: t("interactionExtra.workflows.created") },
         cell: ({ row }) => <span style={{ fontSize: 12, color: "#a1a1aa" }}>{timeAgo(row.original.created_at)}</span>,
       },
     ],
-    [],
+    [t],
   );
 
   return (
@@ -631,9 +632,9 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
     >
       {/* page header */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 18, fontWeight: 600, color: "#18181b" }}>Workflow Runs</div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: "#18181b" }}>{t("interactionExtra.workflows.title")}</div>
         <div style={{ fontSize: 13, color: "#71717a", marginTop: 2 }}>
-          Durable state tracking for agents and automated workflows
+          {t("interactionExtra.workflows.description")}
         </div>
       </div>
 
@@ -642,10 +643,12 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
         columns={columns}
         getRowId={(run) => run.run_id}
         isLoading={loadingRuns}
-        loadingMessage="Loading workflow runs…"
+        loadingMessage={t("interactionExtra.workflows.loading")}
         noDataMessage={
           <Empty
-            description={<span style={{ color: "#a1a1aa", fontSize: 13 }}>No workflow runs yet</span>}
+            description={
+              <span style={{ color: "#a1a1aa", fontSize: 13 }}>{t("interactionExtra.workflows.empty")}</span>
+            }
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         }
@@ -664,7 +667,7 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
               table={table}
               searchValue={globalFilter}
               onSearchChange={setGlobalFilter}
-              searchPlaceholder="Search runs…"
+              searchPlaceholder={t("interactionExtra.workflows.search")}
               onRefresh={fetchRuns}
               isRefreshing={loadingRuns}
               onOpenFilters={() => setFiltersOpen(true)}
@@ -673,35 +676,35 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
               table={table}
               open={filtersOpen}
               onOpenChange={setFiltersOpen}
-              title="Filters"
-              description="Narrow down workflow runs"
+              title={t("interactionExtra.workflows.filters")}
+              description={t("interactionExtra.workflows.filtersDescription")}
             >
               {({ get, set }) => (
                 <>
-                  <DataTableFilterField label="Status">
+                  <DataTableFilterField label={t("interactionExtra.workflows.status")}>
                     <Select
-                      items={STATUS_LABELS}
+                      items={statusLabels}
                       value={(get("status") as string) || null}
                       onValueChange={(value: string | null) => set("status", value ?? "")}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All statuses" />
+                        <SelectValue placeholder={t("interactionExtra.workflows.allStatuses")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>All statuses</SelectItem>
+                        <SelectItem value={null}>{t("interactionExtra.workflows.allStatuses")}</SelectItem>
                         {RUN_STATUS_OPTIONS.map((status) => (
                           <SelectItem key={status} value={status}>
-                            {STATUS_LABELS[status]}
+                            {statusLabels[status]}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </DataTableFilterField>
-                  <DataTableFilterField label="Type">
+                  <DataTableFilterField label={t("interactionExtra.workflows.type")}>
                     <Input
                       value={(get("workflow_type") as string) ?? ""}
                       onChange={(event) => set("workflow_type", event.target.value)}
-                      placeholder="Filter by type…"
+                      placeholder={t("interactionExtra.workflows.filterType")}
                     />
                   </DataTableFilterField>
                 </>

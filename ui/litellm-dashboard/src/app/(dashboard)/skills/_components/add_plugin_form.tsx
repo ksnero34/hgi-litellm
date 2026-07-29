@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal, Form, Input, Select } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
 import { Button } from "@tremor/react";
@@ -77,6 +78,7 @@ const PREDEFINED_CATEGORIES = [
 ];
 
 const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessToken, onSuccess }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [urlPreview, setUrlPreview] = useState<SkillSourcePreview | null>(null);
@@ -105,27 +107,27 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
 
   const handleSubmit = async (values: AddPluginFormValues) => {
     if (!accessToken) {
-      MessageManager.error("No access token available");
+      MessageManager.error(t("hubSkills.skills.accessTokenRequired"));
       return;
     }
 
     if (!urlPreview) {
-      MessageManager.error("Please enter a valid repository URL");
+      MessageManager.error(t("hubSkills.skills.repositoryInvalid"));
       return;
     }
 
     if (!validatePluginName(values.name)) {
-      MessageManager.error("Skill name must be kebab-case (lowercase letters, numbers, and hyphens only)");
+      MessageManager.error(t("hubSkills.skills.nameInvalid"));
       return;
     }
 
     if (values.version && !isValidSemanticVersion(values.version)) {
-      MessageManager.error("Version must be in semantic versioning format (e.g., 1.0.0)");
+      MessageManager.error(t("hubSkills.skills.versionInvalid"));
       return;
     }
 
     if (values.authorEmail && !isValidEmail(values.authorEmail)) {
-      MessageManager.error("Invalid email format");
+      MessageManager.error(t("hubSkills.skills.emailInvalid"));
       return;
     }
 
@@ -137,7 +139,7 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
     setIsSubmitting(true);
     try {
       await registerClaudeCodePlugin(accessToken, buildRegisterRequest(values, urlPreview.parsed));
-      MessageManager.success("Skill registered successfully");
+      MessageManager.success(t("hubSkills.skills.registeredSuccess"));
       form.resetFields();
       setUrlPreview(null);
       setUrlEncodesSubdir(false);
@@ -145,7 +147,7 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
       onClose();
     } catch (error) {
       console.error("Error registering skill:", error);
-      const reason = error instanceof Error && error.message ? error.message : "Failed to register skill";
+      const reason = error instanceof Error && error.message ? error.message : t("hubSkills.skills.registerError");
       MessageManager.error(`Failed to register skill: ${reason}`);
     } finally {
       setIsSubmitting(false);
@@ -160,14 +162,21 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
   };
 
   return (
-    <Modal title="Add New Skill" open={visible} onCancel={handleCancel} footer={null} width={700} className="top-8">
+    <Modal
+      title={t("hubSkills.skills.addTitle")}
+      open={visible}
+      onCancel={handleCancel}
+      footer={null}
+      width={700}
+      className="top-8"
+    >
       <Form form={form} layout="vertical" onFinish={handleSubmit} className="mt-4">
         {/* Smart URL Input */}
         <Form.Item
-          label="Repository URL"
+          label={t("hubSkills.skills.repositoryUrl")}
           name="skillUrl"
-          rules={[{ required: true, message: "Please enter a repository URL" }]}
-          tooltip="Paste an HTTPS git repository URL from GitHub, GitLab, Bitbucket, or a self-hosted host. E.g. github.com/org/repo, gitlab.com/org/repo, or github.com/org/repo/tree/main/my-skill"
+          rules={[{ required: true, message: t("hubSkills.skills.repositoryRequired") }]}
+          tooltip={t("hubSkills.skills.repositoryTooltip")}
         >
           <Input
             placeholder="https://github.com/org/repo or https://gitlab.com/org/repo"
@@ -178,22 +187,18 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
 
         {/* Optional subfolder for monorepos */}
         <Form.Item
-          label="Subfolder path (Optional)"
+          label={t("hubSkills.skills.subfolder")}
           name="subPath"
           rules={[
             {
               validator: (_, value) =>
                 !value || isValidSubPath(value)
                   ? Promise.resolve()
-                  : Promise.reject(
-                      new Error(
-                        "Subfolder must be a relative path like plugins/my-skill (letters, numbers, dots, hyphens, underscores)",
-                      ),
-                    ),
+                  : Promise.reject(new Error(t("hubSkills.skills.subfolderInvalid"))),
             },
           ]}
-          tooltip="Path within the repository where the skill lives (e.g., plugins/my-skill). Leave empty if the skill is at the repo root."
-          extra={urlEncodesSubdir ? "The URL already points to a subfolder, so this field is disabled" : undefined}
+          tooltip={t("hubSkills.skills.subfolderTooltip")}
+          extra={urlEncodesSubdir ? t("hubSkills.skills.subfolderFromUrl") : undefined}
         >
           <Input
             placeholder="plugins/my-skill"
@@ -212,16 +217,16 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
 
         {/* Skill Name */}
         <Form.Item
-          label="Skill Name"
+          label={t("hubSkills.skills.name")}
           name="name"
           rules={[
-            { required: true, message: "Please enter skill name" },
+            { required: true, message: t("hubSkills.skills.nameRequired") },
             {
               pattern: /^[a-z0-9-]+$/,
-              message: "Name must be kebab-case (lowercase, numbers, hyphens only)",
+              message: t("hubSkills.skills.nameInvalid"),
             },
           ]}
-          tooltip="Unique identifier in kebab-case format (e.g., my-skill)"
+          tooltip={t("hubSkills.skills.nameTooltip")}
         >
           <Input placeholder="my-skill" className="rounded-lg" />
         </Form.Item>
@@ -229,17 +234,17 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
         {/* Domain and Namespace — side by side */}
         <div className="flex gap-4">
           <Form.Item
-            label="Domain (Optional)"
+            label={t("hubSkills.skills.domainOptional")}
             name="domain"
-            tooltip="Top-level grouping in the Skill Hub (e.g., Productivity)"
+            tooltip={t("hubSkills.skills.domainTooltip")}
             className="flex-1"
           >
             <Input placeholder="Productivity" className="rounded-lg" />
           </Form.Item>
           <Form.Item
-            label="Namespace (Optional)"
+            label={t("hubSkills.skills.namespaceOptional")}
             name="namespace"
-            tooltip="Sub-grouping within domain (e.g., workflows)"
+            tooltip={t("hubSkills.skills.namespaceTooltip")}
             className="flex-1"
           >
             <Input placeholder="workflows" className="rounded-lg" />
@@ -247,14 +252,27 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
         </div>
 
         {/* Description */}
-        <Form.Item label="Description (Optional)" name="description" tooltip="Brief description of what the skill does">
-          <TextArea rows={3} placeholder="A skill that helps with..." maxLength={500} className="rounded-lg" />
+        <Form.Item
+          label={t("hubSkills.skills.descriptionOptional")}
+          name="description"
+          tooltip={t("hubSkills.skills.descriptionTooltip")}
+        >
+          <TextArea
+            rows={3}
+            placeholder={t("hubSkills.skills.descriptionPlaceholder")}
+            maxLength={500}
+            className="rounded-lg"
+          />
         </Form.Item>
 
         {/* Category */}
-        <Form.Item label="Category (Optional)" name="category" tooltip="Select a category or enter a custom one">
+        <Form.Item
+          label={t("hubSkills.skills.categoryOptional")}
+          name="category"
+          tooltip={t("hubSkills.skills.categoryTooltip")}
+        >
           <Select
-            placeholder="Select or type a category"
+            placeholder={t("hubSkills.skills.categoryPlaceholder")}
             allowClear
             showSearch
             optionFilterProp="children"
@@ -269,26 +287,38 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
         </Form.Item>
 
         {/* Keywords */}
-        <Form.Item label="Keywords (Optional)" name="keywords" tooltip="Comma-separated list of keywords for search">
+        <Form.Item
+          label={t("hubSkills.skills.keywordsOptional")}
+          name="keywords"
+          tooltip={t("hubSkills.skills.keywordsTooltip")}
+        >
           <Input placeholder="search, web, api" className="rounded-lg" />
         </Form.Item>
 
         {/* Version */}
-        <Form.Item label="Version (Optional)" name="version" tooltip="Semantic version (e.g., 1.0.0)">
+        <Form.Item
+          label={t("hubSkills.skills.versionOptional")}
+          name="version"
+          tooltip={t("hubSkills.skills.versionTooltip")}
+        >
           <Input placeholder="1.0.0" className="rounded-lg" />
         </Form.Item>
 
         {/* Author Name */}
-        <Form.Item label="Author Name (Optional)" name="authorName" tooltip="Name of the skill author or organization">
-          <Input placeholder="Your Name or Organization" className="rounded-lg" />
+        <Form.Item
+          label={t("hubSkills.skills.authorOptional")}
+          name="authorName"
+          tooltip={t("hubSkills.skills.authorTooltip")}
+        >
+          <Input placeholder={t("hubSkills.skills.authorPlaceholder")} className="rounded-lg" />
         </Form.Item>
 
         {/* Author Email */}
         <Form.Item
-          label="Author Email (Optional)"
+          label={t("hubSkills.skills.emailOptional")}
           name="authorEmail"
-          rules={[{ type: "email", message: "Please enter a valid email" }]}
-          tooltip="Contact email for the skill author"
+          rules={[{ type: "email", message: t("hubSkills.skills.emailInvalid") }]}
+          tooltip={t("hubSkills.skills.emailTooltip")}
         >
           <Input type="email" placeholder="author@example.com" className="rounded-lg" />
         </Form.Item>
@@ -300,7 +330,7 @@ const AddPluginForm: React.FC<AddPluginFormProps> = ({ visible, onClose, accessT
               Cancel
             </Button>
             <Button type="submit" loading={isSubmitting}>
-              {isSubmitting ? "Adding..." : "Add Skill"}
+              {isSubmitting ? t("hubSkills.skills.adding") : t("hubSkills.skills.add")}
             </Button>
           </div>
         </Form.Item>

@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useMemo } from "react";
 import { Form, Input, InputNumber, Select, Tooltip } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { MCPTool, InputSchema, InputSchemaProperty } from "./types";
+import { useTranslation } from "react-i18next";
 
 const isPlainObject = (value: unknown): value is Record<string, any> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -141,6 +142,7 @@ interface MCPToolArgumentsFormProps {
 const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgumentsFormProps>(
   ({ tool, className }, ref) => {
     const [form] = Form.useForm();
+    const { t } = useTranslation();
 
     const schema: InputSchema = useMemo(() => {
       if (typeof tool.inputSchema === "string") {
@@ -149,14 +151,14 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
           properties: {
             input: {
               type: "string",
-              description: "Input for this tool",
+              description: t("toolsModels.mcp.toolInputDescription"),
             },
           },
           required: ["input"],
         };
       }
       return tool.inputSchema as InputSchema;
-    }, [tool.inputSchema]);
+    }, [t, tool.inputSchema]);
 
     const actualSchema: InputSchema = useMemo(() => {
       if (schema.properties?.params?.type === "object" && schema.properties.params.properties) {
@@ -193,13 +195,13 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
           <Form.Item
             label={
               <span className="text-sm font-medium text-gray-700">
-                Input <span className="text-red-500">*</span>
+                {t("toolsModels.mcp.input")} <span className="text-red-500">*</span>
               </span>
             }
             name="input"
-            rules={[{ required: true, message: "Please enter input for this tool" }]}
+            rules={[{ required: true, message: t("toolsModels.mcp.enterToolInput") }]}
           >
-            <Input placeholder="Enter input for this tool" />
+            <Input placeholder={t("toolsModels.mcp.enterToolInput")} />
           </Form.Item>
         </Form>
       );
@@ -208,7 +210,7 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
     if (!actualSchema.properties) {
       return (
         <Form form={form} layout="vertical" className={className}>
-          <div className="py-4 text-center text-sm text-gray-500">No parameters required for this tool.</div>
+          <div className="py-4 text-center text-sm text-gray-500">{t("toolsModels.mcp.noParametersRequired")}</div>
         </Form>
       );
     }
@@ -236,7 +238,7 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
               rules={[
                 {
                   required: actualSchema.required?.includes(key),
-                  message: `Please enter ${key}`,
+                  message: t("toolsModels.mcp.enterField", { field: key }),
                 },
                 ...(prop.type === "object" || prop.type === "array"
                   ? [
@@ -261,11 +263,13 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
                             }
                             return Promise.reject(
                               new Error(
-                                prop.type === "object" ? "Please enter a JSON object" : "Please enter a JSON array",
+                                prop.type === "object"
+                                  ? t("toolsModels.mcp.enterJsonObject")
+                                  : t("toolsModels.mcp.enterJsonArray"),
                               ),
                             );
                           } catch {
-                            return Promise.reject(new Error("Invalid JSON"));
+                            return Promise.reject(new Error(t("toolsModels.mcp.invalidJson")));
                           }
                         },
                       },
@@ -275,26 +279,26 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
             >
               {prop.type === "string" && prop.enum ? (
                 <Select
-                  placeholder={`Select ${key}`}
+                  placeholder={t("toolsModels.mcp.selectField", { field: key })}
                   allowClear={!actualSchema.required?.includes(key)}
                   options={prop.enum.map((v) => ({ value: v, label: v }))}
                 />
               ) : prop.type === "string" && !prop.enum ? (
-                <Input placeholder={prop.description || `Enter ${key}`} allowClear />
+                <Input placeholder={prop.description || t("toolsModels.mcp.enterField", { field: key })} allowClear />
               ) : prop.type === "number" || prop.type === "integer" ? (
                 <InputNumber
                   step={prop.type === "integer" ? 1 : undefined}
-                  placeholder={prop.description || `Enter ${key}`}
+                  placeholder={prop.description || t("toolsModels.mcp.enterField", { field: key })}
                   className="w-full"
                   style={{ width: "100%" }}
                 />
               ) : prop.type === "boolean" ? (
                 <Select
-                  placeholder={`Select ${key}`}
+                  placeholder={t("toolsModels.mcp.selectField", { field: key })}
                   allowClear={!actualSchema.required?.includes(key)}
                   options={[
-                    { value: true, label: "True" },
-                    { value: false, label: "False" },
+                    { value: true, label: t("toolsModels.mcp.true") },
+                    { value: false, label: t("toolsModels.mcp.false") },
                   ]}
                 />
               ) : prop.type === "object" || prop.type === "array" ? (
@@ -302,13 +306,15 @@ const MCPToolArgumentsForm = forwardRef<MCPToolArgumentsFormRef, MCPToolArgument
                   rows={prop.type === "object" ? 4 : 3}
                   placeholder={
                     prop.description ||
-                    (prop.type === "object" ? `Enter JSON object for ${key}` : `Enter JSON array for ${key}`)
+                    (prop.type === "object"
+                      ? t("toolsModels.mcp.enterJsonObjectForField", { field: key })
+                      : t("toolsModels.mcp.enterJsonArrayForField", { field: key }))
                   }
                   spellCheck={false}
                   className="font-mono"
                 />
               ) : (
-                <Input placeholder={prop.description || `Enter ${key}`} allowClear />
+                <Input placeholder={prop.description || t("toolsModels.mcp.enterField", { field: key })} allowClear />
               )}
             </Form.Item>
           );

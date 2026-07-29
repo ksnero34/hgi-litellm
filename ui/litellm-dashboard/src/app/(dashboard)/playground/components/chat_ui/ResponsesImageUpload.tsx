@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Upload, Tooltip } from "antd";
 import { PaperClipOutlined } from "@ant-design/icons";
 
@@ -17,6 +18,7 @@ const ResponsesImageUpload: React.FC<ResponsesImageUploadProps> = ({
   onImageUpload,
   onRemoveImage,
 }) => {
+  const { t } = useTranslation();
   return (
     <>
       {/* Subtle upload button - only show when no image */}
@@ -28,7 +30,7 @@ const ResponsesImageUpload: React.FC<ResponsesImageUploadProps> = ({
           className="inline-block"
           style={{ padding: 0, border: "none", background: "none" }}
         >
-          <Tooltip title="Attach image or PDF">
+          <Tooltip title={t("interactionExtra.playground.attachImage")}>
             <button
               type="button"
               className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"

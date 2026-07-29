@@ -5,6 +5,7 @@ import { jwtDecode } from "jwt-decode";
 import { useOnboardingCredentials, useClaimOnboardingToken } from "@/app/(dashboard)/hooks/onboarding/useOnboarding";
 import { getProxyBaseUrl } from "@/components/networking";
 import { clearTokenCookies, storeLoginToken } from "@/utils/cookieUtils";
+import { useTranslation } from "react-i18next";
 import { OnboardingLoadingView } from "./OnboardingLoadingView";
 import { OnboardingErrorView } from "./OnboardingErrorView";
 import { OnboardingFormBody } from "./OnboardingFormBody";
@@ -14,6 +15,7 @@ type OnboardingFormProps = {
 };
 
 export function OnboardingForm({ variant }: OnboardingFormProps) {
+  const { t } = useTranslation();
   const searchParams = useSearchParams()!;
   const inviteId = searchParams.get("invitation_id");
   const [claimError, setClaimError] = React.useState<string | null>(null);
@@ -41,20 +43,21 @@ export function OnboardingForm({ variant }: OnboardingFormProps) {
       {
         onSuccess: (data: { token?: string }) => {
           if (!data?.token) {
-            setClaimError("Failed to start session. Please try again.");
+            setClaimError(
+              t("auth.onboarding.errors.startSession", { defaultValue: "Failed to start session. Please try again." }),
+            );
             return;
           }
-          // Invite signup is a principal-change boundary — the prior admin's
-          // cookies/sessionStorage must be invalidated before the new user's
-          // session is established, otherwise getCookie() can fall back to
-          // the inviter's token.
           clearTokenCookies();
           storeLoginToken(data.token);
           const proxyBaseUrl = getProxyBaseUrl();
           window.location.href = proxyBaseUrl ? `${proxyBaseUrl}/ui/?login=success` : "/ui/?login=success";
         },
         onError: (error: Error) => {
-          setClaimError(error.message || "Failed to submit. Please try again.");
+          setClaimError(
+            error.message ||
+              t("auth.onboarding.errors.submit", { defaultValue: "Failed to submit. Please try again." }),
+          );
         },
       },
     );

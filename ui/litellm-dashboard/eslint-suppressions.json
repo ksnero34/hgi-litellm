@@ -220,11 +220,6 @@
       "count": 1
     }
   },
-  "src/app/(dashboard)/guardrails-monitor/_components/GuardrailsOverview.tsx": {
-    "no-nested-ternary": {
-      "count": 8
-    }
-  },
   "src/app/(dashboard)/guardrails/_components/GuardrailTestPanel.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -256,9 +251,6 @@
   "src/app/(dashboard)/guardrails/_components/add_guardrail_form.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    },
-    "react/no-unescaped-entities": {
-      "count": 2
     }
   },
   "src/app/(dashboard)/guardrails/_components/content_filter/CompetitorIntentConfiguration.tsx": {
@@ -2171,9 +2163,6 @@
     }
   },
   "src/components/templates/key_edit_view.tsx": {
-    "no-nested-ternary": {
-      "count": 2
-    },
     "no-restricted-imports": {
       "count": 1
     }
@@ -2249,11 +2238,6 @@
   "src/components/view_logs/LogDetailsDrawer/RealtimePrettyView.test.tsx": {
     "unused-imports/no-unused-imports": {
       "count": 2
-    }
-  },
-  "src/components/view_logs/LogDetailsDrawer/prettyMessagesUtils.ts": {
-    "no-nested-ternary": {
-      "count": 1
     }
   },
   "src/components/view_logs/LogDetailsDrawer/useKeyboardNavigation.ts": {

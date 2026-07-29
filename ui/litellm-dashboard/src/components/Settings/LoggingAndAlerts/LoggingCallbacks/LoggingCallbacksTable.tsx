@@ -2,6 +2,7 @@
 
 import { Inbox, Plus } from "lucide-react";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
@@ -25,14 +26,15 @@ type LoggingCallbacksProps = {
 };
 
 function EmptyState() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center gap-1 py-6">
       <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-muted">
         <Inbox className="size-5 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">No callbacks configured</div>
+      <div className="text-sm font-medium text-foreground">{t("settingsExtra.callbacks.empty")}</div>
       <div className="text-sm text-muted-foreground">
-        Add your first callback to start logging data to external services.
+        {t("settingsExtra.callbacks.emptyDescription")}
       </div>
     </div>
   );
@@ -47,6 +49,7 @@ export const LoggingCallbacksTable: React.FC<LoggingCallbacksProps> = ({
   onDelete = () => {},
   onAdd = () => {},
 }) => {
+  const { t } = useTranslation();
   const columns = useMemo(() => {
     const deps = { availableCallbacks, onTest, onEdit, onDelete };
     return getLoggingCallbacksTableColumns(deps);
@@ -54,11 +57,11 @@ export const LoggingCallbacksTable: React.FC<LoggingCallbacksProps> = ({
 
   return (
     <div className="mt-4 flex w-full flex-col gap-4">
-      <h3 className="text-lg font-semibold tracking-tight text-foreground">Active Logging Callbacks</h3>
+      <h3 className="text-lg font-semibold tracking-tight text-foreground">{t("settingsExtra.callbacks.active")}</h3>
       <div>
         <Button onClick={onAdd}>
           <Plus />
-          Add Callback
+          {t("settingsExtra.callbacks.add").replace(/^\+\s*/, "")}
         </Button>
       </div>
       <DataTable

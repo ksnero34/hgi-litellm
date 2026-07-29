@@ -6,6 +6,7 @@
 import { Button, Tab, TabGroup, TabList, TabPanel, TabPanels, Text } from "@tremor/react";
 import React, { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { useTranslation } from "react-i18next";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import { useBudgets, useDeleteBudget, budgetItem } from "@/app/(dashboard)/hooks/budgets/useBudgets";
@@ -21,13 +22,13 @@ interface BudgetSettingsPageProps {
 }
 
 const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
+  const { t } = useTranslation();
   const [isCreateModelVisible, setIsCreateModelVisible] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [selectedBudget, setSelectedBudget] = useState<budgetItem | null>(null);
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
 
   const { userRole } = useAuthorized();
-  // Admin Viewer follows the read-parity rule: see budgets, no writes.
   const canModify = isProxyAdminRole(userRole ?? "");
 
   const { data: budgetList = [], isLoading } = useBudgets();
@@ -52,13 +53,13 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
     }
     try {
       await deleteBudget.mutateAsync(selectedBudget.budget_id);
-      NotificationsManager.success("Budget deleted.");
+      NotificationsManager.success(t("access.budgets.deleted"));
     } catch (error) {
       console.error("Error deleting budget:", error);
-      if (typeof NotificationsManager.fromBackend === "function") {
-        NotificationsManager.fromBackend("Failed to delete budget");
+      if (typeof NotificationsManager.fromBackend == "function") {
+        NotificationsManager.fromBackend(t("access.budgets.deleteError"));
       } else {
-        NotificationsManager.info("Failed to delete budget");
+        NotificationsManager.info(t("access.budgets.deleteError"));
       }
     } finally {
       setIsDeleteModalVisible(false);
@@ -66,21 +67,17 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
     }
   };
 
-  const handleDeleteCancel = () => {
-    setIsDeleteModalVisible(false);
-  };
-
   return (
     <div className="w-full mx-auto flex-auto overflow-y-auto m-8 p-2">
       {canModify && (
         <Button size="sm" variant="primary" className="mb-2" onClick={() => setIsCreateModelVisible(true)}>
-          + Create Budget
+          + {t("access.budgets.create")}
         </Button>
       )}
       <TabGroup>
         <TabList>
-          <Tab>Budgets</Tab>
-          <Tab>Examples</Tab>
+          <Tab>{t("access.budgets.tabs.budgets")}</Tab>
+          <Tab>{t("access.budgets.tabs.examples")}</Tab>
         </TabList>
         <TabPanels>
           <TabPanel>
@@ -93,7 +90,7 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
                   existingBudget={selectedBudget}
                 />
               )}
-              <Text className="mb-4">Create a budget to assign to customers.</Text>
+              <Text className="mb-4">{t("access.budgets.subtitle")}</Text>
               <BudgetTable
                 budgets={budgetList}
                 isLoading={isLoading}
@@ -103,16 +100,16 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
               />
               <DeleteResourceModal
                 isOpen={isDeleteModalVisible}
-                title="Delete Budget?"
-                message="Are you sure you want to delete this budget? This action cannot be undone."
-                resourceInformationTitle="Budget Information"
+                title={t("access.budgets.deleteTitle")}
+                message={t("access.budgets.deleteMessage")}
+                resourceInformationTitle={t("access.budgets.deleteInfo")}
                 resourceInformation={[
-                  { label: "Budget ID", value: selectedBudget?.budget_id, code: true },
-                  { label: "Max Budget", value: selectedBudget?.max_budget },
-                  { label: "TPM", value: selectedBudget?.tpm_limit },
-                  { label: "RPM", value: selectedBudget?.rpm_limit },
+                  { label: t("access.budgets.columns.id"), value: selectedBudget?.budget_id, code: true },
+                  { label: t("access.budgets.columns.maxBudget"), value: selectedBudget?.max_budget },
+                  { label: t("access.budgets.columns.tpm"), value: selectedBudget?.tpm_limit },
+                  { label: t("access.budgets.columns.rpm"), value: selectedBudget?.rpm_limit },
                 ]}
-                onCancel={handleDeleteCancel}
+                onCancel={() => setIsDeleteModalVisible(false)}
                 onOk={handleDeleteConfirm}
                 confirmLoading={deleteBudget.isPending}
               />
@@ -120,12 +117,12 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
           </TabPanel>
           <TabPanel>
             <div className="mt-6">
-              <Text className="text-base">How to use budget id</Text>
+              <Text className="text-base">{t("access.budgets.examples.title")}</Text>
               <TabGroup>
                 <TabList>
-                  <Tab>Assign Budget to Customer</Tab>
-                  <Tab>Test it (Curl)</Tab>
-                  <Tab>Test it (OpenAI SDK)</Tab>
+                  <Tab>{t("access.budgets.examples.assign")}</Tab>
+                  <Tab>{t("access.budgets.examples.curl")}</Tab>
+                  <Tab>{t("access.budgets.examples.sdk")}</Tab>
                 </TabList>
                 <TabPanels>
                   <TabPanel>

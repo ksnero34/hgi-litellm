@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TextInput, Icon, Text } from "@tremor/react";
 import { TrashIcon, PencilAltIcon, CheckIcon, XIcon } from "@heroicons/react/outline";
 import { SimpleTable } from "@/components/common_components/simple_table";
@@ -21,6 +22,7 @@ const ProviderDiscountTable: React.FC<ProviderDiscountTableProps> = ({
   onDiscountChange,
   onRemoveProvider,
 }) => {
+  const { t } = useTranslation();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>("");
 
@@ -65,7 +67,7 @@ const ProviderDiscountTable: React.FC<ProviderDiscountTableProps> = ({
       data={data}
       columns={[
         {
-          header: "Provider",
+          header: t("operations.cost.provider"),
           cell: (row) => {
             const { displayName, logo } = getProviderDisplayInfo(row.provider);
             return (
@@ -84,7 +86,7 @@ const ProviderDiscountTable: React.FC<ProviderDiscountTableProps> = ({
           },
         },
         {
-          header: "Discount Percentage",
+          header: t("operations.cost.discountPercentage"),
           cell: (row) => (
             <div className="flex items-center gap-2">
               {editingProvider === row.provider ? (
@@ -127,7 +129,7 @@ const ProviderDiscountTable: React.FC<ProviderDiscountTableProps> = ({
           width: "250px",
         },
         {
-          header: "Actions",
+          header: t("operations.cost.actions"),
           cell: (row) => {
             const { displayName } = getProviderDisplayInfo(row.provider);
             return (
@@ -143,7 +145,7 @@ const ProviderDiscountTable: React.FC<ProviderDiscountTableProps> = ({
         },
       ]}
       getRowKey={(row) => row.provider}
-      emptyMessage="No provider discounts configured"
+      emptyMessage={t("operations.cost.noProviderDiscounts")}
     />
   );
 };

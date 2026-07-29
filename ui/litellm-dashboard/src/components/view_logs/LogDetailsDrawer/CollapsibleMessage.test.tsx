@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
+import { i18n } from "@/i18n/i18n";
 import { CollapsibleMessage } from "./CollapsibleMessage";
 
 describe("CollapsibleMessage", () => {
@@ -19,6 +20,14 @@ describe("CollapsibleMessage", () => {
     render(<CollapsibleMessage label="SYSTEM" content="Hello" />);
     expect(screen.getByText("SYSTEM")).toBeInTheDocument();
     expect(screen.getByText("(5 chars)")).toBeInTheDocument();
+  });
+
+  it("renders the character count in Korean", async () => {
+    await i18n.changeLanguage("ko");
+    const { unmount } = render(<CollapsibleMessage label="Reasoning" content="검토" />);
+    expect(screen.getByText("(2자)")).toBeInTheDocument();
+    unmount();
+    await i18n.changeLanguage("en");
   });
 
   it("should show content when defaultExpanded is true", () => {

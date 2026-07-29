@@ -1,6 +1,8 @@
 import { act, fireEvent, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 import { Team } from "../key_team_helpers/key_list";
 import { userFilterUICall } from "../networking";
 import CreateKey from "./create_key_button";
@@ -384,6 +386,8 @@ describe("CreateKey", () => {
     if (typeof window !== "undefined" && window.localStorage && typeof window.localStorage.clear === "function") {
       window.localStorage.clear();
     }
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
     authorizedState = { ...defaultAuthorizedState };
     radioGroupValueRef.current = null;
     formStateRef.current = {};

@@ -6,6 +6,7 @@
 import { Select, Tooltip } from "antd";
 import { AlertCircle, ArrowDown, X } from "lucide-react";
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 export interface FallbackGroup {
   id: string;
@@ -21,6 +22,7 @@ interface FallbackGroupConfigProps {
 }
 
 export function FallbackGroupConfig({ group, onChange, availableModels, maxFallbacks }: FallbackGroupConfigProps) {
+  const { t } = useTranslation();
   // Filter available options for fallbacks (exclude primary only, allow already selected to be shown for deselection)
   const availableFallbackOptions = availableModels.filter((m) => m !== group.primaryModel);
 
@@ -62,12 +64,12 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
       {/* Primary Model Section */}
       <div className="relative">
         <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Primary Model <span className="text-red-500">*</span>
+          {t("settingsExtra.fallbacks.primary")} <span className="text-red-500">*</span>
         </label>
         <Select
           className="w-full h-12"
           size="large"
-          placeholder="Select primary model"
+          placeholder={t("settingsExtra.fallbacks.selectPrimary")}
           value={group.primaryModel}
           onChange={handlePrimaryChange}
           showSearch
@@ -78,7 +80,7 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
         {!group.primaryModel && (
           <div className="mt-2 flex items-center gap-2 text-amber-600 text-xs bg-amber-50 p-2 rounded-sm">
             <AlertCircle className="w-4 h-4" />
-            <span>Select a model to begin configuring fallbacks</span>
+            <span>{t("settingsExtra.fallbacks.selectToBegin")}</span>
           </div>
         )}
       </div>
@@ -87,7 +89,7 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
       <div className="flex items-center justify-center -my-4 z-10">
         <div className="bg-indigo-50 text-indigo-500 px-4 py-1 rounded-full text-xs font-bold border border-indigo-100 flex items-center gap-2 shadow-xs">
           <ArrowDown className="w-4 h-4" />
-          IF FAILS, TRY...
+          {t("settingsExtra.fallbacks.ifFails")}
         </div>
       </div>
 
@@ -96,8 +98,10 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
         className={`transition-opacity duration-300 ${!group.primaryModel ? "opacity-50 pointer-events-none" : "opacity-100"}`}
       >
         <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Fallback Chain <span className="text-red-500">*</span>
-          <span className="text-xs text-gray-500 font-normal ml-2">(Max {maxFallbacks} fallbacks at a time)</span>
+          {t("settingsExtra.fallbacks.chain")} <span className="text-red-500">*</span>
+          <span className="text-xs text-gray-500 font-normal ml-2">
+            {t("settingsExtra.fallbacks.maximumAtTime", { count: maxFallbacks })}
+          </span>
         </label>
 
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
@@ -108,7 +112,9 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
               className="w-full"
               size="large"
               placeholder={
-                canAddMoreFallbacks ? "Select fallback models to add..." : `Maximum ${maxFallbacks} fallbacks reached`
+                canAddMoreFallbacks
+                  ? t("settingsExtra.fallbacks.selectModels")
+                  : t("settingsExtra.fallbacks.maximumReached", { count: maxFallbacks })
               }
               value={group.fallbackModels}
               onChange={handleFallbackSelect}
@@ -138,7 +144,7 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
                   styles={{ root: { pointerEvents: "none" } }}
                   title={omittedValues.map(({ value }) => value).join(", ")}
                 >
-                  <span>+{omittedValues.length} more</span>
+                  <span>{t("settingsExtra.fallbacks.more", { count: omittedValues.length })}</span>
                 </Tooltip>
               )}
               showSearch
@@ -146,8 +152,11 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
             />
             <p className="text-xs text-gray-500 mt-1 ml-1">
               {canAddMoreFallbacks
-                ? `Search and select multiple models. Selected models will appear below in order. (${group.fallbackModels.length}/${maxFallbacks} used)`
-                : `Maximum ${maxFallbacks} fallbacks reached. Remove some to add more.`}
+                ? t("settingsExtra.fallbacks.selectionHelp", {
+                    selected: group.fallbackModels.length,
+                    maximum: maxFallbacks,
+                  })
+                : t("settingsExtra.fallbacks.removeToAdd", { count: maxFallbacks })}
             </p>
           </div>
 
@@ -155,8 +164,8 @@ export function FallbackGroupConfig({ group, onChange, availableModels, maxFallb
           <div className="space-y-2 min-h-[100px]">
             {group.fallbackModels.length === 0 ? (
               <div className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-400">
-                <span className="text-sm">No fallback models selected</span>
-                <span className="text-xs mt-1">Add models from the dropdown above</span>
+                <span className="text-sm">{t("settingsExtra.fallbacks.noneSelected")}</span>
+                <span className="text-xs mt-1">{t("settingsExtra.fallbacks.addFromDropdown")}</span>
               </div>
             ) : (
               group.fallbackModels.map((modelValue, index) => {

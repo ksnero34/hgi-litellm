@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Switch, Tooltip } from "antd";
 import { InfoCircleOutlined, CopyOutlined } from "@ant-design/icons";
 import { EndpointType } from "@/components/chat_ui/mode_endpoint_mapping";
@@ -17,6 +18,7 @@ const SessionManagement: React.FC<SessionManagementProps> = ({
   useApiSessionManagement,
   onToggleSessionManagement,
 }) => {
+  const { t } = useTranslation();
   if (endpointType !== EndpointType.RESPONSES) {
     return null;
   }
@@ -24,16 +26,20 @@ const SessionManagement: React.FC<SessionManagementProps> = ({
   const handleCopySessionId = () => {
     if (responsesSessionId) {
       navigator.clipboard.writeText(responsesSessionId);
-      NotificationsManager.success("Response ID copied to clipboard!");
+      NotificationsManager.success(t("interactionExtra.playground.responseIdCopied"));
     }
   };
 
   const getSessionDisplay = () => {
     if (!responsesSessionId) {
-      return useApiSessionManagement ? "API Session: Ready" : "UI Session: Ready";
+      return useApiSessionManagement
+        ? t("interactionExtra.playground.apiSessionReady")
+        : t("interactionExtra.playground.uiSessionReady");
     }
 
-    const sessionPrefix = useApiSessionManagement ? "Response ID" : "UI Session";
+    const sessionPrefix = useApiSessionManagement
+      ? t("interactionExtra.playground.responseId")
+      : t("interactionExtra.playground.uiSession");
     const truncatedId = responsesSessionId.slice(0, 10);
     return `${sessionPrefix}: ${truncatedId}...`;
   };

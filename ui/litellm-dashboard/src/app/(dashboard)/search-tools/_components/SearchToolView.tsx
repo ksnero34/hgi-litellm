@@ -4,6 +4,7 @@ import { Button, Card, Grid, Text, Title } from "@tremor/react";
 import { Button as AntdButton } from "antd";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SearchToolTester } from "./SearchToolTester";
 import { AvailableSearchProvider, SearchTool } from "./types";
 
@@ -22,6 +23,7 @@ export const SearchToolView: React.FC<SearchToolViewProps> = ({
   accessToken,
   availableProviders,
 }) => {
+  const { t } = useTranslation();
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
   const copyToClipboard = async (text: string | null | undefined, key: string) => {
@@ -44,7 +46,7 @@ export const SearchToolView: React.FC<SearchToolViewProps> = ({
       <div className="flex justify-between items-center mb-6">
         <div>
           <Button icon={ArrowLeftIcon} variant="light" className="mb-4" onClick={onBack}>
-            Back to All Search Tools
+            {t("operations.search.backToAll")}
           </Button>
           <div className="flex items-center cursor-pointer">
             <Title>{searchTool.search_tool_name}</Title>
@@ -86,16 +88,20 @@ export const SearchToolView: React.FC<SearchToolViewProps> = ({
         </Card>
 
         <Card>
-          <Text>API Key</Text>
+          <Text>{t("operations.search.apiKey")}</Text>
           <div className="mt-2">
-            <Text>{searchTool.litellm_params.api_key ? "****" : "Not set"}</Text>
+            <Text>{searchTool.litellm_params.api_key ? "****" : t("operations.search.notSet")}</Text>
           </div>
         </Card>
 
         <Card>
           <Text>Created At</Text>
           <div className="mt-2">
-            <Text>{searchTool.created_at ? new Date(searchTool.created_at).toLocaleString() : "Unknown"}</Text>
+            <Text>
+              {searchTool.created_at
+                ? new Date(searchTool.created_at).toLocaleString()
+                : t("operations.search.unknown")}
+            </Text>
           </div>
         </Card>
       </Grid>

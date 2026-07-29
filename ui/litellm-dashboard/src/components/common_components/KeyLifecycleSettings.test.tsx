@@ -80,15 +80,15 @@ describe("KeyLifecycleSettings", () => {
   it("should render without crashing", () => {
     renderWithProviders(<KeyLifecycleSettings {...defaultProps} />);
 
-    expect(screen.getByText("Key Expiry Settings")).toBeInTheDocument();
-    expect(screen.getByText("Auto-Rotation Settings")).toBeInTheDocument();
+    expect(screen.getByText("키 만료 설정")).toBeInTheDocument();
+    expect(screen.getByText("자동 키 회전 설정")).toBeInTheDocument();
   });
 
   describe("Key Expiry Settings", () => {
     it("should render expiry input field", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} />);
 
-      expect(screen.getByText("Expire Key")).toBeInTheDocument();
+      expect(screen.getByText("키 만료")).toBeInTheDocument();
       expect(screen.getByTestId("duration-input")).toBeInTheDocument();
     });
 
@@ -96,14 +96,14 @@ describe("KeyLifecycleSettings", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} isCreateMode={true} />);
 
       const input = screen.getByTestId("duration-input");
-      expect(input).toHaveAttribute("placeholder", "e.g., 30d or leave empty to never expire");
+      expect(input).toHaveAttribute("placeholder", "예: 30d, 만료하지 않으려면 비워 두기");
     });
 
     it("should show correct placeholder in edit mode", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} isCreateMode={false} />);
 
       const input = screen.getByTestId("duration-input");
-      expect(input).toHaveAttribute("placeholder", "e.g., 30d");
+      expect(input).toHaveAttribute("placeholder", "예: 30d");
     });
 
     it("should show correct tooltip in create mode", () => {
@@ -111,12 +111,12 @@ describe("KeyLifecycleSettings", () => {
 
       const tooltips = screen.getAllByTestId("tooltip");
       const expiryTooltip = tooltips.find((tooltip) =>
-        tooltip.getAttribute("title")?.includes("Leave empty to keep the current expiry unchanged"),
+        tooltip.getAttribute("title")?.includes("현재 값을 유지하려면 비워 두세요"),
       );
       expect(expiryTooltip).toBeInTheDocument();
       expect(expiryTooltip).toHaveAttribute(
         "title",
-        "Set when this key should expire. Format: 30s (seconds), 30m (minutes), 30h (hours), 30d (days). Leave empty to keep the current expiry unchanged.",
+        "키 만료 시점을 설정합니다. 형식: 30s(초), 30m(분), 30h(시간), 30d(일). 현재 값을 유지하려면 비워 두세요.",
       );
     });
 
@@ -125,12 +125,12 @@ describe("KeyLifecycleSettings", () => {
 
       const tooltips = screen.getAllByTestId("tooltip");
       const expiryTooltip = tooltips.find((tooltip) =>
-        tooltip.getAttribute("title")?.includes("Leave empty to keep the current expiry unchanged"),
+        tooltip.getAttribute("title")?.includes("현재 값을 유지하려면 비워 두세요"),
       );
       expect(expiryTooltip).toBeInTheDocument();
       expect(expiryTooltip).toHaveAttribute(
         "title",
-        "Set when this key should expire. Format: 30s (seconds), 30m (minutes), 30h (hours), 30d (days). Leave empty to keep the current expiry unchanged.",
+        "키 만료 시점을 설정합니다. 형식: 30s(초), 30m(분), 30h(시간), 30d(일). 현재 값을 유지하려면 비워 두세요.",
       );
     });
 
@@ -171,7 +171,7 @@ describe("KeyLifecycleSettings", () => {
     it("should render auto-rotation switch", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} />);
 
-      expect(screen.getByText("Enable Auto-Rotation")).toBeInTheDocument();
+      expect(screen.getByText("자동 키 회전 사용")).toBeInTheDocument();
       expect(screen.getByTestId("switch")).toBeInTheDocument();
     });
 
@@ -203,26 +203,26 @@ describe("KeyLifecycleSettings", () => {
     it("should not show rotation interval section when auto-rotation is disabled", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} autoRotationEnabled={false} />);
 
-      expect(screen.queryByText("Rotation Interval")).not.toBeInTheDocument();
+      expect(screen.queryByText("회전 주기")).not.toBeInTheDocument();
       expect(screen.queryByTestId("select")).not.toBeInTheDocument();
     });
 
     it("should show rotation interval section when auto-rotation is enabled", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} autoRotationEnabled={true} rotationInterval="30d" />);
 
-      expect(screen.getByText("Rotation Interval")).toBeInTheDocument();
+      expect(screen.getByText("회전 주기")).toBeInTheDocument();
       expect(screen.getByTestId("select")).toBeInTheDocument();
     });
 
     it("should show all predefined interval options", () => {
       renderWithProviders(<KeyLifecycleSettings {...defaultProps} autoRotationEnabled={true} rotationInterval="30d" />);
 
-      expect(screen.getByText("7 days")).toBeInTheDocument();
-      expect(screen.getByText("30 days")).toBeInTheDocument();
-      expect(screen.getByText("90 days")).toBeInTheDocument();
-      expect(screen.getByText("180 days")).toBeInTheDocument();
-      expect(screen.getByText("365 days")).toBeInTheDocument();
-      expect(screen.getByText("Custom interval")).toBeInTheDocument();
+      expect(screen.getByText("7일")).toBeInTheDocument();
+      expect(screen.getByText("30일")).toBeInTheDocument();
+      expect(screen.getByText("90일")).toBeInTheDocument();
+      expect(screen.getByText("180일")).toBeInTheDocument();
+      expect(screen.getByText("365일")).toBeInTheDocument();
+      expect(screen.getByText("직접 입력")).toBeInTheDocument();
     });
 
     it("should display current rotation interval in select", () => {
@@ -258,7 +258,7 @@ describe("KeyLifecycleSettings", () => {
       await user.selectOptions(select, "custom");
 
       expect(screen.getByTestId("custom-interval-input")).toBeInTheDocument();
-      expect(screen.getByText("Supported formats: seconds (s), minutes (m), hours (h), days (d)")).toBeInTheDocument();
+      expect(screen.getByText("지원 형식: 초(s), 분(m), 시간(h), 일(d)")).toBeInTheDocument();
     });
 
     it("should hide custom input when predefined interval is selected after custom", async () => {
@@ -306,7 +306,7 @@ describe("KeyLifecycleSettings", () => {
 
       expect(
         screen.getByText(
-          "When rotation occurs, you'll receive a notification with the new key. The old key will be deactivated after a brief grace period.",
+          "키가 회전되면 새 키가 발급됩니다. 기존 키는 기본 72시간의 유예 기간이 끝난 뒤 비활성화됩니다.",
         ),
       ).toBeInTheDocument();
     });
@@ -316,7 +316,7 @@ describe("KeyLifecycleSettings", () => {
 
       expect(
         screen.queryByText(
-          "When rotation occurs, you'll receive a notification with the new key. The old key will be deactivated after a brief grace period.",
+          "키가 회전되면 새 키가 발급됩니다. 기존 키는 기본 72시간의 유예 기간이 끝난 뒤 비활성화됩니다.",
         ),
       ).not.toBeInTheDocument();
     });

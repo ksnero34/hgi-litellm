@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
+import { renderWithProviders, screen, waitFor } from "../../../../../tests/test-utils";
 import GuardrailsMonitorView from "./GuardrailsMonitorView";
 import * as networking from "@/components/networking";
 
@@ -11,16 +12,11 @@ vi.mock("@/components/networking", () => ({
 
 const mockGetGuardrailsUsageOverview = vi.mocked(networking.getGuardrailsUsageOverview);
 
-function wrapper({ children }: { children: React.ReactNode }) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-    },
-  });
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-}
-
 describe("GuardrailsMonitorView", () => {
+  beforeEach(() => {
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
+  });
   it("should render overview and fetch guardrails usage when accessToken is provided", async () => {
     mockGetGuardrailsUsageOverview.mockResolvedValue({
       rows: [],
@@ -30,7 +26,7 @@ describe("GuardrailsMonitorView", () => {
       passRate: 100,
     });
 
-    render(<GuardrailsMonitorView accessToken="test-token" />, { wrapper });
+    renderWithProviders(<GuardrailsMonitorView accessToken="test-token" />);
 
     expect(await screen.findByRole("heading", { name: /Guardrails Monitor/i })).toBeDefined();
     await waitFor(() => {
@@ -39,7 +35,7 @@ describe("GuardrailsMonitorView", () => {
   });
 
   it("should render without crashing when accessToken is null", async () => {
-    render(<GuardrailsMonitorView accessToken={null} />, { wrapper });
+    renderWithProviders(<GuardrailsMonitorView accessToken={null} />);
     expect(await screen.findByRole("heading", { name: /Guardrails Monitor/i })).toBeDefined();
   });
 });
