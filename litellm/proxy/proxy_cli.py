@@ -823,13 +823,14 @@ class ProxyInitializationHelpers:
     envvar="ENFORCE_PRISMA_MIGRATION_CHECK",
 )
 @click.option(
-    "--use_v2_migration_resolver",
-    is_flag=True,
-    default=False,
+    "--use_v2_migration_resolver/--use_v1_migration_resolver",
+    default=True,
+    envvar="USE_V2_MIGRATION_RESOLVER",
     help=(
-        "Opt into the v2 migration resolver. Avoids the diff-and-force recovery "
+        "Use the v2 migration resolver (default). Avoids the diff-and-force recovery "
         "path that can cause schema thrashing during rolling deploys where two "
-        "LiteLLM versions contend for the same DB. Default is the v1 resolver."
+        "LiteLLM versions contend for the same DB. Use "
+        "--use_v1_migration_resolver only for legacy recovery behavior."
     ),
 )
 @click.option(
@@ -1186,10 +1187,10 @@ def run_server(
                 else:
                     if not use_v2_migration_resolver:
                         print(
-                            "\033[1;33mLiteLLM Proxy: Using default (v1) migration resolver. "
-                            "If your deployment has seen schema thrashing during rolling "
-                            "deploys, try --use_v2_migration_resolver (safer: avoids the "
-                            "diff-and-force recovery that caused the thrash).\033[0m"
+                            "\033[1;33mLiteLLM Proxy: Using legacy v1 migration resolver. "
+                            "This enables diff-and-force recovery and can cause schema "
+                            "thrashing during rolling deploys. Prefer the default v2 "
+                            "migration resolver unless legacy recovery is required.\033[0m"
                         )
                     try:
                         setup_ok = PrismaManager.setup_database(

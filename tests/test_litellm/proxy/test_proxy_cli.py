@@ -1757,7 +1757,7 @@ class TestRunServerDbSetup:
         clean_env = {
             k: v
             for k, v in os.environ.items()
-            if k not in ("DATABASE_URL", "DIRECT_URL")
+            if k not in ("DATABASE_URL", "DIRECT_URL", "USE_V2_MIGRATION_RESOLVER")
         }
         clean_env["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"
 
@@ -1788,7 +1788,7 @@ class TestRunServerDbSetup:
             # use_prisma_db_push should be False (default), so use_migrate should be True
             run_server.main(["--local", "--skip_server_startup"], standalone_mode=False)
             mock_setup_database.assert_called_with(
-                use_migrate=True, use_v2_resolver=False
+                use_migrate=True, use_v2_resolver=True
             )
 
             # Reset mocks
@@ -1803,7 +1803,27 @@ class TestRunServerDbSetup:
                 standalone_mode=False,
             )
             mock_setup_database.assert_called_with(
-                use_migrate=False, use_v2_resolver=False
+                use_migrate=False, use_v2_resolver=True
+            )
+
+            mock_setup_database.reset_mock()
+            mock_should_update_schema.reset_mock()
+            mock_should_update_schema.return_value = True
+            run_server.main(
+                ["--local", "--skip_server_startup", "--use_v1_migration_resolver"],
+                standalone_mode=False,
+            )
+            mock_setup_database.assert_called_with(
+                use_migrate=True, use_v2_resolver=False
+            )
+
+            mock_setup_database.reset_mock()
+            mock_should_update_schema.reset_mock()
+            mock_should_update_schema.return_value = True
+            os.environ["USE_V2_MIGRATION_RESOLVER"] = "false"
+            run_server.main(["--local", "--skip_server_startup"], standalone_mode=False)
+            mock_setup_database.assert_called_with(
+                use_migrate=True, use_v2_resolver=False
             )
 
     @patch("subprocess.run")
@@ -1870,7 +1890,7 @@ class TestRunServerDbSetup:
                 )
             assert exc_info.value.code == 1
             mock_setup_database.assert_called_once_with(
-                use_migrate=True, use_v2_resolver=False
+                use_migrate=True, use_v2_resolver=True
             )
 
     @patch("subprocess.run")
