@@ -656,11 +656,7 @@ class CustomGuardrail(CustomLogger):
                 return True
             return False
 
-        if (
-            self.event_hook
-            and not self._guardrail_is_in_requested_guardrails(requested_guardrails)
-            and event_type.value != "logging_only"
-        ):
+        if self.event_hook and not self._guardrail_is_in_requested_guardrails(requested_guardrails):
             return False
 
         if not self._event_hook_is_event_type(event_type):

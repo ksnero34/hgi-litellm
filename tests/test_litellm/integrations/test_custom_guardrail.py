@@ -193,6 +193,31 @@ class TestCustomGuardrailDeploymentHook:
 
 class TestCustomGuardrailShouldRunGuardrail:
 
+    @pytest.mark.parametrize(
+        ("requested_guardrails", "default_on", "expected"),
+        [
+            ([], False, False),
+            (["other_guardrail"], False, False),
+            (["audit_guardrail"], False, True),
+            ([], True, True),
+        ],
+    )
+    def test_logging_only_respects_requested_guardrails(self, requested_guardrails, default_on, expected):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        guardrail = CustomGuardrail(
+            guardrail_name="audit_guardrail",
+            default_on=default_on,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+
+        result = guardrail.should_run_guardrail(
+            data={"metadata": {"guardrails": requested_guardrails}},
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is expected
+
     def test_should_run_guardrail_with_litellm_metadata(self):
         """Test that should_run_guardrail works with litellm_metadata pattern"""
         from litellm.types.guardrails import GuardrailEventHooks
