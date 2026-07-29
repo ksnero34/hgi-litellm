@@ -2,9 +2,12 @@ services:
   litellm:
     build:
       context: .
+      dockerfile: docker/Dockerfile.non_root
+      target: runtime
       args:
-        target: runtime
-    image: docker.litellm.ai/berriai/litellm:main-stable
+        PROXY_EXTRAS_SOURCE: "local"
+    image: docker.litellm.ai/berriai/litellm:hgi-v1.93.0.1
+    platform: linux/amd64
     #########################################
     ## Uncomment these lines to start proxy with a config.yaml file ##
     # volumes:
