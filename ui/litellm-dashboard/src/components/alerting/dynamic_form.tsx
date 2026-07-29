@@ -1,7 +1,7 @@
 import React from "react";
 import { Form, Input, InputNumber, Button as Button2 } from "antd";
 import { TrashIcon, CheckCircleIcon } from "@heroicons/react/outline";
-import { Button, Badge, Icon, Text, TableRow, TableCell, Switch } from "@tremor/react";
+import { Badge, Icon, Text, TableRow, TableCell, Switch } from "@tremor/react";
 interface AlertingSetting {
   field_name: string;
   field_description: string;
@@ -17,6 +17,11 @@ interface DynamicFormProps {
   handleResetField: (fieldName: string, index: number) => void;
   handleSubmit: (formValues: Record<string, any>) => void;
   premiumUser: boolean;
+  updateLabel: string;
+  inDbLabel: string;
+  inConfigLabel: string;
+  notSetLabel: string;
+  resetLabel: string;
 }
 
 const DynamicForm: React.FC<DynamicFormProps> = ({
@@ -25,6 +30,11 @@ const DynamicForm: React.FC<DynamicFormProps> = ({
   handleResetField,
   handleSubmit,
   premiumUser,
+  updateLabel,
+  inDbLabel,
+  inConfigLabel,
+  notSetLabel,
+  resetLabel,
 }) => {
   const [form] = Form.useForm();
 
@@ -80,13 +90,7 @@ const DynamicForm: React.FC<DynamicFormProps> = ({
                 </TableCell>
               </Form.Item>
             ) : (
-              <TableCell>
-                <Button className="flex items-center justify-center">
-                  <a href="https://forms.gle/W3U4PZpJGFHWtHyA9" target="_blank">
-                    ✨ Enterprise Feature
-                  </a>
-                </Button>
-              </TableCell>
+              <TableCell />
             )
           ) : (
             <Form.Item
@@ -119,23 +123,23 @@ const DynamicForm: React.FC<DynamicFormProps> = ({
           <TableCell>
             {value.stored_in_db == true ? (
               <Badge icon={CheckCircleIcon} className="text-white">
-                In DB
+                {inDbLabel}
               </Badge>
             ) : value.stored_in_db == false ? (
-              <Badge className="text-gray bg-white outline-solid">In Config</Badge>
+              <Badge className="text-gray bg-white outline-solid">{inConfigLabel}</Badge>
             ) : (
-              <Badge className="text-gray bg-white outline-solid">Not Set</Badge>
+              <Badge className="text-gray bg-white outline-solid">{notSetLabel}</Badge>
             )}
           </TableCell>
           <TableCell>
             <Icon icon={TrashIcon} color="red" onClick={() => handleResetField(value.field_name, index)}>
-              Reset
+              {resetLabel}
             </Icon>
           </TableCell>
         </TableRow>
       ))}
       <div>
-        <Button2 htmlType="submit">Update Settings</Button2>
+        <Button2 htmlType="submit">{updateLabel}</Button2>
       </div>
     </Form>
   );

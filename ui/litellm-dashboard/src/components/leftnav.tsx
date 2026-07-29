@@ -27,8 +27,6 @@ import {
   Bell,
   Blocks,
   Bot,
-  BookOpen,
-  Building2,
   Boxes,
   ChevronRight,
   Code2,
@@ -76,7 +74,8 @@ import BetaBadge from "./BetaBadge";
 import NewBadge from "./common_components/NewBadge";
 import type { Organization } from "./networking";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
-import SidebarUsageCard from "./SidebarUsageCard";
+import { i18n } from "@/i18n/i18n";
+import { useTranslation } from "react-i18next";
 import { MIGRATED_PAGES, migratedHref, legacyPageHref } from "@/utils/migratedPages";
 
 const ICON = { strokeWidth: 1.75 } as const;
@@ -220,13 +219,6 @@ const menuGroups: MenuGroup[] = [
       },
       { key: "users", page: "users", label: "Internal Users", icon: <User {...ICON} />, roles: all_admin_roles },
       {
-        key: "organizations",
-        page: "organizations",
-        label: "Organizations",
-        icon: <Building2 {...ICON} />,
-        roles: all_admin_roles,
-      },
-      {
         key: "access-groups",
         page: "access-groups",
         label: "Access Groups",
@@ -242,19 +234,12 @@ const menuGroups: MenuGroup[] = [
       { key: "api_ref", page: "api_ref", label: "API Reference", icon: <Code2 {...ICON} /> },
       { key: "model-hub-table", page: "model-hub-table", label: "AI Hub", icon: <LayoutGrid {...ICON} /> },
       {
-        key: "learning-resources",
-        page: "learning-resources",
-        label: "Learning Resources",
-        icon: <BookOpen {...ICON} />,
-        external_url: "https://models.litellm.ai/cookbook",
-      },
-      { key: "caching", page: "caching", label: "Caching", icon: <Database {...ICON} />, roles: all_admin_roles },
-      {
         key: "experimental",
         page: "experimental",
         label: "Experimental",
         icon: <FlaskConical {...ICON} />,
         children: [
+          { key: "caching", page: "caching", label: "Caching", icon: <Database {...ICON} />, roles: all_admin_roles },
           { key: "prompts", page: "prompts", label: "Prompts", icon: <FileText {...ICON} />, roles: all_admin_roles },
           {
             key: "transform-request",
@@ -352,12 +337,59 @@ const findMenuItemKey = (page: string): string => {
   return "api-keys";
 };
 
+const NAV_LABEL_KEYS: Record<string, string> = {
+  "api-keys": "nav.apiKeys",
+  "llm-playground": "nav.playground",
+  chat: "nav.chat",
+  models: "nav.models",
+  agentic: "nav.agentic",
+  agents: "nav.agents",
+  workflows: "nav.workflows",
+  memory: "nav.memory",
+  "mcp-servers": "nav.mcpServers",
+  skills: "nav.skills",
+  guardrails: "nav.guardrails",
+  policies: "nav.policies",
+  tools: "nav.tools",
+  "search-tools": "nav.searchTools",
+  "vector-stores": "nav.vectorStores",
+  "tool-policies": "nav.toolPolicies",
+  new_usage: "nav.usage",
+  logs: "nav.logs",
+  "guardrails-monitor": "nav.guardrailsMonitor",
+  teams: "nav.teams",
+  projects: "nav.projects",
+  users: "nav.users",
+  "access-groups": "nav.accessGroups",
+  budgets: "nav.budgets",
+  api_ref: "nav.apiRef",
+  "model-hub-table": "nav.modelHub",
+  experimental: "nav.experimental",
+  caching: "nav.caching",
+  prompts: "nav.prompts",
+  "transform-request": "nav.transformRequest",
+  "tag-management": "nav.tagManagement",
+  "4": "nav.legacyUsage",
+  settings: "nav.settings",
+  "router-settings": "nav.routerSettings",
+  "logging-and-alerts": "nav.loggingAlerts",
+  "admin-panel": "nav.adminPanel",
+  "cost-tracking": "nav.costTracking",
+  "ui-theme": "nav.uiTheme",
+};
+
+const labelText = (item: MenuItem): string => {
+  const translationKey = NAV_LABEL_KEYS[item.key];
+  if (translationKey) return i18n.t(translationKey);
+  if (typeof item.label === "string") return item.label;
+  return item.key;
+};
 const SECTION_DISPLAY: Record<string, string> = {
-  "AI GATEWAY": "AI Gateway",
-  OBSERVABILITY: "Observability",
-  "ACCESS CONTROL": "Access Control",
-  "DEVELOPER TOOLS": "Developer Tools",
-  SETTINGS: "Settings",
+  "AI GATEWAY": "section.gateway",
+  OBSERVABILITY: "section.observability",
+  "ACCESS CONTROL": "section.access",
+  "DEVELOPER TOOLS": "section.developer",
+  SETTINGS: "section.settings",
 };
 
 const prettify = (key: string): string =>
@@ -372,11 +404,10 @@ const labelText = (item: MenuItem): string => (typeof item.label === "string" ? 
 export const getBreadcrumb = (page: string): { section: string | null; title: string } => {
   for (const group of menuGroups) {
     for (const item of group.items) {
-      const section = SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel;
-      if (item.page === page)
-        return { section, title: typeof item.label === "string" ? item.label : prettify(item.key) };
+      const section = SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel;
+      if (item.page === page) return { section, title: labelText(item) };
       const child = item.children?.find((c) => c.page === page);
-      if (child) return { section, title: typeof child.label === "string" ? child.label : prettify(child.key) };
+      if (child) return { section, title: labelText(child) };
     }
   }
   return { section: null, title: prettify(page) };
@@ -394,6 +425,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   disableVectorStoresForInternalUsers,
   allowVectorStoresForTeamAdmins,
 }) => {
+  useTranslation();
   const { userId, accessToken, userRole } = useAuthorized();
   const { data: organizations } = useOrganizations();
   const { data: teams } = useTeams();
@@ -498,7 +530,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const renderLeaf = (item: MenuItem, isChild: boolean) => {
     const active = selectedKey === item.key;
     const size = isChild ? "sub" : "default";
-    const label = <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{item.label}</span>;
+    const label = <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>;
 
     if (item.external_url) {
       return (
@@ -550,7 +582,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
           title={collapsed ? labelText(item) : undefined}
         >
           {item.icon}
-          <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{item.label}</span>
+          <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>
           <ChevronRight
             className={cn(
               "size-4 shrink-0 transition-transform group-data-[collapsed=true]/sidebar:hidden",
@@ -576,7 +608,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
       <SidebarHeader className="h-14 border-b border-border group-data-[collapsed=true]/sidebar:h-auto">
         <div className="flex items-center justify-between gap-2 group-data-[collapsed=true]/sidebar:flex-col">
           <div className="flex min-w-0 items-center gap-2">
-            <Link href={baseUrl || "/"} className="flex min-w-0 items-center" aria-label="LiteLLM home">
+            <Link href={baseUrl || "/"} className="flex min-w-0 items-center" aria-label={i18n.t("shell.home")}>
               <img
                 src={logoSrc}
                 alt="LiteLLM"
@@ -586,7 +618,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
             {version && (
               <Badge
                 variant="outline"
-                render={<a href="https://docs.litellm.ai/release_notes" target="_blank" rel="noopener noreferrer" />}
                 className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
               >
                 v{version}
@@ -598,7 +629,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
               variant="ghost"
               size="icon-sm"
               onClick={onToggleCollapsed}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? i18n.t("shell.expandSidebar") : i18n.t("shell.collapseSidebar")}
               className="flex-none text-muted-foreground"
             >
               {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
@@ -612,7 +643,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
           {visibleGroups.map((group, gi) => (
             <SidebarGroup key={group.groupLabel}>
               {gi > 0 && <SidebarSeparator className="hidden group-data-[collapsed=true]/sidebar:block" />}
-              <SidebarGroupLabel>{group.groupLabel}</SidebarGroupLabel>
+              <SidebarGroupLabel>
+                {SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel}
+              </SidebarGroupLabel>
               <SidebarMenu>{group.items.map((item) => renderItem(item))}</SidebarMenu>
             </SidebarGroup>
           ))}
@@ -620,13 +653,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
       </ScrollArea>
 
       <SidebarFooter>
-        {isAdminRole(userRole) && (
-          <SidebarUsageCard
-            accessToken={accessToken}
-            collapsed={collapsed}
-            onExpandRail={() => onToggleCollapsed?.()}
-          />
-        )}
         <SidebarAccountMenu onLogout={logout} collapsed={collapsed} />
       </SidebarFooter>
     </Sidebar>

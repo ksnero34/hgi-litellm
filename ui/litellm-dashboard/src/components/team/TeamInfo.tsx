@@ -32,6 +32,7 @@ import { Button, Form, Input, InputNumber, Select, Space, Switch, Tabs, Tag, Too
 import MessageManager from "@/components/molecules/message_manager";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { copyToClipboard as utilCopyToClipboard } from "../../utils/dataUtils";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import ModelAliasManager from "../common_components/ModelAliasManager";
@@ -188,6 +189,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
   premiumUser = false,
   onUpdate,
 }) => {
+  const { t } = useTranslation();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAddMemberModalVisible, setIsAddMemberModalVisible] = useState(false);
@@ -367,7 +369,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
       let errMsg = "Failed to add team member";
 
       if (error?.raw?.detail?.error?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = t("access.teams.restrictions.teamAdmins");
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -409,7 +411,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
     } catch (error: any) {
       let errMsg = "Failed to update team member";
       if (error?.raw?.detail?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = t("access.teams.restrictions.teamAdmins");
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -1364,7 +1366,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       <Tooltip
                         title={
                           !premiumUser
-                            ? "Premium feature - Upgrade to set allowed pass through routes"
+                            ? t("access.teams.restrictions.passThroughRoutes")
                             : !is_proxy_admin
                               ? "Only proxy admins can set allowed pass through routes"
                               : ""
@@ -1470,7 +1472,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       help={
                         premiumUser
                           ? "Enter secret manager configuration as a JSON object."
-                          : "Premium feature - Upgrade to manage secret manager settings."
+                          : t("access.teams.restrictions.secretManager")
                       }
                       rules={[
                         {

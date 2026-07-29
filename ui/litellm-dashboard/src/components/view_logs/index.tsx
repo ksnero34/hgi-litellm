@@ -1,5 +1,6 @@
 import moment from "moment";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@tremor/react";
 import { internalUserRoles } from "../../utils/roles";
 import DeletedKeysPage from "../DeletedKeysPage/DeletedKeysPage";
@@ -8,7 +9,6 @@ import { KeyResponse } from "../key_team_helpers/key_list";
 import FilterComponent from "../molecules/filter";
 import { keyInfoV1Call } from "../networking";
 import KeyInfoView from "../templates/key_info_view";
-import AuditLogs from "./audit_logs";
 import { createColumns, LogEntry, type LogsSortField } from "./columns";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
 import { getLogFilterOptions } from "./filter_options";
@@ -26,7 +26,8 @@ interface SpendLogsTableProps {
   premiumUser: boolean;
 }
 
-export default function SpendLogsTable({ accessToken, token, userRole, userID, premiumUser }: SpendLogsTableProps) {
+export default function SpendLogsTable({ accessToken, token, userRole, userID }: SpendLogsTableProps) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
@@ -128,8 +129,8 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
   }, []);
 
   const columns = useMemo(
-    () => createColumns({ sortBy, sortOrder, onSortChange: handleSortChange }),
-    [sortBy, sortOrder, handleSortChange],
+    () => createColumns({ sortBy, sortOrder, onSortChange: handleSortChange }, t),
+    [sortBy, sortOrder, handleSortChange, t],
   );
 
   const filteredData = useMemo(() => {
@@ -237,15 +238,14 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
     <div className="w-full p-6 overflow-x-hidden box-border">
       <TabGroup defaultIndex={0} onIndexChange={(index) => setActiveTab(index === 0 ? "request logs" : "audit logs")}>
         <TabList>
-          <Tab>Request Logs</Tab>
-          <Tab>Audit Logs</Tab>
-          <Tab>Deleted Keys</Tab>
-          <Tab>Deleted Teams</Tab>
+          <Tab>{t("observability.logs.request_logs_tab")}</Tab>
+          <Tab>{t("observability.logs.deleted_keys_tab")}</Tab>
+          <Tab>{t("observability.logs.deleted_teams_tab")}</Tab>
         </TabList>
         <TabPanels>
           <TabPanel>
             <div className="flex items-center justify-between mb-4">
-              <h1 className="text-xl font-semibold">Request Logs</h1>
+              <h1 className="text-xl font-semibold">{t("observability.logs.request_logs_title")}</h1>
             </div>
             {selectedKeyInfo && selectedKeyIdInfoView && selectedKeyInfo.api_key === selectedKeyIdInfoView ? (
               <KeyInfoView
@@ -253,7 +253,7 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
                 keyData={selectedKeyInfo}
                 teams={allTeams ?? []}
                 onClose={() => setSelectedKeyIdInfoView(null)}
-                backButtonText="Back to Logs"
+                backButtonText={t("observability.logs.back_to_logs")}
               />
             ) : (
               <>
@@ -294,16 +294,6 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
                 </div>
               </>
             )}
-          </TabPanel>
-          <TabPanel>
-            <AuditLogs
-              userID={userID}
-              userRole={userRole}
-              token={token}
-              accessToken={accessToken}
-              isActive={activeTab === "audit logs"}
-              premiumUser={premiumUser}
-            />
           </TabPanel>
           <TabPanel>
             <DeletedKeysPage />
