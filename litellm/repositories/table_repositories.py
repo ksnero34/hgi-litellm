@@ -189,6 +189,10 @@ class SpendLogGuardrailIndexRepository(PrismaTableRepository):
     table_name = "litellm_spendlogguardrailindex"
 
 
+class SpendLogPolicyIndexRepository(PrismaTableRepository):
+    table_name = "litellm_spendlogpolicyindex"
+
+
 class UserNotificationsRepository(PrismaTableRepository):
     table_name = "litellm_usernotifications"
 

@@ -34,6 +34,11 @@ _PRISMA_TO_PG_TABLE: Dict[str, str] = {
 }
 
 
+def _numeric_metric(record: Any, field: str) -> Union[int, float]:
+    value = getattr(record, field, 0)
+    return value if isinstance(value, (int, float)) else 0
+
+
 def update_metrics(existing_metrics: SpendMetrics, record: Any) -> SpendMetrics:
     """Update metrics with new record data.
 
@@ -55,6 +60,24 @@ def update_metrics(existing_metrics: SpendMetrics, record: Any) -> SpendMetrics:
     existing_metrics.api_requests += record.api_requests or 0
     existing_metrics.successful_requests += record.successful_requests or 0
     existing_metrics.failed_requests += record.failed_requests or 0
+    response_time_count = int(_numeric_metric(record, "response_time_count"))
+    combined_response_time_count = existing_metrics.response_time_count + response_time_count
+    if combined_response_time_count > 0:
+        existing_response_time_sum = (
+            existing_metrics.average_response_time_ms or 0.0
+        ) * existing_metrics.response_time_count
+        existing_metrics.average_response_time_ms = (
+            existing_response_time_sum + _numeric_metric(record, "response_time_ms_sum")
+        ) / combined_response_time_count
+    existing_metrics.response_time_count = combined_response_time_count
+    ttft_count = int(_numeric_metric(record, "ttft_count"))
+    combined_ttft_count = existing_metrics.ttft_count + ttft_count
+    if combined_ttft_count > 0:
+        existing_ttft_sum = (existing_metrics.average_ttft_ms or 0.0) * existing_metrics.ttft_count
+        existing_metrics.average_ttft_ms = (
+            existing_ttft_sum + _numeric_metric(record, "ttft_ms_sum")
+        ) / combined_ttft_count
+    existing_metrics.ttft_count = combined_ttft_count
     return existing_metrics
 
 
@@ -481,7 +504,11 @@ def _build_aggregated_sql_query(
             SUM(prompt_caching_savings_spend)::float AS prompt_caching_savings_spend,
             SUM(api_requests)::bigint AS api_requests,
             SUM(successful_requests)::bigint AS successful_requests,
-            SUM(failed_requests)::bigint AS failed_requests
+            SUM(failed_requests)::bigint AS failed_requests,
+            SUM(response_time_ms_sum)::float AS response_time_ms_sum,
+            SUM(response_time_count)::bigint AS response_time_count,
+            SUM(ttft_ms_sum)::float AS ttft_ms_sum,
+            SUM(ttft_count)::bigint AS ttft_count
         FROM "{pg_table}"
         WHERE {where_clause}
         GROUP BY GROUPING SETS (
@@ -611,6 +638,8 @@ def _record_to_spend_metrics(record: Any) -> SpendMetrics:
     """
     prompt_tokens = record.prompt_tokens or 0
     completion_tokens = record.completion_tokens or 0
+    response_time_count = int(_numeric_metric(record, "response_time_count"))
+    ttft_count = int(_numeric_metric(record, "ttft_count"))
     return SpendMetrics(
         spend=record.spend or 0.0,
         prompt_tokens=prompt_tokens,
@@ -624,6 +653,12 @@ def _record_to_spend_metrics(record: Any) -> SpendMetrics:
         api_requests=record.api_requests or 0,
         successful_requests=record.successful_requests or 0,
         failed_requests=record.failed_requests or 0,
+        average_response_time_ms=(
+            _numeric_metric(record, "response_time_ms_sum") / response_time_count if response_time_count > 0 else None
+        ),
+        response_time_count=response_time_count,
+        average_ttft_ms=(_numeric_metric(record, "ttft_ms_sum") / ttft_count if ttft_count > 0 else None),
+        ttft_count=ttft_count,
     )
 
 

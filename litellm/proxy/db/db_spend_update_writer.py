@@ -97,6 +97,56 @@ def _extract_cache_creation_tokens(usage_obj: dict) -> int:
     return int(details.get("cache_write_tokens", 0) or details.get("cache_creation_tokens", 0) or 0)
 
 
+def _parse_spend_log_timestamp(value: datetime | str | None) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _performance_metrics(payload: dict | SpendLogsPayload, request_succeeded: bool) -> dict[str, float | int]:
+    if not request_succeeded or str(payload.get("cache_hit", "")).lower() == "true":
+        return {
+            "response_time_ms_sum": 0.0,
+            "response_time_count": 0,
+            "ttft_ms_sum": 0.0,
+            "ttft_count": 0,
+        }
+
+    start_time = _parse_spend_log_timestamp(payload.get("startTime"))
+    end_time = _parse_spend_log_timestamp(payload.get("endTime"))
+    completion_start_time = _parse_spend_log_timestamp(payload.get("completionStartTime"))
+    request_duration_ms = payload.get("request_duration_ms")
+    response_time_ms = (
+        float(request_duration_ms)
+        if isinstance(request_duration_ms, (int, float)) and request_duration_ms >= 0
+        else (
+            max(0.0, (end_time - start_time).total_seconds() * 1000)
+            if start_time is not None and end_time is not None
+            else None
+        )
+    )
+    ttft_ms = (
+        max(0.0, (completion_start_time - start_time).total_seconds() * 1000)
+        if start_time is not None
+        and completion_start_time is not None
+        and end_time is not None
+        and completion_start_time != end_time
+        else None
+    )
+    return {
+        "response_time_ms_sum": response_time_ms or 0.0,
+        "response_time_count": 1 if response_time_ms is not None else 0,
+        "ttft_ms_sum": ttft_ms or 0.0,
+        "ttft_count": 1 if ttft_ms is not None else 0,
+    }
+
+
 class DBSpendUpdateWriter:
     """
     Module responsible for
@@ -1535,7 +1585,10 @@ class DBSpendUpdateWriter:
                             return
 
                         try:
-                            async with prisma_client.db.batch_() as batcher:
+                            async with (
+                                prisma_client.db.tx(timeout=timedelta(seconds=60)) as db_transaction,
+                                db_transaction.batch_() as batcher,
+                            ):
                                 for _, transaction in transactions_to_process.items():
                                     entity_id = transaction.get(entity_id_field)
 
@@ -1573,6 +1626,12 @@ class DBSpendUpdateWriter:
                                         "successful_requests": transaction["successful_requests"],
                                         "failed_requests": transaction["failed_requests"],
                                     }
+                                    if "response_time_ms_sum" in transaction:
+                                        common_data["response_time_ms_sum"] = transaction["response_time_ms_sum"]
+                                        common_data["response_time_count"] = transaction.get("response_time_count", 0)
+                                    if "ttft_ms_sum" in transaction:
+                                        common_data["ttft_ms_sum"] = transaction["ttft_ms_sum"]
+                                        common_data["ttft_count"] = transaction.get("ttft_count", 0)
 
                                     # Add cache-related fields if they exist
                                     if "cache_read_input_tokens" in transaction:
@@ -1608,6 +1667,16 @@ class DBSpendUpdateWriter:
                                         "successful_requests": {"increment": transaction["successful_requests"]},
                                         "failed_requests": {"increment": transaction["failed_requests"]},
                                     }
+                                    if "response_time_ms_sum" in transaction:
+                                        update_data["response_time_ms_sum"] = {
+                                            "increment": transaction["response_time_ms_sum"]
+                                        }
+                                        update_data["response_time_count"] = {
+                                            "increment": transaction.get("response_time_count", 0)
+                                        }
+                                    if "ttft_ms_sum" in transaction:
+                                        update_data["ttft_ms_sum"] = {"increment": transaction["ttft_ms_sum"]}
+                                        update_data["ttft_count"] = {"increment": transaction.get("ttft_count", 0)}
 
                                     # Add cache-related fields to update if they exist
                                     if "cache_read_input_tokens" in transaction:
@@ -1907,6 +1976,7 @@ class DBSpendUpdateWriter:
                 compression_saved_tokens=compression_saved_tokens,
                 compression_savings_spend=savings_spend.compression,
                 prompt_caching_savings_spend=savings_spend.prompt_caching,
+                **_performance_metrics(payload, request_status == "success"),
             )
             return daily_transaction
         except Exception as e:

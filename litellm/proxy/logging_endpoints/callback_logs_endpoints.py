@@ -98,17 +98,19 @@ class CallbackLogsReplayer:
             "spend_logs_metadata": metadata.get("spend_logs_metadata"),
         }
 
-        logging_obj.model_call_details.update(
-            {
-                "model": model,
-                "call_type": call_type,
-                "custom_llm_provider": payload.get("custom_llm_provider"),
-                "response_cost": payload.get("response_cost") or 0.0,
-                "standard_logging_object": payload,
-                "litellm_params": {"metadata": litellm_metadata},
-                "cache_hit": payload.get("cache_hit") or False,
-            }
-        )
+        model_call_details = {
+            "model": model,
+            "call_type": call_type,
+            "custom_llm_provider": payload.get("custom_llm_provider"),
+            "response_cost": payload.get("response_cost") or 0.0,
+            "standard_logging_object": payload,
+            "litellm_params": {"metadata": litellm_metadata},
+            "cache_hit": payload.get("cache_hit") or False,
+        }
+        completion_start_time = payload.get("completionStartTime")
+        if completion_start_time is not None:
+            model_call_details["completion_start_time"] = CallbackLogsReplayer._epoch_to_datetime(completion_start_time)
+        logging_obj.model_call_details.update(model_call_details)
         return logging_obj
 
     @staticmethod
