@@ -1,6 +1,6 @@
 # HGI LiteLLM 커스터마이징 운영 가이드
 
-현재 배포 기준은 `v1.93.0`에서 분기한 `hgi-v1.93.0` 브랜치다. 커스텀 변경은 `customizations/manifest.json`의 기능 그룹별 소유 경로로 관리한다. 업스트림 변경은 기존 브랜치에 계속 누적 병합하지 않고 새 업스트림 커밋에서 통합 브랜치를 만든 뒤 각 그룹을 순서대로 재적용한다.
+현재 배포 기준은 `v1.94.0`에서 분기한 `hgi-v1.94.0` 브랜치다. 커스텀 변경은 `customizations/manifest.json`의 기능 그룹별 소유 경로로 관리한다. 업스트림 변경은 기존 브랜치에 계속 누적 병합하지 않고 새 업스트림 커밋에서 통합 브랜치를 만든 뒤 각 그룹을 순서대로 재적용한다.
 
 ## 현재 버전 테스트
 
@@ -30,7 +30,7 @@ Discovery를 제공하지 않는 IdP는 `GENERIC_AUTHORIZATION_ENDPOINT`, `GENER
 로컬 이미지를 빌드하고 실행한다.
 
 ```bash
-git switch hgi-v1.93.0
+git switch hgi-v1.94.0
 git rev-parse --short HEAD
 docker compose build litellm
 docker compose up -d db litellm
