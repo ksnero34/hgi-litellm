@@ -93,6 +93,13 @@ from litellm.proxy.common_utils.html_forms.jwt_display_template import (
 )
 from litellm.proxy.common_utils.html_forms.ui_login import build_ui_login_form
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.oidc import resolve_generic_oidc_endpoints
+from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
+from litellm.proxy.customizations.sso_team_sync import (
+    normalize_sso_team_claim,
+    resolve_or_create_sso_teams,
+    sync_sso_team_memberships,
+)
 from litellm.proxy.management_endpoints.internal_user_endpoints import new_user
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
 from litellm.proxy.management_endpoints.sso_helper_utils import (
@@ -759,6 +766,7 @@ def process_sso_jwt_access_token(
     sso_jwt_handler: Optional[JWTHandler],
     result: Union[OpenID, dict, None],
     role_mappings: Optional["RoleMappings"] = None,
+    team_mappings: Optional["TeamMappings"] = None,
 ) -> Optional[dict]:
     """
     Process SSO JWT access token and extract team IDs and user role if available.
@@ -790,6 +798,25 @@ def process_sso_jwt_access_token(
                 "Access token is not a valid JWT (possibly an opaque token), skipping JWT-based extraction"
             )
             return None
+
+        if team_mappings is not None and team_mappings.team_ids_jwt_field and result:
+            raw_team_claim = get_nested_value(access_token_payload, team_mappings.team_ids_jwt_field)
+            if raw_team_claim is not None:
+                team_claim_values = normalize_sso_team_claim(raw_team_claim)
+                existing_claim_values = (
+                    result.get("sso_team_claim_values", [])
+                    if isinstance(result, dict)
+                    else getattr(result, "sso_team_claim_values", [])
+                )
+                merged_claim_values = list(dict.fromkeys([*existing_claim_values, *team_claim_values]))
+                if isinstance(result, dict):
+                    result["sso_team_claim_present"] = True
+                    result["sso_team_claim_values"] = merged_claim_values
+                    result["team_ids"] = list(dict.fromkeys([*(result.get("team_ids") or []), *team_claim_values]))
+                else:
+                    result.sso_team_claim_present = True
+                    result.sso_team_claim_values = merged_claim_values
+                    result.team_ids = list(dict.fromkeys([*(result.team_ids or []), *team_claim_values]))
 
         # Extract team IDs from access token if sso_jwt_handler is available
         if sso_jwt_handler:
@@ -869,8 +896,6 @@ async def google_login(
     from litellm.proxy.proxy_server import (
         cli_sso_session_cache,
         general_settings,
-        premium_user,
-        prisma_client,
         user_custom_ui_sso_sign_in_handler,
     )
 
@@ -884,27 +909,6 @@ async def google_login(
         is_disabled = str_to_bool(value=_disable_ui_flag)
         if is_disabled:
             return admin_ui_disabled()
-
-    ####### Check if user is a Enterprise / Premium User #######
-    if microsoft_client_id is not None or google_client_id is not None or generic_client_id is not None:
-        if premium_user is not True:
-            # Check if under 'free SSO user' limit
-            if prisma_client is not None:
-                billable_users = await UserRepository(prisma_client).count_billable_users()
-                if billable_users and billable_users > 5:
-                    raise ProxyException(
-                        message="You must be a LiteLLM Enterprise user to use SSO for more than 5 users. If you have a license please set `LITELLM_LICENSE` in your env. If you want to obtain a license meet with us here: https://enterprise.litellm.ai/demo You are seeing this error message because You set one of `MICROSOFT_CLIENT_ID`, `GOOGLE_CLIENT_ID`, or `GENERIC_CLIENT_ID` in your env. Please unset this",
-                        type=ProxyErrorTypes.auth_error,
-                        param="premium_user",
-                        code=status.HTTP_403_FORBIDDEN,
-                    )
-            else:
-                raise ProxyException(
-                    message=CommonProxyErrors.db_not_connected_error.value,
-                    type=ProxyErrorTypes.auth_error,
-                    param="premium_user",
-                    code=status.HTTP_403_FORBIDDEN,
-                )
 
     ####### Detect DB + MASTER KEY in .env #######
     missing_env_vars = show_missing_vars_in_env()
@@ -929,18 +933,12 @@ async def google_login(
 
     # check if user defined a custom auth sso sign in handler, if yes, use it
     if user_custom_ui_sso_sign_in_handler is not None:
-        try:
-            from litellm_enterprise.proxy.auth.custom_sso_handler import (  # type: ignore[import-untyped]
-                EnterpriseCustomSSOHandler,
-            )
-
-            return await EnterpriseCustomSSOHandler.handle_custom_ui_sso_sign_in(
-                request=request,
-            )
-        except ImportError:
-            raise ValueError(
-                "Enterprise features are not available. Custom UI SSO sign-in requires LiteLLM Enterprise."
-            )
+        return await handle_custom_ui_sso_sign_in(
+            request=request,
+            handler=user_custom_ui_sso_sign_in_handler,
+            general_settings=general_settings,
+            return_to=return_to,
+        )
 
     # Check if we should use SSO handler
     if (
@@ -1015,16 +1013,21 @@ def generic_response_convertor(
         team_ids = sso_jwt_handler.get_all_jwt_team_ids(cast(dict, response))
         all_teams.extend(team_ids)
 
-    if team_mappings is not None and team_mappings.team_ids_jwt_field is not None:
-        team_ids_from_db_mapping: Optional[List[str]] = get_nested_value(
+    sso_team_mapping_configured = team_mappings is not None and team_mappings.team_ids_jwt_field is not None
+    sso_team_claim_present = False
+    sso_team_claim_values: List[str] = []
+    if sso_team_mapping_configured and team_mappings is not None and team_mappings.team_ids_jwt_field is not None:
+        raw_team_claim: Any = get_nested_value(
             data=cast(dict, response),
             key_path=team_mappings.team_ids_jwt_field,
-            default=[],
+            default=None,
         )
-        if team_ids_from_db_mapping:
-            all_teams.extend(team_ids_from_db_mapping)
+        sso_team_claim_present = raw_team_claim is not None
+        sso_team_claim_values = normalize_sso_team_claim(raw_team_claim)
+        if sso_team_claim_values:
+            all_teams.extend(sso_team_claim_values)
             verbose_proxy_logger.debug(
-                f"Loaded team_ids from DB team_mappings.team_ids_jwt_field='{team_mappings.team_ids_jwt_field}': {team_ids_from_db_mapping}"
+                f"Loaded teams from DB team_mappings.team_ids_jwt_field='{team_mappings.team_ids_jwt_field}': {sso_team_claim_values}"
             )
     else:
         team_ids = jwt_handler.get_all_jwt_team_ids(cast(dict, response))
@@ -1094,15 +1097,19 @@ def generic_response_convertor(
         team_ids=all_teams,
         user_role=user_role,
         extra_fields=extra_fields,
+        sso_team_mapping_configured=sso_team_mapping_configured,
+        sso_team_claim_present=sso_team_claim_present,
+        sso_team_claim_values=sso_team_claim_values,
     )
 
 
-def _setup_generic_sso_env_vars(
+async def _setup_generic_sso_env_vars(
     generic_client_id: str, redirect_url: str
 ) -> Tuple[str, List[str], str, str, str, bool]:
     """Setup and validate Generic SSO environment variables."""
     generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
     generic_scope = os.getenv("GENERIC_SCOPE", "openid email profile").split(" ")
+    generic_discovery_url = os.getenv("GENERIC_DISCOVERY_URL", None)
     generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
     generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
     generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
@@ -1116,39 +1123,32 @@ def _setup_generic_sso_env_vars(
             param="GENERIC_CLIENT_SECRET",
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    if generic_authorization_endpoint is None:
-        raise ProxyException(
-            message="GENERIC_AUTHORIZATION_ENDPOINT not set. Set it in .env file",
-            type=ProxyErrorTypes.auth_error,
-            param="GENERIC_AUTHORIZATION_ENDPOINT",
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    try:
+        resolved_endpoints = await resolve_generic_oidc_endpoints(
+            discovery_url=generic_discovery_url,
+            authorization_endpoint=generic_authorization_endpoint,
+            token_endpoint=generic_token_endpoint,
+            userinfo_endpoint=generic_userinfo_endpoint,
         )
-    if generic_token_endpoint is None:
+    except Exception as error:
         raise ProxyException(
-            message="GENERIC_TOKEN_ENDPOINT not set. Set it in .env file",
+            message=f"Invalid generic OIDC configuration: {error}",
             type=ProxyErrorTypes.auth_error,
-            param="GENERIC_TOKEN_ENDPOINT",
+            param="GENERIC_DISCOVERY_URL",
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-    if generic_userinfo_endpoint is None:
-        raise ProxyException(
-            message="GENERIC_USERINFO_ENDPOINT not set. Set it in .env file",
-            type=ProxyErrorTypes.auth_error,
-            param="GENERIC_USERINFO_ENDPOINT",
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        ) from error
 
     verbose_proxy_logger.debug(
-        f"authorization_endpoint: {generic_authorization_endpoint}\ntoken_endpoint: {generic_token_endpoint}\nuserinfo_endpoint: {generic_userinfo_endpoint}"
+        f"authorization_endpoint: {resolved_endpoints.authorization_endpoint}\ntoken_endpoint: {resolved_endpoints.token_endpoint}\nuserinfo_endpoint: {resolved_endpoints.userinfo_endpoint}"
     )
     verbose_proxy_logger.debug(f"GENERIC_REDIRECT_URI: {redirect_url}\nGENERIC_CLIENT_ID: {generic_client_id}\n")
 
     return (
         generic_client_secret,
         generic_scope,
-        generic_authorization_endpoint,
-        generic_token_endpoint,
-        generic_userinfo_endpoint,
+        resolved_endpoints.authorization_endpoint,
+        resolved_endpoints.token_endpoint,
+        resolved_endpoints.userinfo_endpoint,
         generic_include_client_id,
     )
 
@@ -1337,7 +1337,7 @@ async def get_generic_sso_response(
         generic_token_endpoint,
         generic_userinfo_endpoint,
         generic_include_client_id,
-    ) = _setup_generic_sso_env_vars(generic_client_id, redirect_url)
+    ) = await _setup_generic_sso_env_vars(generic_client_id, redirect_url)
 
     discovery = DiscoveryDocument(
         authorization_endpoint=generic_authorization_endpoint,
@@ -1474,7 +1474,11 @@ async def get_generic_sso_response(
             access_token_str = generic_sso.access_token
 
         access_token_payload = process_sso_jwt_access_token(
-            access_token_str, sso_jwt_handler, result, role_mappings=role_mappings
+            access_token_str,
+            sso_jwt_handler,
+            result,
+            role_mappings=role_mappings,
+            team_mappings=team_mappings,
         )
         # Delete the single-use PKCE verifier only after all downstream processing
         # (response_convertor and process_sso_jwt_access_token) has completed
@@ -2363,16 +2367,17 @@ async def sso_readiness():
 
     elif configured_provider == "generic":
         generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
+        generic_discovery_url = os.getenv("GENERIC_DISCOVERY_URL", None)
         generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
         generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
         generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
         if generic_client_secret is None:
             missing_vars.append("GENERIC_CLIENT_SECRET")
-        if generic_authorization_endpoint is None:
+        if generic_discovery_url is None and generic_authorization_endpoint is None:
             missing_vars.append("GENERIC_AUTHORIZATION_ENDPOINT")
-        if generic_token_endpoint is None:
+        if generic_discovery_url is None and generic_token_endpoint is None:
             missing_vars.append("GENERIC_TOKEN_ENDPOINT")
-        if generic_userinfo_endpoint is None:
+        if generic_discovery_url is None and generic_userinfo_endpoint is None:
             missing_vars.append("GENERIC_USERINFO_ENDPOINT")
 
     # If all required variables are present, return healthy
@@ -2502,45 +2507,14 @@ class SSOAuthenticationHandler:
             from fastapi_sso.sso.base import DiscoveryDocument
             from fastapi_sso.sso.generic import create_provider
 
-            generic_client_secret = os.getenv("GENERIC_CLIENT_SECRET", None)
-            generic_scope = os.getenv("GENERIC_SCOPE", "openid email profile").split(" ")
-            generic_authorization_endpoint = os.getenv("GENERIC_AUTHORIZATION_ENDPOINT", None)
-            generic_token_endpoint = os.getenv("GENERIC_TOKEN_ENDPOINT", None)
-            generic_userinfo_endpoint = os.getenv("GENERIC_USERINFO_ENDPOINT", None)
-            if generic_client_secret is None:
-                raise ProxyException(
-                    message="GENERIC_CLIENT_SECRET not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_CLIENT_SECRET",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_authorization_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_AUTHORIZATION_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_AUTHORIZATION_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_token_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_TOKEN_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_TOKEN_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            if generic_userinfo_endpoint is None:
-                raise ProxyException(
-                    message="GENERIC_USERINFO_ENDPOINT not set. Set it in .env file",
-                    type=ProxyErrorTypes.auth_error,
-                    param="GENERIC_USERINFO_ENDPOINT",
-                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            verbose_proxy_logger.debug(
-                f"authorization_endpoint: {generic_authorization_endpoint}\ntoken_endpoint: {generic_token_endpoint}\nuserinfo_endpoint: {generic_userinfo_endpoint}"
-            )
-            verbose_proxy_logger.debug(
-                f"GENERIC_REDIRECT_URI: {redirect_url}\nGENERIC_CLIENT_ID: {generic_client_id}\n"
-            )
+            (
+                generic_client_secret,
+                generic_scope,
+                generic_authorization_endpoint,
+                generic_token_endpoint,
+                generic_userinfo_endpoint,
+                _,
+            ) = await _setup_generic_sso_env_vars(generic_client_id, redirect_url)
             discovery = DiscoveryDocument(
                 authorization_endpoint=generic_authorization_endpoint,
                 token_endpoint=generic_token_endpoint,
@@ -2811,6 +2785,27 @@ class SSOAuthenticationHandler:
         """
         if user_info is None:
             verbose_proxy_logger.debug("User not found in LiteLLM DB, skipping team member addition")
+            return
+        if getattr(result, "sso_team_mapping_configured", False):
+            if not getattr(result, "sso_team_claim_present", False):
+                verbose_proxy_logger.warning("Configured SSO team claim was absent; preserving existing memberships")
+                return
+            from litellm.proxy.proxy_server import prisma_client
+
+            if prisma_client is None:
+                verbose_proxy_logger.error("Prisma client not found, skipping SSO team synchronization")
+                return
+            team_claim_values = getattr(result, "sso_team_claim_values", [])
+            resolved_team_ids = await resolve_or_create_sso_teams(
+                prisma_client=prisma_client,
+                team_claim_values=team_claim_values,
+            )
+            await sync_sso_team_memberships(
+                prisma_client=prisma_client,
+                user_info=user_info,
+                target_team_ids=resolved_team_ids,
+            )
+            setattr(result, "team_ids", resolved_team_ids)
             return
         sso_teams = getattr(result, "team_ids", [])
         await add_missing_team_member(user_info=user_info, sso_teams=sso_teams)
@@ -4151,21 +4146,9 @@ async def debug_sso_login(request: Request):
     PROXY_BASE_URL should be the your deployed proxy endpoint, e.g. PROXY_BASE_URL="https://litellm-production-7002.up.railway.app/"
     Example:
     """
-    from litellm.proxy.proxy_server import premium_user
-
     microsoft_client_id = os.getenv("MICROSOFT_CLIENT_ID", None)
     google_client_id = os.getenv("GOOGLE_CLIENT_ID", None)
     generic_client_id = os.getenv("GENERIC_CLIENT_ID", None)
-
-    ####### Check if user is a Enterprise / Premium User #######
-    if microsoft_client_id is not None or google_client_id is not None or generic_client_id is not None:
-        if premium_user is not True:
-            raise ProxyException(
-                message="You must be a LiteLLM Enterprise user to use SSO. If you have a license please set `LITELLM_LICENSE` in your env. If you want to obtain a license meet with us here: https://enterprise.litellm.ai/demo You are seeing this error message because You set one of `MICROSOFT_CLIENT_ID`, `GOOGLE_CLIENT_ID`, or `GENERIC_CLIENT_ID` in your env. Please unset this",
-                type=ProxyErrorTypes.auth_error,
-                param="premium_user",
-                code=status.HTTP_403_FORBIDDEN,
-            )
 
     # get url from request
     redirect_url = SSOAuthenticationHandler.get_redirect_url_for_sso(

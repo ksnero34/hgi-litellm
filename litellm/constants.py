@@ -1399,8 +1399,8 @@ LITELLM_KEY_ROTATION_CHECK_INTERVAL_SECONDS = int(
     os.getenv("LITELLM_KEY_ROTATION_CHECK_INTERVAL_SECONDS", 86400)
 )  # 24 hours default
 LITELLM_KEY_ROTATION_GRACE_PERIOD: str = os.getenv(
-    "LITELLM_KEY_ROTATION_GRACE_PERIOD", ""
-)  # Duration to keep old key valid after rotation (e.g. "24h", "2d"); empty = immediate revoke (default)
+    "LITELLM_KEY_ROTATION_GRACE_PERIOD", "72h"
+)  # Duration to keep old key valid after rotation; defaults to 72 hours
 LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS = int(
     os.getenv("LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS", 600)
 )  # 10 minutes default — caps the deadlock window if a pod crashes mid-rotation

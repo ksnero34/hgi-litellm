@@ -1,11 +1,12 @@
 "use client";
 
 import { Button, Form, Modal, Space } from "antd";
+import { useTranslation } from "react-i18next";
 import React, { useEffect } from "react";
 import BaseSSOSettingsForm from "./BaseSSOSettingsForm";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import { parseErrorMessage } from "@/components/shared/errorUtils";
-import { processSSOSettingsPayload } from "../utils";
+import { detectSSOProvider, processSSOSettingsPayload } from "../utils";
 import { useSSOSettings } from "@/app/(dashboard)/hooks/sso/useSSOSettings";
 import { useEditSSOSettings } from "@/app/(dashboard)/hooks/sso/useEditSSOSettings";
 
@@ -16,6 +17,7 @@ interface EditSSOSettingsModalProps {
 }
 
 const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, onCancel, onSuccess }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
 
   // Use react-query hooks for SSO settings
@@ -25,23 +27,7 @@ const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, 
     if (isVisible && ssoSettings.data && ssoSettings.data.values) {
       const ssoData = ssoSettings.data;
 
-      // Determine which SSO provider is configured
-      let selectedProvider = null;
-      if (ssoData.values.google_client_id) {
-        selectedProvider = "google";
-      } else if (ssoData.values.microsoft_client_id) {
-        selectedProvider = "microsoft";
-      } else if (ssoData.values.generic_client_id) {
-        // Check if it looks like Okta based on endpoints
-        if (
-          ssoData.values.generic_authorization_endpoint?.includes("okta") ||
-          ssoData.values.generic_authorization_endpoint?.includes("auth0")
-        ) {
-          selectedProvider = "okta";
-        } else {
-          selectedProvider = "generic";
-        }
-      }
+      const selectedProvider = detectSSOProvider(ssoData.values);
 
       // Extract role mappings if they exist
       let roleMappingFields = {};
@@ -98,16 +84,16 @@ const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, 
 
       await mutateAsync(payload, {
         onSuccess: () => {
-          NotificationsManager.success("SSO settings updated successfully");
+          NotificationsManager.success(t("settings.sso.updateSuccess"));
           onSuccess();
         },
         onError: (error) => {
-          NotificationsManager.fromBackend("Failed to save SSO settings: " + parseErrorMessage(error));
+          NotificationsManager.fromBackend(t("settings.sso.saveError", { error: parseErrorMessage(error) }));
         },
       });
     } catch (error) {
       // Handle processing errors gracefully
-      NotificationsManager.fromBackend("Failed to process SSO settings: " + parseErrorMessage(error));
+      NotificationsManager.fromBackend(t("settings.sso.processError", { error: parseErrorMessage(error) }));
     }
   };
 
@@ -118,16 +104,16 @@ const EditSSOSettingsModal: React.FC<EditSSOSettingsModalProps> = ({ isVisible, 
 
   return (
     <Modal
-      title="Edit SSO Settings"
+      title={t("settings.sso.modal.editTitle")}
       open={isVisible}
       width={800}
       footer={
         <Space>
           <Button onClick={handleCancel} disabled={isPending}>
-            Cancel
+            {t("settings.sso.modal.cancel")}
           </Button>
           <Button loading={isPending} onClick={() => form.submit()}>
-            {isPending ? "Saving..." : "Save"}
+            {isPending ? t("settings.sso.modal.saving") : t("settings.sso.modal.save")}
           </Button>
         </Space>
       }

@@ -2,7 +2,7 @@ import { Form } from "antd";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../../tests/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import BaseSSOSettingsForm, { renderProviderFields } from "./BaseSSOSettingsForm";
+import BaseSSOSettingsForm from "./BaseSSOSettingsForm";
 
 describe("BaseSSOSettingsForm", () => {
   afterEach(() => {
@@ -45,8 +45,8 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Google Client ID")).toBeInTheDocument();
-      expect(screen.getByText("Google Client Secret")).toBeInTheDocument();
+      expect(screen.getByText("Client ID")).toBeInTheDocument();
+      expect(screen.getByText("Client Secret")).toBeInTheDocument();
     });
   });
 
@@ -232,7 +232,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Team IDs JWT Field")).toBeInTheDocument();
+      expect(screen.getByText("Team JWT Claim Field")).toBeInTheDocument();
     });
   });
 
@@ -257,40 +257,9 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Google Client ID")).toBeInTheDocument();
+      expect(screen.getByText("Client ID")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("Use Team Mappings")).not.toBeInTheDocument();
-  });
-});
-
-describe("renderProviderFields", () => {
-  it("should return null for unknown provider", () => {
-    const result = renderProviderFields("unknown");
-    expect(result).toBeNull();
-  });
-
-  it("should return fields for google provider", () => {
-    const result = renderProviderFields("google");
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(2);
-  });
-
-  it("should return fields for microsoft provider", () => {
-    const result = renderProviderFields("microsoft");
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(3);
-  });
-
-  it("should return fields for okta provider", () => {
-    const result = renderProviderFields("okta");
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(5);
-  });
-
-  it("should return fields for generic provider", () => {
-    const result = renderProviderFields("generic");
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(5);
   });
 });
