@@ -618,6 +618,53 @@ async def test_logging_only_does_not_mask_pre_call_request(mock_user_api_key, mo
 
 
 @pytest.mark.asyncio
+async def test_logging_only_syncs_masked_request_and_guardrail_information_to_standard_logging_object():
+    class DetectingPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            return [{"entity_type": "EMAIL_ADDRESS", "start": 0, "end": len(text), "score": 0.99}]
+
+        async def anonymize_text(
+            self,
+            text,
+            analyze_results,
+            output_parse_pii,
+            masked_entity_count,
+            request_data=None,
+        ):
+            return text.replace("person@example.com", "[EMAIL]")
+
+    presidio = DetectingPresidio(
+        mock_testing=True,
+        logging_only=True,
+        presidio_filter_scope="input",
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+    original_messages = [{"role": "user", "content": "Email person@example.com"}]
+    kwargs = {
+        "messages": original_messages,
+        "metadata": {},
+        "standard_logging_object": {
+            "messages": original_messages,
+            "guardrail_information": None,
+        },
+    }
+
+    logged_kwargs, _ = await presidio.async_logging_hook(
+        kwargs=kwargs,
+        result={"choices": [{"message": {"content": "response"}}]},
+        call_type="acompletion",
+    )
+
+    assert kwargs["messages"][0]["content"] == "Email person@example.com"
+    standard_logging_object = logged_kwargs["standard_logging_object"]
+    assert standard_logging_object["messages"][0]["content"] == "Email [EMAIL]"
+    guardrail_information = standard_logging_object["guardrail_information"]
+    assert guardrail_information
+    assert guardrail_information[-1]["usage_action"] == "flagged"
+    assert guardrail_information[-1]["enforcement_mode"] == "observe"
+
+
+@pytest.mark.asyncio
 async def test_logging_only_masks_responses_api_output_without_mutating_live_response():
     presidio = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,

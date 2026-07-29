@@ -928,6 +928,25 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             # No running event loop, we can safely run in this thread
             return run_in_new_loop()
 
+    @staticmethod
+    def _sync_standard_logging_object(logged_kwargs: dict, translation: object, sync_messages: bool) -> None:
+        standard_logging_object = logged_kwargs.get("standard_logging_object")
+        if not isinstance(standard_logging_object, dict):
+            return
+
+        get_structured_messages = getattr(translation, "get_structured_messages", None)
+        if sync_messages and callable(get_structured_messages):
+            structured_messages = get_structured_messages(logged_kwargs)
+            if structured_messages is not None:
+                standard_logging_object["messages"] = copy.deepcopy(structured_messages)
+
+        metadata = logged_kwargs.get("metadata") or logged_kwargs.get("litellm_metadata")
+        if not isinstance(metadata, dict):
+            return
+        guardrail_information = metadata.get("standard_logging_guardrail_information")
+        if guardrail_information is not None:
+            standard_logging_object["guardrail_information"] = copy.deepcopy(guardrail_information)
+
     async def async_logging_hook(self, kwargs: dict, result: Any, call_type: str) -> Tuple[dict, Any]:
         """
         Masks the input before logging to langfuse, datadog, etc.
@@ -971,6 +990,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 guardrail_to_apply=self,
                 litellm_logging_obj=logging_obj,
             )
+            self._sync_standard_logging_object(logged_kwargs, translation, sync_messages=True)
 
         if self.presidio_filter_scope == "input":
             return logged_kwargs, logged_result
@@ -1013,6 +1033,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         if isinstance(standard_logging_object, dict):
             standard_logging_object["response"] = self._serialize_responses_api_response(audited_output)
+
+        self._sync_standard_logging_object(logged_kwargs, translation, sync_messages=False)
 
         return logged_kwargs, logged_result
 
