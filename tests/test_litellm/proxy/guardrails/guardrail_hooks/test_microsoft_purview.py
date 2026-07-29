@@ -887,9 +887,16 @@ class TestLoggingResolveUserId:
 
 
 class TestCheckContent:
+    @pytest.mark.parametrize(
+        ("block_on_violation", "expected_enforcement_mode"),
+        ((True, "enforce"), (False, "observe")),
+    )
     @pytest.mark.asyncio
-    async def test_check_content_allow(self):
+    async def test_check_content_allow(
+        self, block_on_violation, expected_enforcement_mode
+    ):
         guardrail = _make_guardrail()
+        request_data = {}
 
         with (
             patch.object(
@@ -912,15 +919,25 @@ class TestCheckContent:
                 user_id="user-1",
                 text="Hello world",
                 activity="uploadText",
-                request_data={},
-                block_on_violation=True,
+                request_data=request_data,
+                block_on_violation=block_on_violation,
             )
 
             assert result["policyActions"] == []
+            guardrail_information = request_data["metadata"][
+                "standard_logging_guardrail_information"
+            ]
+            assert guardrail_information[0]["guardrail_status"] == "success"
+            assert guardrail_information[0]["usage_action"] == "passed"
+            assert (
+                guardrail_information[0]["enforcement_mode"]
+                == expected_enforcement_mode
+            )
 
     @pytest.mark.asyncio
     async def test_check_content_block(self):
         guardrail = _make_guardrail()
+        request_data = {}
 
         with (
             patch.object(
@@ -950,17 +967,24 @@ class TestCheckContent:
                     user_id="user-1",
                     text="SSN: 123-45-6789",
                     activity="uploadText",
-                    request_data={},
+                    request_data=request_data,
                     block_on_violation=True,
                 )
 
             assert exc_info.value.status_code == 400
             assert "blocked by policy" in str(exc_info.value.detail)
+            guardrail_information = request_data["metadata"][
+                "standard_logging_guardrail_information"
+            ]
+            assert guardrail_information[0]["guardrail_status"] == "guardrail_intervened"
+            assert guardrail_information[0]["usage_action"] == "blocked"
+            assert guardrail_information[0]["enforcement_mode"] == "enforce"
 
     @pytest.mark.asyncio
     async def test_check_content_logging_only_no_block(self):
         """In logging_only mode, violations should NOT raise."""
         guardrail = _make_guardrail()
+        request_data = {}
 
         with (
             patch.object(
@@ -990,11 +1014,17 @@ class TestCheckContent:
                 user_id="user-1",
                 text="SSN: 123-45-6789",
                 activity="uploadText",
-                request_data={},
+                request_data=request_data,
                 block_on_violation=False,
             )
 
             assert len(result["policyActions"]) == 1
+            guardrail_information = request_data["metadata"][
+                "standard_logging_guardrail_information"
+            ]
+            assert guardrail_information[0]["guardrail_status"] == "guardrail_intervened"
+            assert guardrail_information[0]["usage_action"] == "flagged"
+            assert guardrail_information[0]["enforcement_mode"] == "observe"
 
 
 # ---------------------------------------------------------------
@@ -1518,6 +1548,7 @@ class TestCheckContentApiErrorHandling:
     async def test_api_error_not_reraised_when_block_on_violation_false(self):
         """API/network errors must be swallowed (logged only) when block_on_violation=False."""
         guardrail = _make_guardrail()
+        request_data = {}
 
         with patch.object(
             guardrail,
@@ -1530,11 +1561,17 @@ class TestCheckContentApiErrorHandling:
                 user_id="user-1",
                 text="some content",
                 activity="uploadText",
-                request_data={},
+                request_data=request_data,
                 block_on_violation=False,
             )
 
         assert isinstance(result, dict)
+        guardrail_information = request_data["metadata"][
+            "standard_logging_guardrail_information"
+        ]
+        assert guardrail_information[0]["guardrail_status"] == "guardrail_failed_to_respond"
+        assert guardrail_information[0]["usage_action"] == "flagged"
+        assert guardrail_information[0]["enforcement_mode"] == "observe"
 
     @pytest.mark.asyncio
     async def test_process_content_error_not_reraised_when_block_on_violation_false(
@@ -2657,3 +2694,16 @@ class TestRegistration:
             guardrail_class_registry["microsoft_purview"]
             is MicrosoftPurviewDLPGuardrail
         )
+
+    def test_config_model_exposes_ui_fields(self):
+        config_model = MicrosoftPurviewDLPGuardrail.get_config_model()
+
+        assert config_model is not None
+        assert config_model.ui_friendly_name() == "Microsoft Purview"
+        assert set(config_model.model_fields) >= {
+            "tenant_id",
+            "client_id",
+            "client_secret",
+            "purview_app_name",
+            "user_id_field",
+        }

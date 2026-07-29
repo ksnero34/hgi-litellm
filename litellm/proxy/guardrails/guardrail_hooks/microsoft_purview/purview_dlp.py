@@ -71,7 +71,7 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
         tenant_id: str,
         client_id: str,
         client_secret: str,
-        purview_app_name: str = "LiteLLM",
+        purview_app_name: str = "LLM Gateway",
         user_id_field: str = "user_id",
         **kwargs: Any,
     ):
@@ -93,7 +93,11 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
 
     @staticmethod
     def get_config_model() -> Optional[Type["GuardrailConfigModel"]]:
-        return None  # Config model can be added later for UI support
+        from litellm.types.proxy.guardrails.guardrail_hooks.microsoft_purview import (
+            MicrosoftPurviewGuardrailConfigModel,
+        )
+
+        return MicrosoftPurviewGuardrailConfigModel
 
     @classmethod
     def get_supported_event_hooks(cls) -> List[GuardrailEventHooks]:
@@ -193,11 +197,19 @@ class MicrosoftPurviewDLPGuardrail(PurviewGuardrailBase, CustomGuardrail):
             )
         finally:
             end_time = datetime.now()
+            enforcement_mode = "enforce" if block_on_violation else "observe"
+            usage_action = (
+                "passed"
+                if status == "success"
+                else ("blocked" if status == "guardrail_intervened" and block_on_violation else "flagged")
+            )
             self.add_standard_logging_guardrail_information_to_request_data(
                 guardrail_provider=self.guardrail_provider,
                 guardrail_json_response=response,
                 request_data=request_data,
                 guardrail_status=status,
+                enforcement_mode=enforcement_mode,
+                usage_action=usage_action,
                 start_time=start_time.timestamp(),
                 end_time=end_time.timestamp(),
                 duration=(end_time - start_time).total_seconds(),
