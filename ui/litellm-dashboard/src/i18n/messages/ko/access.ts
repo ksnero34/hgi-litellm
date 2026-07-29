@@ -65,6 +65,7 @@ export const accessMessages: MessageCatalog = {
   "access.projects.keys.created": "생성일",
   "access.projects.keys.lastActive": "마지막 활동",
   "access.projects.keys.empty": "키가 없습니다",
+  "access.projects.keys.emptyDescription": "이 프로젝트를 사용하려면 키를 생성하세요.",
   "access.budgets.create": "예산 만들기",
   "access.budgets.deleted": "예산이 삭제되었습니다",
   "access.budgets.deleteError": "예산을 삭제하지 못했습니다",

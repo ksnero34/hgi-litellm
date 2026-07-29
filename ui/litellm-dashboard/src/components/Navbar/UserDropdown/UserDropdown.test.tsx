@@ -138,7 +138,7 @@ describe("UserDropdown", () => {
       expect(screen.getAllByText("test@example.com").length).toBeGreaterThan(0);
     });
 
-    await user.click(screen.getByText("로그아웃"));
+    await user.click(screen.getByText("Log out"));
 
     expect(mockOnLogout).toHaveBeenCalledTimes(1);
   });

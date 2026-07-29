@@ -1,6 +1,5 @@
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
-import { useDisableUsageIndicator } from "@/app/(dashboard)/hooks/useDisableUsageIndicator";
 import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/cva.config";
@@ -62,7 +61,6 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
   const { t } = useTranslation();
   const { userId, userEmail, userRole } = useAuthorized();
   const disableShowPrompts = useDisableShowPrompts();
-  const disableUsageIndicator = useDisableUsageIndicator();
   const [disableShowNewBadge, setDisableShowNewBadge] = useState(false);
 
   useEffect(() => {
@@ -147,23 +145,6 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
             }
           }}
           aria-label={t("auth.account.hidePromptsAria")}
-        />
-      </Space>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">{t("auth.account.hideUsage")}</Text>
-        <Switch
-          size="small"
-          checked={disableUsageIndicator}
-          onChange={(checked) => {
-            if (checked) {
-              setLocalStorageItem("disableUsageIndicator", "true");
-              emitLocalStorageChange("disableUsageIndicator");
-            } else {
-              removeLocalStorageItem("disableUsageIndicator");
-              emitLocalStorageChange("disableUsageIndicator");
-            }
-          }}
-          aria-label={t("auth.account.hideUsageAria")}
         />
       </Space>
     </Space>

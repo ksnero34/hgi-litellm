@@ -65,6 +65,7 @@ export const accessMessages: MessageCatalog = {
   "access.projects.keys.created": "Created",
   "access.projects.keys.lastActive": "Last Active",
   "access.projects.keys.empty": "No keys found",
+  "access.projects.keys.emptyDescription": "Create a key to start using this project.",
   "access.budgets.create": "Create Budget",
   "access.budgets.deleted": "Budget deleted successfully",
   "access.budgets.deleteError": "Failed to delete budget",

@@ -2,7 +2,6 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
 import { useDisableShowNewBadge } from "@/app/(dashboard)/hooks/useDisableShowNewBadge";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
-import { useDisableUsageIndicator } from "@/app/(dashboard)/hooks/useDisableUsageIndicator";
 import { emitLocalStorageChange, removeLocalStorageItem, setLocalStorageItem } from "@/utils/localStorageUtils";
 import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
 import CopyButton from "@/components/shared/CopyButton";
@@ -85,7 +84,6 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
   const { data: healthData } = useHealthReadinessDetails(accessToken);
   const version = healthData?.litellm_version;
   const disableShowPrompts = useDisableShowPrompts();
-  const disableUsageIndicator = useDisableUsageIndicator();
   const disableShowNewBadge = useDisableShowNewBadge();
 
   const setFlag = (key: string, checked: boolean) => {
@@ -111,13 +109,6 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
       ariaLabel: t("account.toggleHidePrompts"),
       checked: disableShowPrompts,
       onCheckedChange: (checked: boolean) => setFlag("disableShowPrompts", checked),
-    },
-    {
-      key: "disableUsageIndicator",
-      label: t("account.hideUsage"),
-      ariaLabel: t("account.toggleHideUsage"),
-      checked: disableUsageIndicator,
-      onCheckedChange: (checked: boolean) => setFlag("disableUsageIndicator", checked),
     },
   ];
 
