@@ -501,13 +501,20 @@ class InMemoryGuardrailHandler:
         )
 
         # store references to the guardrail in memory
-        self.IN_MEMORY_GUARDRAILS[guardrail_id] = parsed_guardrail
-        self.guardrail_id_to_custom_guardrail[guardrail_id] = custom_guardrail_callback
-        self.guardrail_id_to_custom_guardrails[guardrail_id] = tuple(
+        initialized_callbacks = tuple(
             callback
             for callback in litellm.callbacks
             if isinstance(callback, CustomGuardrail) and id(callback) not in callback_ids_before_initialization
         )
+        for callback in initialized_callbacks:
+            litellm.logging_callback_manager.add_litellm_success_callback(callback)
+            litellm.logging_callback_manager.add_litellm_failure_callback(callback)
+            litellm.logging_callback_manager.add_litellm_async_success_callback(callback)
+            litellm.logging_callback_manager.add_litellm_async_failure_callback(callback)
+
+        self.IN_MEMORY_GUARDRAILS[guardrail_id] = parsed_guardrail
+        self.guardrail_id_to_custom_guardrail[guardrail_id] = custom_guardrail_callback
+        self.guardrail_id_to_custom_guardrails[guardrail_id] = initialized_callbacks
         self._sources[guardrail_id] = source
 
         return parsed_guardrail

@@ -362,6 +362,7 @@ def test_reinitialize_presidio_from_post_call_to_logging_only_removes_masking_ca
         assert active_callbacks[0].event_hook is GuardrailEventHooks.logging_only
         assert active_callbacks[0].logging_only is True
         assert active_callbacks[0].apply_to_output is False
+        assert active_callbacks[0] in litellm._async_success_callback
     finally:
         handler.delete_in_memory_guardrail(guardrail_id)
         for callback_list, snapshot in zip(lists, snapshots):
