@@ -469,9 +469,7 @@ async def update_guardrail(
         guardrail_name = result.get("guardrail_name", "Unknown")
 
         try:
-            IN_MEMORY_GUARDRAIL_HANDLER.update_in_memory_guardrail(
-                guardrail_id=guardrail_id, guardrail=cast(Guardrail, result)
-            )
+            IN_MEMORY_GUARDRAIL_HANDLER.reinitialize_guardrail(guardrail=cast(Guardrail, result), source="db")
             verbose_proxy_logger.info(
                 f"Immediate sync: Successfully updated guardrail '{guardrail_name}' (ID: {guardrail_id})"
             )

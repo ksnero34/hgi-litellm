@@ -26,6 +26,7 @@ export interface GuardrailInformation {
   guardrail_mode: string | string[] | Record<string, unknown> | null;
   guardrail_name: string;
   guardrail_status: string;
+  usage_action?: "passed" | "flagged" | "blocked";
   guardrail_response: GuardrailEntity[] | BedrockGuardrailResponse;
   masked_entity_count: Record<string, number>;
   guardrail_provider?: string;

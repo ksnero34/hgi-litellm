@@ -33,6 +33,41 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("1235ms")).toBeInTheDocument();
   });
 
+  it("shows masked Presidio detections as flagged when the guardrail call succeeded", () => {
+    const data = makeGuardrailInformation({
+      guardrail_status: "success",
+      usage_action: "flagged",
+      masked_entity_count: { EMAIL_ADDRESS: 1 },
+    });
+
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    expect(screen.getByText("FLAGGED")).toBeInTheDocument();
+    expect(screen.getByText("1 Flagged")).toBeInTheDocument();
+    expect(screen.getByText("0 Passed")).toBeInTheDocument();
+  });
+
+  it("uses the highest action when the same guardrail run has multiple modes", () => {
+    const data = [
+      makeGuardrailInformation({
+        guardrail_run_id: "run-1",
+        guardrail_event: "pre_call",
+        usage_action: "passed",
+      }),
+      makeGuardrailInformation({
+        guardrail_run_id: "run-1",
+        guardrail_event: "logging_only",
+        usage_action: "flagged",
+      }),
+    ];
+
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    expect(screen.getByText("1 guardrail evaluated")).toBeInTheDocument();
+    expect(screen.getByText("1 Flagged")).toBeInTheDocument();
+    expect(screen.getByText("0 Passed")).toBeInTheDocument();
+  });
+
   it("calculates and displays masked entity totals", async () => {
     const user = userEvent.setup();
     const data = makeGuardrailInformation({

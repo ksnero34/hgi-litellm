@@ -320,6 +320,54 @@ def test_delete_in_memory_guardrail_removes_callback_from_all_lists():
             cb_list[:] = snapshot
 
 
+def test_reinitialize_presidio_from_post_call_to_logging_only_removes_masking_callback():
+    import litellm
+
+    handler = InMemoryGuardrailHandler()
+    guardrail_id = "77777777-7777-7777-7777-777777777777"
+    guardrail_name = "presidio-mode-switch"
+    post_call_guardrail = Guardrail(
+        guardrail_id=guardrail_id,
+        guardrail_name=guardrail_name,
+        litellm_params=LitellmParams(
+            guardrail="presidio",
+            mode="post_call",
+            presidio_analyzer_api_base="http://presidio-analyzer",
+            presidio_anonymizer_api_base="http://presidio-anonymizer",
+        ),
+    )
+    logging_only_guardrail = Guardrail(
+        guardrail_id=guardrail_id,
+        guardrail_name=guardrail_name,
+        litellm_params=LitellmParams(
+            guardrail="presidio",
+            mode="logging_only",
+            presidio_analyzer_api_base="http://presidio-analyzer",
+            presidio_anonymizer_api_base="http://presidio-anonymizer",
+        ),
+    )
+    lists = _all_callback_lists()
+    snapshots = [list(callback_list) for callback_list in lists]
+
+    try:
+        handler.initialize_guardrail(post_call_guardrail, source="db")
+        handler.reinitialize_guardrail(logging_only_guardrail, source="db")
+
+        active_callbacks = [
+            callback
+            for callback in litellm.callbacks
+            if isinstance(callback, CustomGuardrail) and callback.guardrail_name == guardrail_name
+        ]
+        assert len(active_callbacks) == 1
+        assert active_callbacks[0].event_hook is GuardrailEventHooks.logging_only
+        assert active_callbacks[0].logging_only is True
+        assert active_callbacks[0].apply_to_output is False
+    finally:
+        handler.delete_in_memory_guardrail(guardrail_id)
+        for callback_list, snapshot in zip(lists, snapshots):
+            callback_list[:] = snapshot
+
+
 def test_repeated_db_sync_does_not_accumulate_runner_instances():
     """
     End-to-end regression for the OOM: across repeated DB polls (with the config

@@ -3,7 +3,7 @@
 import importlib
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Set, Type, cast
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, cast
 
 from pydantic import ValidationError
 
@@ -400,6 +400,8 @@ class InMemoryGuardrailHandler:
         Guardrail id to CustomGuardrail object mapping
         """
 
+        self.guardrail_id_to_custom_guardrails: Dict[str, Tuple[CustomGuardrail, ...]] = {}
+
         self._sources: Dict[str, Literal["db", "config"]] = {}
         """
         Guardrail id to provenance marker. "db" entries are reconciled against
@@ -430,6 +432,7 @@ class InMemoryGuardrailHandler:
             return self.IN_MEMORY_GUARDRAILS[guardrail_id]
 
         custom_guardrail_callback: Optional[CustomGuardrail] = None
+        callback_ids_before_initialization = {id(callback) for callback in litellm.callbacks}
         litellm_params_data = guardrail["litellm_params"]
         verbose_proxy_logger.debug("litellm_params= %s", litellm_params_data)
 
@@ -500,6 +503,11 @@ class InMemoryGuardrailHandler:
         # store references to the guardrail in memory
         self.IN_MEMORY_GUARDRAILS[guardrail_id] = parsed_guardrail
         self.guardrail_id_to_custom_guardrail[guardrail_id] = custom_guardrail_callback
+        self.guardrail_id_to_custom_guardrails[guardrail_id] = tuple(
+            callback
+            for callback in litellm.callbacks
+            if isinstance(callback, CustomGuardrail) and id(callback) not in callback_ids_before_initialization
+        )
         self._sources[guardrail_id] = source
 
         return parsed_guardrail
@@ -590,10 +598,12 @@ class InMemoryGuardrailHandler:
         self._sources.pop(guardrail_id, None)
 
         custom_guardrail_callback = self.guardrail_id_to_custom_guardrail.pop(guardrail_id, None)
-        if custom_guardrail_callback is None:
-            return
-
-        litellm.logging_callback_manager.remove_callback_from_all_lists(custom_guardrail_callback)
+        custom_guardrail_callbacks = self.guardrail_id_to_custom_guardrails.pop(guardrail_id, ())
+        callbacks_to_remove = custom_guardrail_callbacks or (
+            (custom_guardrail_callback,) if custom_guardrail_callback is not None else ()
+        )
+        for callback in callbacks_to_remove:
+            litellm.logging_callback_manager.remove_callback_from_all_lists(callback)
 
     def list_in_memory_guardrails(self) -> List[Guardrail]:
         """
