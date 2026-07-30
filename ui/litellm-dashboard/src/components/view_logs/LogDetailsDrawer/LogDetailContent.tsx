@@ -537,12 +537,40 @@ function RequestResponseSection({
   );
 }
 
-export function GuardrailJumpLink({ guardrailEntries }: { guardrailEntries: any[] }) {
-  const { t } = useTranslation();
-  const allPassed = guardrailEntries.every((e) => {
-    const status = e?.guardrail_status || e?.status;
-    return status === "pass" || status === "passed" || status === "success";
-  });
+type GuardrailSummaryOutcome = "passed" | "observed" | "flagged" | "blocked";
+
+const guardrailSummaryPalette: Record<
+  GuardrailSummaryOutcome,
+  { background: string; color: string; border: string; icon: string; label: string }
+> = {
+  passed: { background: "#f0fdf4", color: "#15803d", border: "#bbf7d0", icon: "\u2713", label: "passed" },
+  observed: { background: "#faf5ff", color: "#7e22ce", border: "#e9d5ff", icon: "!", label: "observed" },
+  flagged: { background: "#fffbeb", color: "#b45309", border: "#fde68a", icon: "!", label: "flagged" },
+  blocked: { background: "#fef2f2", color: "#b91c1c", border: "#fecaca", icon: "\u2717", label: "blocked" },
+};
+
+const summaryModeIncludesLoggingOnly = (mode: unknown): boolean => {
+  if (typeof mode === "string") return mode === "logging_only";
+  if (Array.isArray(mode)) return mode.includes("logging_only");
+  if (mode !== null && typeof mode === "object" && "default" in mode) {
+    return summaryModeIncludesLoggingOnly((mode as { default?: unknown }).default);
+  }
+  return false;
+};
+
+const getGuardrailSummaryOutcome = (entry: Record<string, unknown>): GuardrailSummaryOutcome => {
+  const status = String(entry.usage_action ?? entry.guardrail_status ?? entry.status ?? "").toLowerCase();
+  if (status === "blocked" || status.includes("intervened") || status.includes("block")) return "blocked";
+  const flagged = status === "flagged" || status.includes("fail") || status.includes("error");
+  if (!flagged) return "passed";
+  const mode = entry.guardrail_event ?? entry.guardrail_mode;
+  return summaryModeIncludesLoggingOnly(mode) ? "observed" : "flagged";
+};
+
+export function GuardrailJumpLink({ guardrailEntries }: { guardrailEntries: Record<string, unknown>[] }) {
+  const outcomes = guardrailEntries.map(getGuardrailSummaryOutcome);
+  const outcome = (["blocked", "flagged", "observed"] as const).find((value) => outcomes.includes(value)) ?? "passed";
+  const palette = guardrailSummaryPalette[outcome];
 
   const handleClick = () => {
     const el = document.getElementById("guardrail-section");
@@ -562,13 +590,13 @@ export function GuardrailJumpLink({ guardrailEntries }: { guardrailEntries: any[
           cursor: "pointer",
           fontSize: 13,
           fontWeight: 500,
-          backgroundColor: allPassed ? "#f0fdf4" : "#fef2f2",
-          color: allPassed ? "#15803d" : "#b91c1c",
-          border: `1px solid ${allPassed ? "#bbf7d0" : "#fecaca"}`,
+          backgroundColor: palette.background,
+          color: palette.color,
+          border: `1px solid ${palette.border}`,
         }}
       >
-        {allPassed ? "\u2713" : "\u2717"} {guardrailEntries.length} guardrail{guardrailEntries.length !== 1 ? "s" : ""}{" "}
-        evaluated
+        {palette.icon} {guardrailEntries.length} guardrail{guardrailEntries.length !== 1 ? "s" : ""} {palette.label}
+        {outcome === "observed" ? " (logging only)" : ""}
         <span style={{ fontSize: 11, opacity: 0.7 }}>{"\u2193"}</span>
       </div>
     </div>

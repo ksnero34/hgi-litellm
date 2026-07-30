@@ -172,6 +172,7 @@ const getTotalMasked = (entry: GuardrailInformation): number => {
 };
 
 type GuardrailAction = "passed" | "flagged" | "blocked";
+type ComplianceOutcome = GuardrailAction | "observed";
 
 const getEntryAction = (entry: GuardrailInformation): GuardrailAction => {
   if (entry.usage_action) return entry.usage_action;
@@ -181,10 +182,24 @@ const getEntryAction = (entry: GuardrailInformation): GuardrailAction => {
   return "passed";
 };
 
+const isLoggingOnlyEntry = (entry: GuardrailInformation): boolean => {
+  return modeMatches(entry.guardrail_event ?? entry.guardrail_mode, "logging_only");
+};
+
+const getComplianceOutcome = (entry: GuardrailInformation): ComplianceOutcome => {
+  const action = getEntryAction(entry);
+  return action === "flagged" && isLoggingOnlyEntry(entry) ? "observed" : action;
+};
+
 const actionBadgeClass: Record<GuardrailAction, string> = {
   passed: "bg-green-100 text-green-700 border border-green-200",
   flagged: "bg-amber-100 text-amber-700 border border-amber-200",
   blocked: "bg-red-100 text-red-700 border border-red-200",
+};
+
+const complianceBadgeClass: Record<ComplianceOutcome, string> = {
+  ...actionBadgeClass,
+  observed: "bg-purple-100 text-purple-700 border border-purple-200",
 };
 
 const getRiskColor = (score: number): string => {
@@ -395,6 +410,7 @@ interface TimelineEntry {
   offsetMs: number;
   status?: string;
   action?: GuardrailAction;
+  outcome?: ComplianceOutcome;
 }
 
 const TimelineIcon = ({ item }: { item: TimelineEntry }) => {
@@ -418,11 +434,8 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
     // Pre-call guardrails — use modeMatches so array modes (e.g. ["pre_call", "post_call"])
     // place the entry in every matching bucket.
     const preCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "pre_call"));
-    const postCalls = sorted.filter(
-      (e) =>
-        modeMatches(e.guardrail_event ?? e.guardrail_mode, "post_call") ||
-        modeMatches(e.guardrail_event ?? e.guardrail_mode, "logging_only"),
-    );
+    const postCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "post_call"));
+    const loggingOnlyCalls = sorted.filter((e) => isLoggingOnlyEntry(e));
     const duringCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "during_call"));
 
     for (const e of preCalls) {
@@ -433,13 +446,15 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         offsetMs,
         status: getEntryAction(e).toUpperCase(),
         action: getEntryAction(e),
+        outcome: getComplianceOutcome(e),
       });
     }
 
     // LLM call — infer from gap between pre-call end and post-call start
     const lastPreEnd = preCalls.length > 0 ? Math.max(...preCalls.map((e) => e.end_time)) : baseTime;
-    const firstPostStart = postCalls.length > 0 ? Math.min(...postCalls.map((e) => e.start_time)) : undefined;
-    const llmEndTime = firstPostStart ?? lastPreEnd + 1;
+    const outputStageStarts = [...postCalls, ...loggingOnlyCalls].map((e) => e.start_time);
+    const firstOutputStageStart = outputStageStarts.length > 0 ? Math.min(...outputStageStarts) : undefined;
+    const llmEndTime = firstOutputStageStart ?? lastPreEnd + 1;
     const llmOffsetMs = Math.round((llmEndTime - baseTime) * 1000);
 
     items.push({
@@ -457,6 +472,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         offsetMs,
         status: getEntryAction(e).toUpperCase(),
         action: getEntryAction(e),
+        outcome: getComplianceOutcome(e),
       });
     }
 
@@ -469,13 +485,26 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         offsetMs,
         status: getEntryAction(e).toUpperCase(),
         action: getEntryAction(e),
+        outcome: getComplianceOutcome(e),
       });
     }
 
-    // Response returned
-    const maxEnd = Math.max(...sorted.map((e) => e.end_time));
-    const responseOffsetMs = Math.round((maxEnd - baseTime) * 1000) + 1;
+    const lastPostEnd = postCalls.length > 0 ? Math.max(...postCalls.map((e) => e.end_time)) : llmEndTime;
+    const responseOffsetMs = Math.round((lastPostEnd - baseTime) * 1000) + 1;
     items.push({ type: "response", label: "Response returned", offsetMs: responseOffsetMs });
+
+    for (const e of loggingOnlyCalls) {
+      const outcome = getComplianceOutcome(e);
+      const offsetMs = Math.max(responseOffsetMs + 1, Math.round((e.end_time - baseTime) * 1000));
+      items.push({
+        type: "guardrail",
+        label: `Logging-only audit: ${getDisplayName(e)}${getInputSourceLabel(e.input_source) ? ` (${getInputSourceLabel(e.input_source)})` : ""}`,
+        offsetMs,
+        status: outcome.toUpperCase(),
+        action: getEntryAction(e),
+        outcome,
+      });
+    }
 
     return items;
   }, [sorted]);
@@ -503,7 +532,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
                 {item.status && (
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      item.action ? actionBadgeClass[item.action] : "bg-gray-100 text-gray-700"
+                      item.outcome ? complianceBadgeClass[item.outcome] : "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {item.status}
@@ -524,6 +553,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
 const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
   const [expanded, setExpanded] = useState(false);
   const action = getEntryAction(entry);
+  const complianceOutcome = getComplianceOutcome(entry);
   const success = action === "passed";
   const totalMasked = getTotalMasked(entry);
   const displayName = getDisplayName(entry);
@@ -578,9 +608,9 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
           </span>
 
           <span
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase shrink-0 ${actionBadgeClass[action]}`}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase shrink-0 ${complianceBadgeClass[complianceOutcome]}`}
           >
-            {action.toUpperCase()}
+            {complianceOutcome.toUpperCase()}
           </span>
 
           {matchCountStr && (
@@ -719,16 +749,17 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
   }, [data]);
 
   const runKeys = guardrailEntries.map((entry, index) => entry.guardrail_run_id ?? `legacy-${index}`);
-  const precedence: Record<GuardrailAction, number> = { passed: 0, flagged: 1, blocked: 2 };
-  const runActions = new Map<string, GuardrailAction>();
+  const precedence: Record<ComplianceOutcome, number> = { passed: 0, observed: 1, flagged: 2, blocked: 3 };
+  const runActions = new Map<string, ComplianceOutcome>();
   guardrailEntries.forEach((entry, index) => {
     const runKey = runKeys[index];
-    const action = getEntryAction(entry);
+    const action = getComplianceOutcome(entry);
     const previous = runActions.get(runKey);
     if (!previous || precedence[action] > precedence[previous]) runActions.set(runKey, action);
   });
   const evaluatedCount = runActions.size;
   const passedCount = Array.from(runActions.values()).filter((action) => action === "passed").length;
+  const observedCount = Array.from(runActions.values()).filter((action) => action === "observed").length;
   const flaggedCount = Array.from(runActions.values()).filter((action) => action === "flagged").length;
   const blockedCount = Array.from(runActions.values()).filter((action) => action === "blocked").length;
   const allPassed = passedCount === evaluatedCount;
@@ -793,6 +824,11 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
               {flaggedCount > 0 && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                   {flaggedCount} Flagged
+                </span>
+              )}
+              {observedCount > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  {observedCount} Observed
                 </span>
               )}
               {blockedCount > 0 && (

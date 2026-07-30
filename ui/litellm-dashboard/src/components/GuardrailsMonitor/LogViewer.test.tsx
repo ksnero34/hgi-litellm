@@ -38,6 +38,7 @@ describe("LogViewer", () => {
             guardrail_information: [
               {
                 guardrail_name: "presidio-pii",
+                guardrail_event: "logging_only",
                 usage_action: "flagged",
                 input_source: { scope: "current_user_prompt" },
               },
@@ -47,6 +48,11 @@ describe("LogViewer", () => {
       />,
     );
 
+    expect(screen.getAllByText("Observed")).toHaveLength(2);
+    expect(screen.getByText("Logging only")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Flagged" }));
+    expect(screen.getByText("No logs to display. Adjust filters or date range.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Observed" }));
     fireEvent.click(screen.getByText("A very long guardrail input"));
 
     const latestProps = drawerSpy.mock.calls.at(-1)?.[0] as {
@@ -73,6 +79,7 @@ describe("LogViewer", () => {
       guardrail_information: [
         {
           guardrail_name: "presidio-pii",
+          guardrail_event: "logging_only",
           usage_action: "flagged",
           input_source: { scope: "current_user_prompt" },
         },

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/i18n/i18n";
 import { languageStorageKey } from "@/i18n/resources";
 import { renderWithProviders } from "../../../../tests/test-utils";
-import { LogDetailContent } from "./LogDetailContent";
+import { GuardrailJumpLink, LogDetailContent } from "./LogDetailContent";
 import type { LogEntry } from "../columns";
 
 vi.mock("../GuardrailViewer/GuardrailViewer", () => ({
@@ -46,6 +46,23 @@ describe("LogDetailContent", () => {
     renderWithProviders(<LogDetailContent logEntry={createLogEntry()} />);
 
     expect(screen.getByText(i18n.t("observability.logs.request_details"))).toBeInTheDocument();
+  });
+
+  it("shows logging-only detections as observed in the guardrail summary", () => {
+    renderWithProviders(
+      <GuardrailJumpLink
+        guardrailEntries={[
+          {
+            guardrail_name: "presidio-pii",
+            guardrail_event: "logging_only",
+            guardrail_status: "success",
+            usage_action: "flagged",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/1 guardrail observed \(logging only\)/)).toBeInTheDocument();
   });
 
   it("should display Request Details with model, provider, and call type", () => {

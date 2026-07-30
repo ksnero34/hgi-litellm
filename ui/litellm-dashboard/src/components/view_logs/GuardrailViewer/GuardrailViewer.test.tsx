@@ -47,7 +47,7 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("0 Passed")).toBeInTheDocument();
   });
 
-  it("uses the highest action when the same guardrail run has multiple modes", () => {
+  it("shows logging-only detections as observed after the response is returned", () => {
     const data = [
       makeGuardrailInformation({
         guardrail_run_id: "run-1",
@@ -64,8 +64,14 @@ describe("GuardrailViewer", () => {
     renderWithProviders(<GuardrailViewer data={data} />);
 
     expect(screen.getByText("1 guardrail evaluated")).toBeInTheDocument();
-    expect(screen.getByText("1 Flagged")).toBeInTheDocument();
+    expect(screen.getByText("1 Observed")).toBeInTheDocument();
     expect(screen.getByText("0 Passed")).toBeInTheDocument();
+    expect(screen.getAllByText("OBSERVED")).toHaveLength(2);
+    expect(screen.queryByText(/Post-call guardrail:/)).not.toBeInTheDocument();
+
+    const responseReturned = screen.getByText("Response returned");
+    const loggingAudit = screen.getByText(/Logging-only audit:/);
+    expect(responseReturned.compareDocumentPosition(loggingAudit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("calculates and displays masked entity totals", async () => {

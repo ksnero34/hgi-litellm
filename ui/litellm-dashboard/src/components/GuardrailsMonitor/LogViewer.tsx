@@ -7,7 +7,7 @@ import type { LogEntry as ViewLogsLogEntry } from "@/components/view_logs/column
 import type { LogEntry } from "./mockData";
 
 const actionConfig: Record<
-  "blocked" | "passed" | "flagged",
+  "blocked" | "passed" | "flagged" | "observed",
   { icon: React.ElementType; color: string; bg: string; border: string; label: string }
 > = {
   blocked: {
@@ -31,11 +31,41 @@ const actionConfig: Record<
     border: "border-amber-200",
     label: "Flagged",
   },
+  observed: {
+    icon: WarningOutlined,
+    color: "text-purple-600",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    label: "Observed",
+  },
+};
+
+const modeIncludesLoggingOnly = (mode: unknown): boolean => {
+  if (typeof mode === "string") return mode === "logging_only";
+  if (Array.isArray(mode)) return mode.includes("logging_only");
+  if (mode !== null && typeof mode === "object" && "default" in mode) {
+    return modeIncludesLoggingOnly((mode as { default?: unknown }).default);
+  }
+  return false;
+};
+
+const isLoggingOnlyObservation = (log: LogEntry, guardrailName?: string): boolean => {
+  if (log.action !== "flagged") return false;
+  return (log.guardrail_information ?? []).some((entry) => {
+    const matchesSelectedGuardrail = !guardrailName || entry.guardrail_name === guardrailName;
+    return matchesSelectedGuardrail && modeIncludesLoggingOnly(entry.guardrail_event ?? entry.guardrail_mode);
+  });
+};
+
+type DisplayAction = keyof typeof actionConfig;
+
+const getDisplayAction = (log: LogEntry, guardrailName?: string): DisplayAction => {
+  return isLoggingOnlyObservation(log, guardrailName) ? "observed" : log.action;
 };
 
 interface LogViewerProps {
   guardrailName?: string;
-  filterAction?: "all" | "blocked" | "passed" | "flagged";
+  filterAction?: "all" | DisplayAction;
   logs?: LogEntry[];
   logsLoading?: boolean;
   totalLogs?: number;
@@ -93,11 +123,13 @@ export function LogViewer({
   const [selectedLog, setSelectedLog] = useState<ViewLogsLogEntry | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const filteredLogs = logs.filter((log) => activeFilter === "all" || log.action === activeFilter);
+  const filteredLogs = logs.filter(
+    (log) => activeFilter === "all" || getDisplayAction(log, guardrailName) === activeFilter,
+  );
   const displayLogs = filteredLogs.slice(0, sampleSize);
   const total = totalLogs ?? logs.length;
   const sampleSizes = [10, 50, 100];
-  const filters: Array<"all" | "blocked" | "flagged" | "passed"> = ["all", "blocked", "flagged", "passed"];
+  const filters: Array<"all" | DisplayAction> = ["all", "blocked", "flagged", "observed", "passed"];
 
   const { startTime } = getGuardrailLogDateRange(startDate, endDate);
 
@@ -171,7 +203,9 @@ export function LogViewer({
       {!logsLoading && displayLogs.length > 0 && (
         <div className="divide-y divide-gray-100">
           {displayLogs.map((log) => {
-            const config = actionConfig[log.action];
+            const displayAction = getDisplayAction(log, guardrailName);
+            const loggingOnlyObservation = displayAction === "observed";
+            const config = actionConfig[displayAction];
             const ActionIcon = config.icon;
             return (
               <button
@@ -189,6 +223,11 @@ export function LogViewer({
                       {config.label}
                     </span>
                     <span className="text-xs text-gray-400">{log.timestamp}</span>
+                    {loggingOnlyObservation && (
+                      <span className="text-[11px] font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-sm px-1.5 py-0.5">
+                        Logging only
+                      </span>
+                    )}
                     <span className="text-xs text-gray-400">·</span>
                     {log.model && <span className="text-xs text-gray-500">{log.model}</span>}
                   </div>
