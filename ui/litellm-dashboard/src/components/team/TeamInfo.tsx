@@ -544,7 +544,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
               : values.soft_budget_alerting_emails || [],
           ...(secretManagerSettings !== undefined ? { secret_manager_settings: secretManagerSettings } : {}),
         },
-        ...(values.policies?.length > 0 ? { policies: values.policies } : {}),
+        policies: values.policies || [],
         ...(values.organization_id !== info.organization_id ? { organization_id: values.organization_id ?? null } : {}),
       };
 

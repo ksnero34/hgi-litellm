@@ -2882,7 +2882,10 @@ async def test_team_guardrails_append_to_key_guardrails():
         team_metadata={"guardrails": ["team-guardrail-1", "key-guardrail-1"]},
     )
 
-    with patch("litellm.proxy.utils._premium_user_check"):
+    with patch(
+        "litellm.proxy.utils._premium_user_check",
+        side_effect=AssertionError("Team guardrails must be available without a premium license"),
+    ):
         updated_data = await add_litellm_data_to_request(
             data=data,
             request=request_mock,

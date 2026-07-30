@@ -77,6 +77,7 @@ from litellm.proxy.auth.auth_checks import (
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.callback_utils import encrypt_callback_vars
 from litellm.proxy.common_utils.json_merge_patch import apply_json_merge_patch
+from litellm.proxy.customizations.feature_policy import OSS_TEAM_METADATA_FIELDS
 from litellm.proxy.management_endpoints.common_utils import (
     _check_passthrough_routes_caller_permission,
     _is_user_org_admin_for_team,
@@ -138,6 +139,16 @@ from litellm.types.proxy.management_endpoints.team_endpoints import (
 )
 
 router = APIRouter()
+
+
+def _update_team_metadata_fields(updated_kv: dict) -> None:
+    policies = updated_kv.get("policies")
+    _update_metadata_fields(
+        updated_kv=updated_kv,
+        premium_exempt_fields=OSS_TEAM_METADATA_FIELDS,
+    )
+    if policies is not None:
+        updated_kv["policies"] = policies
 
 
 def _sanitize_for_log(value: Any) -> str:
@@ -1204,6 +1215,7 @@ async def new_team(
                     object_data=complete_team_data,
                     field_name=field,
                     value=getattr(data, field),
+                    premium_exempt_fields=OSS_TEAM_METADATA_FIELDS,
                 )
 
         for field in LiteLLM_ManagementEndpoint_MetadataFields:
@@ -1885,7 +1897,7 @@ async def update_team(
             )
 
         # update team metadata fields
-        _update_metadata_fields(updated_kv=updated_kv)
+        _update_team_metadata_fields(updated_kv=updated_kv)
 
         if updated_kv.get("metadata") is not None:
             updated_kv["metadata"] = encrypt_callback_vars(updated_kv["metadata"])

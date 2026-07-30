@@ -1,4 +1,5 @@
 OSS_VIRTUAL_KEY_METADATA_FIELDS = frozenset({"disable_global_guardrails", "guardrails", "policies"})
+OSS_TEAM_METADATA_FIELDS = frozenset({"guardrails", "policies"})
 
 
 def is_oss_virtual_key_metadata_field(field_name: str) -> bool:

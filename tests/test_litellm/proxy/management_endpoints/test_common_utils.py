@@ -508,6 +508,23 @@ class TestSetObjectMetadataField:
             _set_object_metadata_field(team, "model_rpm_limit", {"x": 1})
         assert team.metadata == {"model_rpm_limit": {"x": 1}}
 
+    def test_set_object_metadata_field_allows_endpoint_specific_premium_exemption(
+        self,
+    ):
+        team = LiteLLM_TeamTable(team_id="t1", metadata={})
+        with patch(
+            "litellm.proxy.management_endpoints.common_utils._premium_user_check",
+            side_effect=AssertionError("Exempt team fields must not require a license"),
+        ):
+            _set_object_metadata_field(
+                team,
+                "guardrails",
+                ["g1"],
+                premium_exempt_fields=frozenset({"guardrails", "policies"}),
+            )
+
+        assert team.metadata["guardrails"] == ["g1"]
+
     def test_mcp_rpm_limit_is_hoisted_into_metadata(self):
         """
         Per-MCP-server rpm limits are stored in the metadata JSON column, not a
