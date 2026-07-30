@@ -20,6 +20,8 @@ import litellm
 from litellm.proxy._types import Litellm_EntityType
 from litellm.proxy.db.db_spend_update_writer import (
     DBSpendUpdateWriter,
+    LOGGING_ONLY_GUARDRAILS_PENDING,
+    LOGGING_ONLY_GUARDRAILS_PENDING_KWARG,
     _performance_metrics,
 )
 
@@ -86,6 +88,131 @@ def test_performance_metrics_excludes_cache_hits_and_non_streaming_ttft():
     assert cached_metrics["ttft_count"] == 0
     assert non_streaming_metrics["response_time_count"] == 1
     assert non_streaming_metrics["ttft_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_database_marks_pending_logging_only_guardrails():
+    writer = DBSpendUpdateWriter()
+    writer._insert_spend_log_to_db = AsyncMock()
+    writer._enqueue_tool_usage_transaction = AsyncMock()
+    writer._batch_database_updates = AsyncMock()
+    payload = {
+        "request_id": "request-pending",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": "{}",
+        "spend": 0.1,
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.disable_spend_logs", False),
+        patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
+        patch("litellm.proxy.proxy_server.litellm_proxy_budget_name", "budget"),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=payload),
+    ):
+        await writer.update_database(
+            token="token",
+            user_id="user",
+            end_user_id=None,
+            team_id="team",
+            org_id=None,
+            kwargs={LOGGING_ONLY_GUARDRAILS_PENDING_KWARG: True},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+            response_cost=0.1,
+        )
+
+    stored_payload = writer._insert_spend_log_to_db.await_args.kwargs["payload"]
+    assert json.loads(stored_payload["metadata"])[LOGGING_ONLY_GUARDRAILS_PENDING] is True
+    assert stored_payload["messages"] == "{}"
+    assert stored_payload["response"] == "{}"
+    assert stored_payload["proxy_server_request"] == "{}"
+
+
+@pytest.mark.asyncio
+async def test_update_guardrail_results_replaces_queued_request():
+    writer = DBSpendUpdateWriter()
+    prisma_client = MagicMock()
+    prisma_client._spend_log_transactions_lock = asyncio.Lock()
+    prisma_client.spend_log_transactions = [
+        {"request_id": "request-1", "metadata": json.dumps({LOGGING_ONLY_GUARDRAILS_PENDING: True})},
+        {"request_id": "request-2", "metadata": "{}"},
+    ]
+    final_payload = {
+        "request_id": "request-1",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": json.dumps({"guardrail_information": [{"guardrail_name": "presidio"}]}),
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", prisma_client),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=final_payload),
+    ):
+        updated = await writer.update_guardrail_results(
+            kwargs={},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+        )
+
+    assert updated is True
+    assert prisma_client.spend_log_transactions[0]["request_id"] == "request-1"
+    assert LOGGING_ONLY_GUARDRAILS_PENDING not in json.loads(prisma_client.spend_log_transactions[0]["metadata"])
+    assert prisma_client.spend_log_transactions[1]["request_id"] == "request-2"
+
+
+@pytest.mark.asyncio
+async def test_update_guardrail_results_updates_flushed_request_and_monitoring():
+    writer = DBSpendUpdateWriter()
+    prisma_client = MagicMock()
+    prisma_client._spend_log_transactions_lock = asyncio.Lock()
+    prisma_client.spend_log_transactions = []
+    prisma_client.jsonify_object = lambda payload: payload
+    prisma_client.db.litellm_spendlogs.upsert = AsyncMock()
+    final_payload = {
+        "request_id": "request-flushed",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": json.dumps({"guardrail_information": [{"guardrail_name": "presidio"}]}),
+        "messages": '[{"role":"user","content":"<PERSON>"}]',
+        "response": '{"content":"<PERSON>"}',
+        "proxy_server_request": "{}",
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", prisma_client),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=final_payload),
+        patch(
+            "litellm.proxy.guardrails.usage_tracking.process_spend_logs_guardrail_usage",
+            new_callable=AsyncMock,
+        ) as process_guardrail_usage,
+    ):
+        updated = await writer.update_guardrail_results(
+            kwargs={},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+        )
+
+    assert updated is True
+    prisma_client.db.litellm_spendlogs.upsert.assert_awaited_once_with(
+        where={"request_id": "request-flushed"},
+        data={
+            "create": final_payload,
+            "update": {
+                "metadata": final_payload["metadata"],
+                "messages": final_payload["messages"],
+                "response": final_payload["response"],
+                "proxy_server_request": final_payload["proxy_server_request"],
+            },
+        },
+    )
+    process_guardrail_usage.assert_awaited_once_with(
+        prisma_client=prisma_client,
+        logs_to_process=[final_payload],
+    )
 
 
 @pytest.mark.asyncio

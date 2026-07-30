@@ -13,9 +13,11 @@ import time
 
 import litellm
 from litellm.constants import SENTRY_DENYLIST, SENTRY_PII_DENYLIST
+from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging as LitellmLogging
 from litellm.litellm_core_utils.litellm_logging import set_callbacks
+from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import ModelResponse, TextCompletionResponse
 
 
@@ -37,6 +39,50 @@ def test_get_combined_callback_list_preserves_insertion_order(logging_obj):
         dynamic_success_callbacks=["prometheus", "langfuse", "datadog", "otel", "s3"],
         global_callbacks=["langfuse", "gcs_bucket", "arize", "logfire"],
     ) == ["prometheus", "langfuse", "datadog", "otel", "s3", "gcs_bucket", "arize", "logfire"]
+
+
+@pytest.mark.asyncio
+async def test_async_success_handler_persists_before_logging_only_guardrail():
+    events = []
+
+    class LoggingOnlyGuardrail(CustomGuardrail):
+        def __init__(self):
+            super().__init__(
+                guardrail_name="audit",
+                default_on=True,
+                event_hook=GuardrailEventHooks.logging_only,
+            )
+
+        async def async_logging_hook(self, kwargs, result, call_type):
+            events.append("guardrail")
+            return kwargs, result
+
+    class TrackingLogger(CustomLogger):
+        async def async_log_pending_guardrail_event(self, kwargs, response_obj, start_time, end_time):
+            events.append("initial-log")
+
+        async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+            events.append("updated-log")
+
+    logging = LitellmLogging(
+        model="openai/gpt-4o",
+        messages=[{"role": "user", "content": "hello"}],
+        stream=False,
+        call_type="completion",
+        start_time=time.time(),
+        litellm_call_id="logging-only-update",
+        function_id="logging-only-update",
+    )
+    callbacks = [TrackingLogger(), LoggingOnlyGuardrail()]
+    with patch.object(logging, "get_combined_callback_list", return_value=callbacks):
+        await logging.async_success_handler(
+            result=ModelResponse(model="gpt-4o", choices=[]),
+            start_time=time.time(),
+            end_time=time.time(),
+            cache_hit=False,
+        )
+
+    assert events == ["initial-log", "guardrail", "updated-log"]
 
 
 def test_get_masked_api_base(logging_obj):

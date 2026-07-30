@@ -29,8 +29,8 @@ import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.caching import RedisCache
 from litellm.constants import (
-    DB_SPEND_UPDATE_JOB_NAME,
     DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME,
+    DB_SPEND_UPDATE_JOB_NAME,
 )
 from litellm.litellm_core_utils.safe_json_loads import safe_json_loads
 from litellm.proxy._types import (
@@ -70,6 +70,10 @@ if TYPE_CHECKING:
 else:
     PrismaClient = Any
     ProxyLogging = Any
+
+
+LOGGING_ONLY_GUARDRAILS_PENDING = "logging_only_guardrails_pending"
+LOGGING_ONLY_GUARDRAILS_PENDING_KWARG = "_logging_only_guardrails_pending"
 
 
 def _extract_cache_read_tokens(usage_obj: dict) -> int:
@@ -181,7 +185,7 @@ class DBSpendUpdateWriter:
         org_id: Optional[str],
         # Completion object fields
         kwargs: Optional[dict],
-        completion_response: Optional[Union[litellm.ModelResponse, Any, Exception]],
+        completion_response: litellm.ModelResponse | Any | Exception | None,
         start_time: Optional[datetime],
         end_time: Optional[datetime],
         response_cost: Optional[float],
@@ -216,6 +220,14 @@ class DBSpendUpdateWriter:
                 end_time=end_time,
             )
             payload["spend"] = response_cost or 0.0
+            if kwargs is not None and kwargs.get(LOGGING_ONLY_GUARDRAILS_PENDING_KWARG) is True:
+                payload_metadata = safe_json_loads(payload.get("metadata"), default={})
+                if isinstance(payload_metadata, dict):
+                    payload_metadata[LOGGING_ONLY_GUARDRAILS_PENDING] = True
+                    payload["metadata"] = json.dumps(payload_metadata)
+                payload["messages"] = "{}"
+                payload["response"] = "{}"
+                payload["proxy_server_request"] = "{}"
             if isinstance(payload["startTime"], datetime):
                 payload["startTime"] = payload["startTime"].isoformat()
             if isinstance(payload["endTime"], datetime):
@@ -278,6 +290,60 @@ class DBSpendUpdateWriter:
                 org_id,
                 end_user_id,
             )
+
+    async def update_guardrail_results(
+        self,
+        kwargs: dict,
+        completion_response: Optional[Union[litellm.ModelResponse, Any, Exception]],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> bool:
+        from litellm.proxy.proxy_server import prisma_client
+        from litellm.proxy.spend_tracking.spend_tracking_utils import get_logging_payload
+
+        if prisma_client is None:
+            return False
+
+        payload = get_logging_payload(
+            kwargs=kwargs,
+            response_obj=completion_response,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if isinstance(payload["startTime"], datetime):
+            payload["startTime"] = payload["startTime"].isoformat()
+        if isinstance(payload["endTime"], datetime):
+            payload["endTime"] = payload["endTime"].isoformat()
+
+        request_id = payload["request_id"]
+        async with prisma_client._spend_log_transactions_lock:
+            queued_request_ids = tuple(entry.get("request_id") for entry in prisma_client.spend_log_transactions)
+            if request_id in queued_request_ids:
+                prisma_client.spend_log_transactions = [
+                    payload if entry.get("request_id") == request_id else entry
+                    for entry in prisma_client.spend_log_transactions
+                ]
+                return True
+
+        from litellm.repositories.table_repositories import SpendLogsRepository
+
+        db_payload = prisma_client.jsonify_object({**payload})
+        updated_fields = {
+            field: db_payload[field]
+            for field in ("metadata", "messages", "response", "proxy_server_request")
+            if field in db_payload
+        }
+        await SpendLogsRepository(prisma_client).table.upsert(
+            where={"request_id": request_id},
+            data={"create": db_payload, "update": updated_fields},
+        )
+        from litellm.proxy.guardrails.usage_tracking import process_spend_logs_guardrail_usage
+
+        await process_spend_logs_guardrail_usage(
+            prisma_client=prisma_client,
+            logs_to_process=[payload],
+        )
+        return True
 
     async def _enqueue_tool_usage_transaction(
         self,

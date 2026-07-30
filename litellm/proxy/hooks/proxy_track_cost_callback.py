@@ -18,6 +18,7 @@ from litellm.proxy.auth.auth_checks import (
     log_db_metrics,
 )
 from litellm.proxy.auth.route_checks import RouteChecks
+from litellm.proxy.db.db_spend_update_writer import LOGGING_ONLY_GUARDRAILS_PENDING_KWARG
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 from litellm.proxy.spend_tracking.spend_log_error_logger import (
     should_suppress_spend_log_tracebacks,
@@ -44,7 +45,23 @@ _PASS_THROUGH_CALL_TYPES: frozenset[str] = frozenset(
 
 
 class _ProxyDBLogger(CustomLogger):
+    async def async_log_pending_guardrail_event(self, kwargs, response_obj, start_time, end_time):
+        if kwargs.get(LOGGING_ONLY_GUARDRAILS_PENDING_KWARG) is True:
+            return
+        kwargs[LOGGING_ONLY_GUARDRAILS_PENDING_KWARG] = True
+        await self._PROXY_track_cost_callback(kwargs, response_obj, start_time, end_time)
+
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        if kwargs.get(LOGGING_ONLY_GUARDRAILS_PENDING_KWARG) is True:
+            from litellm.proxy.proxy_server import proxy_logging_obj
+
+            await proxy_logging_obj.db_spend_update_writer.update_guardrail_results(
+                kwargs=kwargs,
+                completion_response=response_obj,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            return
         await self._PROXY_track_cost_callback(kwargs, response_obj, start_time, end_time)
 
     async def async_post_call_failure_hook(

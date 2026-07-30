@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from litellm._logging import verbose_proxy_logger
+from litellm.proxy.db.db_spend_update_writer import LOGGING_ONLY_GUARDRAILS_PENDING
 from litellm.proxy.utils import PrismaClient
 from litellm.repositories.table_repositories import (
     DailyGuardrailMetricsRepository,
@@ -168,6 +169,8 @@ async def process_spend_logs_guardrail_usage(  # noqa: C901  # Aggregation keeps
     seen_request_policies: set[tuple[str, str]] = set()
 
     for payload in logs_to_process:
+        if _parse_metadata(payload).get(LOGGING_ONLY_GUARDRAILS_PENDING) is True:
+            continue
         request_id = payload.get("request_id")
         start_time = payload.get("startTime")
         if not request_id or not start_time:

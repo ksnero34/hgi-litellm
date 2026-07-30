@@ -6,6 +6,34 @@ from unittest.mock import AsyncMock
 import pytest
 
 from litellm.proxy.guardrails.usage_tracking import process_spend_logs_guardrail_usage
+from litellm.proxy.db.db_spend_update_writer import LOGGING_ONLY_GUARDRAILS_PENDING
+
+
+@pytest.mark.asyncio
+async def test_process_spend_logs_defers_pending_logging_only_guardrails():
+    prisma_client = SimpleNamespace(
+        db=SimpleNamespace(
+            litellm_dailyguardrailmetrics=SimpleNamespace(upsert=AsyncMock()),
+            litellm_dailypolicymetrics=SimpleNamespace(upsert=AsyncMock()),
+            litellm_spendlogguardrailindex=SimpleNamespace(create_many=AsyncMock()),
+            litellm_spendlogpolicyindex=SimpleNamespace(create_many=AsyncMock()),
+        )
+    )
+    log = {
+        "request_id": "pending-request",
+        "startTime": datetime(2026, 7, 30, tzinfo=timezone.utc),
+        "metadata": json.dumps(
+            {
+                LOGGING_ONLY_GUARDRAILS_PENDING: True,
+                "guardrail_information": [{"guardrail_name": "precall", "guardrail_status": "success"}],
+            }
+        ),
+    }
+
+    await process_spend_logs_guardrail_usage(prisma_client, [log])
+
+    assert prisma_client.db.litellm_dailyguardrailmetrics.upsert.await_count == 0
+    assert prisma_client.db.litellm_spendlogguardrailindex.create_many.await_count == 0
 
 
 @pytest.mark.asyncio
