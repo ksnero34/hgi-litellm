@@ -125,6 +125,12 @@ export function LogDetailContent({ logEntry, isLoadingDetails = false, accessTok
             <Descriptions.Item label={t("observability.logs.model_id")}>
               <TruncatedValue value={logEntry.model_id} />
             </Descriptions.Item>
+            <Descriptions.Item label={t("observability.logs.columns.key_alias")}>
+              <TruncatedValue value={metadata.user_api_key_alias || "-"} />
+            </Descriptions.Item>
+            <Descriptions.Item label={t("observability.logs.columns.key_hash")}>
+              <TruncatedValue value={metadata.user_api_key || logEntry.api_key || "-"} />
+            </Descriptions.Item>
             <Descriptions.Item label={t("observability.logs.api_base")}>
               <TruncatedValue value={logEntry.api_base} maxWidth={API_BASE_MAX_WIDTH} />
             </Descriptions.Item>

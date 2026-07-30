@@ -28,6 +28,7 @@ from litellm.proxy.guardrails.usage_endpoints import (
     _build_policy_usage_logs_where,
     _policy_overview_rows,
     _policy_usage_log_entry_from_row,
+    _usage_log_entry_from_row,
     guardrails_usage_detail,
     guardrails_usage_logs,
     guardrails_usage_overview,
@@ -284,6 +285,58 @@ def test_policy_log_entry_selects_requested_policy_from_shared_request():
 
     assert alpha is not None and alpha.action == "blocked"
     assert beta is not None and beta.action == "passed"
+
+
+def test_guardrail_log_entry_uses_highest_action_and_includes_trace_and_key_details():
+    guardrail_entries = [
+        {
+            "guardrail_name": "presidio-pii",
+            "guardrail_event": "pre_call",
+            "guardrail_status": "success",
+            "usage_action": "passed",
+        },
+        {
+            "guardrail_name": "presidio-pii",
+            "guardrail_event": "logging_only",
+            "guardrail_status": "success",
+            "usage_action": "flagged",
+            "input_source": {"scope": "current_user_prompt", "message_index": 1},
+            "guardrail_response": [
+                {"entity_type": "EMAIL_ADDRESS", "start": 6, "end": 24, "score": 0.99}
+            ],
+            "masked_entity_count": {"EMAIL_ADDRESS": 1},
+        },
+    ]
+    spend_log = SimpleNamespace(
+        request_id="request-1",
+        startTime=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        metadata={
+            "guardrail_information": guardrail_entries,
+            "user_api_key": "hashed-key",
+            "user_api_key_alias": "customer-key",
+            "user_api_key_team_alias": "customer-team",
+        },
+        api_key="fallback-key",
+        team_id="team-1",
+        model="model",
+        messages=[{"role": "user", "content": "Email person@example.com"}],
+        response={},
+        proxy_server_request=None,
+    )
+
+    entry = _usage_log_entry_from_row(
+        SimpleNamespace(request_id="request-1", guardrail_id="presidio-pii"),
+        spend_log,
+        None,
+    )
+
+    assert entry is not None
+    assert entry.action == "flagged"
+    assert entry.api_key == "hashed-key"
+    assert entry.key_alias == "customer-key"
+    assert entry.team_id == "team-1"
+    assert entry.team_alias == "customer-team"
+    assert entry.guardrail_information == guardrail_entries
 
 
 def test_build_policy_usage_logs_where_targets_policy_index():

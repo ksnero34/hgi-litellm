@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
@@ -81,6 +81,11 @@ class UsageLogEntry(BaseModel):
     input_snippet: Optional[str]
     output_snippet: Optional[str]
     reason: Optional[str]
+    api_key: str | None = None
+    key_alias: str | None = None
+    team_id: str | None = None
+    team_alias: str | None = None
+    guardrail_information: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class UsageLogsResponse(BaseModel):
@@ -511,11 +516,17 @@ def _usage_log_entry_from_row(r: Any, sl: Any, action_filter: str | None) -> Usa
         except Exception:
             meta = {}
     guardrail_info_list = (meta or {}).get("guardrail_information") or []
-    entry_for_guardrail = None
-    for gi in guardrail_info_list:
-        if (gi.get("guardrail_id") or gi.get("guardrail_name")) == r.guardrail_id:
-            entry_for_guardrail = gi
-            break
+    matching_entries = [
+        gi
+        for gi in guardrail_info_list
+        if isinstance(gi, dict) and (gi.get("guardrail_id") or gi.get("guardrail_name")) == r.guardrail_id
+    ]
+    precedence = {"passed": 0, "flagged": 1, "blocked": 2}
+    entry_for_guardrail = max(
+        matching_entries,
+        key=lambda entry: precedence[_entry_action(entry)],
+        default=None,
+    )
     action_val = "passed"
     score_val = None
     latency_val = None
@@ -546,6 +557,11 @@ def _usage_log_entry_from_row(r: Any, sl: Any, action_filter: str | None) -> Usa
         input_snippet=_input_snippet_for_log(sl),
         output_snippet=_snippet(sl.response),
         reason=reason_val,
+        api_key=(meta or {}).get("user_api_key") or getattr(sl, "api_key", None),
+        key_alias=(meta or {}).get("user_api_key_alias"),
+        team_id=getattr(sl, "team_id", None),
+        team_alias=(meta or {}).get("user_api_key_team_alias"),
+        guardrail_information=matching_entries,
     )
 
 
@@ -598,6 +614,11 @@ def _policy_usage_log_entry_from_row(row: Any, spend_log: Any, action_filter: Op
         input_snippet=_input_snippet_for_log(spend_log),
         output_snippet=_snippet(spend_log.response),
         reason=str(response)[:500] if response is not None else None,
+        api_key=metadata.get("user_api_key") or getattr(spend_log, "api_key", None),
+        key_alias=metadata.get("user_api_key_alias"),
+        team_id=getattr(spend_log, "team_id", None),
+        team_alias=metadata.get("user_api_key_team_alias"),
+        guardrail_information=matching_entries,
     )
 
 

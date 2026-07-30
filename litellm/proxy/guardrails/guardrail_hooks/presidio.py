@@ -804,7 +804,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 input_source=log_context.get("input_source"),
                 usage_action=(
                     "flagged"
-                    if self.logging_only and isinstance(analyze_results, list) and len(analyze_results) > 0
+                    if status == "success" and isinstance(analyze_results, list) and len(analyze_results) > 0
                     else None
                 ),
                 enforcement_mode="observe" if self.logging_only else "enforce",

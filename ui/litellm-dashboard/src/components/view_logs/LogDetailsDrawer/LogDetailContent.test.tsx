@@ -64,6 +64,24 @@ describe("LogDetailContent", () => {
     expect(screen.getByText("completion")).toBeInTheDocument();
   });
 
+  it("should display the virtual key alias and hash", () => {
+    renderWithProviders(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          api_key: "fallback-key-hash",
+          metadata: {
+            status: "success",
+            user_api_key: "key-hash",
+            user_api_key_alias: "customer-key",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("customer-key")).toBeInTheDocument();
+    expect(screen.getByText("key-hash")).toBeInTheDocument();
+  });
+
   it("should display error alert when request has failed", () => {
     renderWithProviders(
       <LogDetailContent

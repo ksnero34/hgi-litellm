@@ -1605,6 +1605,43 @@ async def test_logging_only_records_detected_pii_as_flagged():
 
 
 @pytest.mark.asyncio
+async def test_pre_call_masking_records_detected_pii_as_flagged():
+    class DetectingPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            return [{"entity_type": "EMAIL_ADDRESS", "start": 0, "end": len(text), "score": 0.99}]
+
+        async def anonymize_text(
+            self,
+            text,
+            analyze_results,
+            output_parse_pii,
+            masked_entity_count,
+            request_data=None,
+        ):
+            masked_entity_count["EMAIL_ADDRESS"] = 1
+            return "[EMAIL]"
+
+    presidio = DetectingPresidio(
+        mock_testing=True,
+        event_hook="pre_call",
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+    request_data = {}
+
+    result = await presidio.check_pii(
+        text="person@example.com",
+        output_parse_pii=False,
+        presidio_config=None,
+        request_data=request_data,
+    )
+
+    assert result == "[EMAIL]"
+    guardrail_entries = request_data["metadata"]["standard_logging_guardrail_information"]
+    assert guardrail_entries[-1]["usage_action"] == "flagged"
+    assert guardrail_entries[-1]["enforcement_mode"] == "enforce"
+
+
+@pytest.mark.asyncio
 async def test_analyze_text_list_with_non_dict_items():
     """
     Test that analyze_text skips non-dict items in the result list.

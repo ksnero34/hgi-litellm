@@ -47,4 +47,9 @@ export interface LogEntry {
   model?: string;
   reason?: string;
   latency_ms?: number;
+  api_key?: string;
+  key_alias?: string;
+  team_id?: string;
+  team_alias?: string;
+  guardrail_information?: Record<string, unknown>[];
 }

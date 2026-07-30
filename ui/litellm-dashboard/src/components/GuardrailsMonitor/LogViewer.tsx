@@ -55,8 +55,8 @@ export const getGuardrailLogDateRange = (startDate: string, endDate: string) => 
 
 const toViewLogsLogEntry = (log: LogEntry): ViewLogsLogEntry => ({
   request_id: log.id,
-  api_key: "",
-  team_id: "",
+  api_key: log.api_key ?? "",
+  team_id: log.team_id ?? "",
   model: log.model ?? "",
   model_id: "",
   call_type: "guardrail",
@@ -69,7 +69,13 @@ const toViewLogsLogEntry = (log: LogEntry): ViewLogsLogEntry => ({
   cache_hit: "false",
   messages: log.input_snippet ?? log.input ?? "",
   response: log.output_snippet ?? log.output ?? "",
-  metadata: { status: log.action === "blocked" ? "failure" : "success" },
+  metadata: {
+    status: log.action === "blocked" ? "failure" : "success",
+    user_api_key: log.api_key,
+    user_api_key_alias: log.key_alias,
+    user_api_key_team_alias: log.team_alias,
+    guardrail_information: log.guardrail_information ?? [],
+  },
 });
 
 export function LogViewer({

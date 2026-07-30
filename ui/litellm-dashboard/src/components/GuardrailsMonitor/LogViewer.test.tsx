@@ -31,6 +31,17 @@ describe("LogViewer", () => {
             model: "gpt-5.4",
             input_snippet: "A very long guardrail input",
             output_snippet: "A response",
+            api_key: "hashed-key",
+            key_alias: "customer-key",
+            team_id: "team-1",
+            team_alias: "customer-team",
+            guardrail_information: [
+              {
+                guardrail_name: "presidio-pii",
+                usage_action: "flagged",
+                input_source: { scope: "current_user_prompt" },
+              },
+            ],
           },
         ]}
       />,
@@ -40,12 +51,33 @@ describe("LogViewer", () => {
 
     const latestProps = drawerSpy.mock.calls.at(-1)?.[0] as {
       open: boolean;
-      logEntry: { request_id: string; messages: string; response: string };
+      logEntry: {
+        request_id: string;
+        api_key: string;
+        team_id: string;
+        messages: string;
+        response: string;
+        metadata: Record<string, unknown>;
+      };
     };
     expect(latestProps.open).toBe(true);
     expect(latestProps.logEntry.request_id).toBe("request-1");
     expect(latestProps.logEntry.messages).toBe("A very long guardrail input");
     expect(latestProps.logEntry.response).toBe("A response");
+    expect(latestProps.logEntry.api_key).toBe("hashed-key");
+    expect(latestProps.logEntry.team_id).toBe("team-1");
+    expect(latestProps.logEntry.metadata).toMatchObject({
+      user_api_key: "hashed-key",
+      user_api_key_alias: "customer-key",
+      user_api_key_team_alias: "customer-team",
+      guardrail_information: [
+        {
+          guardrail_name: "presidio-pii",
+          usage_action: "flagged",
+          input_source: { scope: "current_user_prompt" },
+        },
+      ],
+    });
   });
 
   it("uses the selected UTC calendar day without shifting it by the browser timezone", () => {
