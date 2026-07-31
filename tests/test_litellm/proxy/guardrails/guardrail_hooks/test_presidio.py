@@ -795,6 +795,8 @@ async def test_logging_only_syncs_masked_request_and_guardrail_information_to_st
     assert guardrail_information
     assert guardrail_information[-1]["usage_action"] == "flagged"
     assert guardrail_information[-1]["enforcement_mode"] == "observe"
+    assert guardrail_information[-1]["guardrail_event"] == "logging_only"
+    assert guardrail_information[-1]["guardrail_mode"] == "logging_only"
 
 
 @pytest.mark.asyncio
@@ -1102,6 +1104,42 @@ async def test_presidio_logs_input_source_event_and_run_id():
     assert entries[0]["guardrail_run_id"] == entries[1]["guardrail_run_id"]
     assert entries[0]["guardrail_event"] == "pre_call"
     assert entries[1]["input_source"] == inputs["text_sources"][1]
+
+
+@pytest.mark.asyncio
+async def test_logging_only_records_request_and_response_audits_as_logging_only():
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        guardrail_name="test_presidio",
+        logging_only=True,
+        mock_redacted_text={"text": "masked"},
+    )
+    request_data = {"metadata": {}}
+
+    await presidio.apply_guardrail(
+        inputs={"texts": ["request text"]},
+        request_data=request_data,
+        input_type="request",
+    )
+    await presidio.apply_guardrail(
+        inputs={"texts": ["response text"]},
+        request_data=request_data,
+        input_type="response",
+    )
+
+    entries = request_data["metadata"]["standard_logging_guardrail_information"]
+    assert [entry["guardrail_event"] for entry in entries] == [
+        "logging_only",
+        "logging_only",
+    ]
+    assert [entry["guardrail_mode"] for entry in entries] == [
+        "logging_only",
+        "logging_only",
+    ]
+    assert [entry["input_source"]["type"] for entry in entries] == [
+        "request",
+        "response",
+    ]
 
 
 @pytest.mark.asyncio

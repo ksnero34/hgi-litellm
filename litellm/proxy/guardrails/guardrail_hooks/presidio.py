@@ -1760,7 +1760,13 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         texts = inputs.get("texts", [])
         text_sources = inputs.get("text_sources", [])
         guardrail_run_id = str(uuid4())
-        guardrail_event = GuardrailEventHooks.pre_call if input_type == "request" else GuardrailEventHooks.post_call
+        guardrail_event = (
+            GuardrailEventHooks.logging_only
+            if self.logging_only
+            else GuardrailEventHooks.pre_call
+            if input_type == "request"
+            else GuardrailEventHooks.post_call
+        )
 
         # When input_type is "response" and pii_tokens are available,
         # unmask the text instead of masking it.
