@@ -102,6 +102,9 @@ async def test_update_database_marks_pending_logging_only_guardrails():
         "endTime": datetime.now(timezone.utc),
         "metadata": "{}",
         "spend": 0.1,
+        "messages": '[{"role":"user","content":"홍길동"}]',
+        "response": '{"content":"안녕하세요 홍길동님"}',
+        "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}',
     }
 
     with (
@@ -125,18 +128,24 @@ async def test_update_database_marks_pending_logging_only_guardrails():
 
     stored_payload = writer._insert_spend_log_to_db.await_args.kwargs["payload"]
     assert json.loads(stored_payload["metadata"])[LOGGING_ONLY_GUARDRAILS_PENDING] is True
-    assert stored_payload["messages"] == "{}"
-    assert stored_payload["response"] == "{}"
-    assert stored_payload["proxy_server_request"] == "{}"
+    assert stored_payload["messages"] == payload["messages"]
+    assert stored_payload["response"] == payload["response"]
+    assert stored_payload["proxy_server_request"] == payload["proxy_server_request"]
 
 
 @pytest.mark.asyncio
-async def test_update_guardrail_results_replaces_queued_request():
+async def test_update_guardrail_results_updates_queued_metadata_without_replacing_content():
     writer = DBSpendUpdateWriter()
     prisma_client = MagicMock()
     prisma_client._spend_log_transactions_lock = asyncio.Lock()
     prisma_client.spend_log_transactions = [
-        {"request_id": "request-1", "metadata": json.dumps({LOGGING_ONLY_GUARDRAILS_PENDING: True})},
+        {
+            "request_id": "request-1",
+            "metadata": json.dumps({LOGGING_ONLY_GUARDRAILS_PENDING: True}),
+            "messages": '[{"role":"user","content":"홍길동"}]',
+            "response": '{"content":"안녕하세요 홍길동님"}',
+            "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}',
+        },
         {"request_id": "request-2", "metadata": "{}"},
     ]
     final_payload = {
@@ -144,6 +153,9 @@ async def test_update_guardrail_results_replaces_queued_request():
         "startTime": datetime.now(timezone.utc),
         "endTime": datetime.now(timezone.utc),
         "metadata": json.dumps({"guardrail_information": [{"guardrail_name": "presidio"}]}),
+        "messages": '[{"role":"user","content":"<PERSON>"}]',
+        "response": '{"content":"안녕하세요 <PERSON>님"}',
+        "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"<PERSON>"}]}}',
     }
 
     with (
@@ -160,11 +172,17 @@ async def test_update_guardrail_results_replaces_queued_request():
     assert updated is True
     assert prisma_client.spend_log_transactions[0]["request_id"] == "request-1"
     assert LOGGING_ONLY_GUARDRAILS_PENDING not in json.loads(prisma_client.spend_log_transactions[0]["metadata"])
+    assert prisma_client.spend_log_transactions[0]["messages"] == '[{"role":"user","content":"홍길동"}]'
+    assert prisma_client.spend_log_transactions[0]["response"] == '{"content":"안녕하세요 홍길동님"}'
+    assert (
+        prisma_client.spend_log_transactions[0]["proxy_server_request"]
+        == '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}'
+    )
     assert prisma_client.spend_log_transactions[1]["request_id"] == "request-2"
 
 
 @pytest.mark.asyncio
-async def test_update_guardrail_results_updates_flushed_request_and_monitoring():
+async def test_update_guardrail_results_updates_only_flushed_metadata_and_monitoring():
     writer = DBSpendUpdateWriter()
     prisma_client = MagicMock()
     prisma_client._spend_log_transactions_lock = asyncio.Lock()
@@ -201,12 +219,7 @@ async def test_update_guardrail_results_updates_flushed_request_and_monitoring()
         where={"request_id": "request-flushed"},
         data={
             "create": final_payload,
-            "update": {
-                "metadata": final_payload["metadata"],
-                "messages": final_payload["messages"],
-                "response": final_payload["response"],
-                "proxy_server_request": final_payload["proxy_server_request"],
-            },
+            "update": {"metadata": final_payload["metadata"]},
         },
     )
     process_guardrail_usage.assert_awaited_once_with(

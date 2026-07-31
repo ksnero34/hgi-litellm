@@ -225,9 +225,6 @@ class DBSpendUpdateWriter:
                 if isinstance(payload_metadata, dict):
                     payload_metadata[LOGGING_ONLY_GUARDRAILS_PENDING] = True
                     payload["metadata"] = json.dumps(payload_metadata)
-                payload["messages"] = "{}"
-                payload["response"] = "{}"
-                payload["proxy_server_request"] = "{}"
             if isinstance(payload["startTime"], datetime):
                 payload["startTime"] = payload["startTime"].isoformat()
             if isinstance(payload["endTime"], datetime):
@@ -320,7 +317,7 @@ class DBSpendUpdateWriter:
             queued_request_ids = tuple(entry.get("request_id") for entry in prisma_client.spend_log_transactions)
             if request_id in queued_request_ids:
                 prisma_client.spend_log_transactions = [
-                    payload if entry.get("request_id") == request_id else entry
+                    {**entry, "metadata": payload["metadata"]} if entry.get("request_id") == request_id else entry
                     for entry in prisma_client.spend_log_transactions
                 ]
                 return True
@@ -328,14 +325,9 @@ class DBSpendUpdateWriter:
         from litellm.repositories.table_repositories import SpendLogsRepository
 
         db_payload = prisma_client.jsonify_object({**payload})
-        updated_fields = {
-            field: db_payload[field]
-            for field in ("metadata", "messages", "response", "proxy_server_request")
-            if field in db_payload
-        }
         await SpendLogsRepository(prisma_client).table.upsert(
             where={"request_id": request_id},
-            data={"create": db_payload, "update": updated_fields},
+            data={"create": db_payload, "update": {"metadata": db_payload["metadata"]}},
         )
         from litellm.proxy.guardrails.usage_tracking import process_spend_logs_guardrail_usage
 
