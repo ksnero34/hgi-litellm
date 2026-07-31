@@ -63,6 +63,10 @@ from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.customizations.feature_policy import (
     is_oss_virtual_key_metadata_field,
 )
+from litellm.proxy.customizations.personal_key_policy import (
+    PersonalKeyPurpose,
+    read_personal_key_metadata,
+)
 from litellm.proxy.hooks.key_management_event_hooks import KeyManagementEventHooks
 from litellm.proxy.hooks.model_max_budget_limiter import (
     VIRTUAL_KEY_SPEND_CACHE_KEY_PREFIX,
@@ -139,6 +143,27 @@ def _set_virtual_key_metadata_field(object_data: Any, field_name: str, value: An
 
     object_data.metadata = object_data.metadata or {}
     object_data.metadata[field_name] = value
+
+
+def _caller_is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
+    return user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value
+
+
+def _reject_managed_personal_key_mutation(key_row: LiteLLM_VerificationToken) -> None:
+    metadata = read_personal_key_metadata(key_row.metadata)
+    if metadata is not None and metadata.key_purpose == PersonalKeyPurpose.PERSONAL_LLM:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Managed personal keys must be changed through /internal/personal-key."},
+        )
+
+
+def _reject_session_generic_key_read(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.is_session_token and not _caller_is_proxy_admin(user_api_key_dict):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Personal keys must be viewed through /internal/personal-key"},
+        )
 
 
 async def _check_custom_key_allowed(custom_key_value: Optional[str]) -> None:
@@ -1576,6 +1601,16 @@ async def generate_key_fn(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"error": CommonProxyErrors.db_not_connected_error.value},
             )
+        if not _caller_is_proxy_admin(user_api_key_dict):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Personal keys must be created through /internal/personal-key."},
+            )
+        if data.user_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "User-owned keys must be created through /internal/personal-key."},
+            )
 
         verbose_proxy_logger.debug("entered /key/generate")
 
@@ -1773,6 +1808,11 @@ async def generate_service_account_key_fn(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": CommonProxyErrors.db_not_connected_error.value},
         )
+    if not _caller_is_proxy_admin(user_api_key_dict):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Only proxy administrators can create service account keys."},
+        )
 
     await check_org_admin_can_generate_keys(user_api_key_dict=user_api_key_dict)
 
@@ -1830,7 +1870,15 @@ async def generate_service_account_key_fn(
         route=KeyManagementRoutes.KEY_GENERATE_SERVICE_ACCOUNT,
     )
 
-    data.user_id = None  # do not allow user_id to be set for service account keys
+    data.user_id = None
+    data.key_type = "llm_api"
+    data.metadata = {
+        **(data.metadata or {}),
+        "personal_key": {
+            "owner_type": "service",
+            "key_purpose": "service_account",
+        },
+    }
 
     return await _common_key_generation_helper(
         data=data,
@@ -2115,6 +2163,7 @@ async def _process_single_key_update(
             token=update_key_request.key,
             prisma_client=prisma_client,
         )
+    _reject_managed_personal_key_mutation(existing_key_row)
 
     # Check team member permissions
     if prisma_client is not None:
@@ -2609,6 +2658,7 @@ async def update_key_fn(
             token=data.key,
             prisma_client=prisma_client,
         )
+        _reject_managed_personal_key_mutation(existing_key_row)
 
         await _validate_update_key_data(
             data=data,
@@ -3367,6 +3417,7 @@ async def info_key_fn_v2(
             raise Exception(
                 "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
             )
+        _reject_session_generic_key_read(user_api_key_dict)
         if data is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -3455,6 +3506,7 @@ async def info_key_fn(
             raise Exception(
                 "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
             )
+        _reject_session_generic_key_read(user_api_key_dict)
 
         # default to using Auth token if no key is passed in
         key = key or user_api_key_dict.api_key
@@ -3987,6 +4039,8 @@ async def delete_verification_tokens(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail={"error": "No keys found"},
                 )
+            for key_row in _keys_being_deleted:
+                _reject_managed_personal_key_mutation(key_row)
 
             if user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value:
                 authorized_keys = _keys_being_deleted
@@ -4736,6 +4790,7 @@ async def regenerate_key_fn(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": f"Key {key} not found."},
             )
+        _reject_managed_personal_key_mutation(_key_in_db)
 
         # check if user has permission to regenerate key
         await TeamMemberPermissionChecks.can_team_member_execute_key_management_endpoint(
@@ -4941,6 +4996,7 @@ async def reset_key_spend_fn(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": f"Key {key} not found."},
             )
+        _reject_managed_personal_key_mutation(_key_in_db)
 
         current_spend = _key_in_db.spend or 0.0
         reset_to = _validate_reset_spend_value(data.reset_to, _key_in_db)
@@ -5255,6 +5311,12 @@ async def list_keys(
         if prisma_client is None:
             verbose_proxy_logger.error("Database not connected")
             raise Exception("Database not connected")
+        _reject_session_generic_key_read(user_api_key_dict)
+
+        is_proxy_admin = user_api_key_dict.user_role in [
+            LitellmUserRoles.PROXY_ADMIN.value,
+            LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY.value,
+        ]
 
         # Validate status parameter
         if status is not None and status != "deleted":
@@ -5310,11 +5372,6 @@ async def list_keys(
                 admin_team_ids = list({*admin_team_ids, *list_permission_team_ids})
         else:
             admin_team_ids = None
-
-        is_proxy_admin = user_api_key_dict.user_role in [
-            LitellmUserRoles.PROXY_ADMIN.value,
-            LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY.value,
-        ]
 
         # Substring matching is opt-in (admin-only). /key/list matched user_id and
         # key_alias exactly before substring search was added; auto-applying a
@@ -6011,6 +6068,7 @@ async def block_key(
             param="key",
             code=status.HTTP_404_NOT_FOUND,
         )
+    _reject_managed_personal_key_mutation(existing_record)
 
     if litellm.store_audit_logs is True:
         asyncio.create_task(
@@ -6122,6 +6180,7 @@ async def unblock_key(
             param="key",
             code=status.HTTP_404_NOT_FOUND,
         )
+    _reject_managed_personal_key_mutation(existing_record)
 
     if litellm.store_audit_logs is True:
         asyncio.create_task(

@@ -14,12 +14,15 @@ from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.abspath("../../.."))
 
 from litellm.proxy.management_endpoints.tool_management_endpoints import router
+from litellm.proxy.management_endpoints.tool_management_endpoints import (
+    _resolve_key_hash_to_object_permission_id,
+)
 from litellm.types.tool_management import LiteLLM_ToolTableRow
 
 # --- helpers ---
@@ -71,7 +74,10 @@ def _rollup_row(date: str, tool_name: str, spend: float, request_count: int, tot
 
 
 def _group_row(tool_name: str, spend: float, request_count: int, total_tokens: int) -> dict:
-    return {"tool_name": tool_name, "_sum": {"spend": spend, "total_tokens": total_tokens, "request_count": request_count}}
+    return {
+        "tool_name": tool_name,
+        "_sum": {"spend": spend, "total_tokens": total_tokens, "request_count": request_count},
+    }
 
 
 def _rollup_prisma(group_rows: list, daily_rows: list | None = None) -> MagicMock:
@@ -172,6 +178,28 @@ class TestToolManagementEndpoints:
             json={"tool_name": "my_tool", "input_policy": "invalid_value"},
         )
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_managed_personal_key_tool_override_is_rejected(self):
+        prisma = MagicMock()
+        prisma.db.litellm_verificationtoken.find_unique = AsyncMock(
+            return_value=MagicMock(
+                metadata={
+                    "personal_key": {
+                        "owner_type": "user",
+                        "key_purpose": "personal_llm",
+                        "logical_key_id": "logical-1",
+                        "generation": 1,
+                        "lifecycle": "active",
+                    }
+                }
+            )
+        )
+
+        with pytest.raises(HTTPException) as error:
+            await _resolve_key_hash_to_object_permission_id(prisma, "hash-1")
+
+        assert error.value.status_code == 403
 
     def test_tool_spend_route_not_shadowed_by_get_tool(self):
         prisma = _rollup_prisma([])

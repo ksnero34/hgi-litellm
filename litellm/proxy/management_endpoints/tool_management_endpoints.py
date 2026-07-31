@@ -23,6 +23,10 @@ from litellm._logging import verbose_proxy_logger
 from litellm.constants import TOOL_SPEND_TOP_TOOLS
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.customizations.personal_key_policy import (
+    PersonalKeyPurpose,
+    read_personal_key_metadata,
+)
 from litellm.repositories.object_permission_repository import ObjectPermissionRepository
 from litellm.repositories.table_repositories import (
     DailyToolSpendRepository,
@@ -452,6 +456,12 @@ async def _resolve_key_hash_to_object_permission_id(
     row = await VerificationTokenRepository(prisma_client).table.find_unique(where={"token": hashed})
     if row is None:
         return None
+    metadata = read_personal_key_metadata(row.metadata)
+    if metadata is not None and metadata.key_purpose == PersonalKeyPurpose.PERSONAL_LLM:
+        raise HTTPException(
+            status_code=403,
+            detail="Managed personal key tool permissions are inherited from its department team",
+        )
     op_id = getattr(row, "object_permission_id", None)
     if op_id:
         return op_id

@@ -12,7 +12,10 @@ import urllib
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable, Union, cast
+
+if TYPE_CHECKING:
+    from prisma import Prisma
 
 from litellm._logging import verbose_proxy_logger
 from litellm.secret_managers.main import str_to_bool
@@ -135,6 +138,10 @@ class PrismaWrapper:
         self._expected_engine_deaths: set[int] = set()
         self._engine_generation: int = 0
         self.on_engine_replaced: Callable[[], None] | None = None
+
+    @property
+    def original_prisma(self) -> "Prisma":
+        return cast("Prisma", self._original_prisma)
 
     def _get_engine_pid(self) -> int:
         """Get the PID of the current Prisma engine subprocess, or 0 if unavailable.

@@ -7,6 +7,7 @@ This is currently in development and not yet ready for production.
 import asyncio
 import binascii
 import os
+import time
 import uuid
 from datetime import datetime
 from typing import (
@@ -23,6 +24,8 @@ from typing import (
     Union,
     cast,
 )
+
+from fastapi import HTTPException
 
 from litellm import DualCache
 from litellm._logging import verbose_proxy_logger
@@ -423,6 +426,8 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         # the extra per-request Redis Lua round-trip and the global-lock
         # in-memory fallback that the reservation path incurs.
         self.tpm_reservation_enabled = os.getenv("LITELLM_TPM_TOKEN_RESERVATION_ENABLED", "true").lower() == "true"
+        self._distributed_quota_redis_healthy_until = 0.0
+        self._distributed_quota_health_lock = asyncio.Lock()
 
         # Batch rate limiter (lazy loaded)
         self._batch_rate_limiter: Optional[Any] = None
@@ -442,6 +447,27 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         # follow-up because Lua dominates wall-time and the lock is held for
         # one round-trip.
         self._check_and_increment_lock = asyncio.Lock()
+
+    async def _require_healthy_distributed_quota_storage(self) -> None:
+        redis_cache = self.internal_usage_cache.dual_cache.redis_cache
+        if redis_cache is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Distributed rate-limit storage is unavailable",
+            )
+        if time.monotonic() < self._distributed_quota_redis_healthy_until:
+            return
+        async with self._distributed_quota_health_lock:
+            if time.monotonic() < self._distributed_quota_redis_healthy_until:
+                return
+            try:
+                await asyncio.wait_for(redis_cache.ping(), timeout=1.0)
+            except Exception as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Distributed rate-limit storage is unavailable",
+                ) from error
+            self._distributed_quota_redis_healthy_until = time.monotonic() + 1.0
 
     def _get_batch_rate_limiter(self) -> Optional[Any]:
         """Get or lazy-load the batch rate limiter."""
@@ -2402,6 +2428,10 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
 
         # Only check rate limits if we have descriptors with actual limits
         if descriptors:
+            from litellm.proxy.customizations.personal_key_policy import requires_distributed_quota
+
+            if requires_distributed_quota(user_api_key_dict.metadata):
+                await self._require_healthy_distributed_quota_storage()
             # First pass: RPM and max_parallel_requests sliding-window check.
             # When reservation is enabled, `skip_tpm_check=True` tells
             # should_rate_limit to ignore each descriptor's tokens_per_unit so

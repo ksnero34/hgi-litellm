@@ -1626,6 +1626,8 @@ async def get_user_info_from_db(
         return user_info
     except Exception as e:
         verbose_proxy_logger.exception(f"[Non-Blocking] Error trying to add sso user to db: {e}")
+        if getattr(result, "sso_team_mapping_configured", False):
+            raise
 
     return None
 
@@ -2770,6 +2772,13 @@ class SSOAuthenticationHandler:
             return user_info
         except Exception as e:
             verbose_proxy_logger.exception(f"Error upserting SSO user into LiteLLM DB: {e}")
+            retry_user_id = user_defined_values.get("user_id") if user_defined_values is not None else None
+            if retry_user_id is not None:
+                concurrent_user = await UserRepository(prisma_client).table.find_unique(
+                    where={"user_id": retry_user_id}
+                )
+                if concurrent_user is not None:
+                    return concurrent_user
             return user_info
 
     @staticmethod

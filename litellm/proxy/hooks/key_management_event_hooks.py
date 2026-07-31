@@ -54,7 +54,7 @@ class KeyManagementEventHooks:
 
         # Enterprise Feature - Audit Logging. Enable with litellm.store_audit_logs = True
         if litellm.store_audit_logs is True:
-            _updated_values = response.model_dump_json(exclude_none=True)
+            _updated_values = response.model_dump_json(exclude={"key", "token"}, exclude_none=True)
             asyncio.create_task(
                 create_audit_log_for_update(
                     request_data=LiteLLM_AuditLogs(
@@ -65,7 +65,7 @@ class KeyManagementEventHooks:
                             user_api_key_dict=user_api_key_dict,
                             litellm_proxy_admin_name=litellm_proxy_admin_name,
                         ),
-                        changed_by_api_key=user_api_key_dict.api_key,
+                        changed_by_api_key=user_api_key_dict.token or "",
                         table_name=LitellmTableNames.KEY_TABLE_NAME,
                         object_id=response.token_id or "",
                         action="created",
@@ -122,7 +122,7 @@ class KeyManagementEventHooks:
                             user_api_key_dict=user_api_key_dict,
                             litellm_proxy_admin_name=litellm_proxy_admin_name,
                         ),
-                        changed_by_api_key=user_api_key_dict.api_key,
+                        changed_by_api_key=user_api_key_dict.token or "",
                         table_name=LitellmTableNames.KEY_TABLE_NAME,
                         object_id=data.key,
                         action="updated",
@@ -194,7 +194,7 @@ class KeyManagementEventHooks:
                         table_name=LitellmTableNames.KEY_TABLE_NAME,
                         object_id=existing_key_row.token,
                         action="rotated",
-                        updated_values=response.model_dump_json(exclude_none=True),
+                        updated_values=response.model_dump_json(exclude={"key", "token"}, exclude_none=True),
                         before_value=existing_key_row.model_dump_json(exclude_none=True),
                     )
                 )

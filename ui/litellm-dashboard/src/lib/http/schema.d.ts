@@ -6082,6 +6082,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/personal-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Personal Key */
+        get: operations["get_personal_key_internal_personal_key_get"];
+        put?: never;
+        /** Create Personal Key */
+        post: operations["create_personal_key_internal_personal_key_post"];
+        /** Delete Personal Key */
+        delete: operations["delete_personal_key_internal_personal_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/personal-key/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Personal Key Metrics */
+        get: operations["get_personal_key_metrics_internal_personal_key_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/personal-key/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Personal Key */
+        post: operations["rotate_personal_key_internal_personal_key_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invitation/delete": {
         parameters: {
             query?: never;
@@ -28249,6 +28302,125 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** PersonalKeyCreateRequest */
+        PersonalKeyCreateRequest: {
+            /** Key Alias */
+            key_alias?: string | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /** PersonalKeyCreateResponse */
+        PersonalKeyCreateResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Expires
+             * Format: date-time
+             */
+            expires: string;
+            /** Generation */
+            generation: number;
+            /** Key */
+            key: string;
+            /** Key Alias */
+            key_alias?: string | null;
+            /** Logical Key Id */
+            logical_key_id: string;
+            /** Organization Id */
+            organization_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "blocked" | "expired";
+            /** Team Id */
+            team_id: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /** PersonalKeyDeleteResponse */
+        PersonalKeyDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Logical Key Id */
+            logical_key_id: string;
+        };
+        /** PersonalKeyMetrics */
+        PersonalKeyMetrics: {
+            /** Active Personal Keys */
+            active_personal_keys: number;
+            /** Expiring Within Seven Days */
+            expiring_within_seven_days: number;
+            /** Grace Keys */
+            grace_keys: number;
+        };
+        /** PersonalKeyRotateResponse */
+        PersonalKeyRotateResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Expires
+             * Format: date-time
+             */
+            expires: string;
+            /** Generation */
+            generation: number;
+            /** Key */
+            key: string;
+            /** Key Alias */
+            key_alias?: string | null;
+            /** Logical Key Id */
+            logical_key_id: string;
+            /** Organization Id */
+            organization_id: string;
+            /**
+             * Previous Key Revoke At
+             * Format: date-time
+             */
+            previous_key_revoke_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "blocked" | "expired";
+            /** Team Id */
+            team_id: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /** PersonalKeyView */
+        PersonalKeyView: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Expires
+             * Format: date-time
+             */
+            expires: string;
+            /** Generation */
+            generation: number;
+            /** Key Alias */
+            key_alias?: string | null;
+            /** Logical Key Id */
+            logical_key_id: string;
+            /** Organization Id */
+            organization_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "blocked" | "expired";
+            /** Team Id */
+            team_id: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** User Id */
+            user_id: string;
+        };
         /**
          * PiiAction
          * @enum {string}
@@ -41149,6 +41321,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_personal_key_internal_personal_key_get: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalKeyView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_personal_key_internal_personal_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonalKeyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalKeyCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_personal_key_internal_personal_key_delete: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalKeyDeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_personal_key_metrics_internal_personal_key_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalKeyMetrics"];
+                };
+            };
+        };
+    };
+    rotate_personal_key_internal_personal_key_rotate_post: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalKeyRotateResponse"];
                 };
             };
             /** @description Validation Error */

@@ -203,11 +203,7 @@ class TestKeyRotationManager:
             "litellm.proxy.common_utils.key_rotation_manager.regenerate_key_fn",
             return_value=mock_response,
         ):
-            with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook"
-            ):
-                # Execute
-                await manager._rotate_key(key_to_rotate)
+            await manager._rotate_key(key_to_rotate)
 
         # Verify database update was called with correct data
         mock_prisma_client.db.litellm_verificationtoken.update.assert_called_once()
@@ -283,14 +279,10 @@ class TestKeyRotationManager:
         ) as mock_regenerate:
             mock_regenerate.return_value = mock_response
             with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook",
-                new_callable=AsyncMock,
+                "litellm.proxy.common_utils.key_rotation_manager.LITELLM_KEY_ROTATION_GRACE_PERIOD",
+                "48h",
             ):
-                with patch(
-                    "litellm.proxy.common_utils.key_rotation_manager.LITELLM_KEY_ROTATION_GRACE_PERIOD",
-                    "48h",
-                ):
-                    await manager._rotate_key(key_to_rotate)
+                await manager._rotate_key(key_to_rotate)
 
             mock_regenerate.assert_called_once()
             call_args = mock_regenerate.call_args

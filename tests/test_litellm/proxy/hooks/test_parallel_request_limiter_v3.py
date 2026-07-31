@@ -45,6 +45,18 @@ class TimeController:
         self._current += timedelta(seconds=seconds)
 
 
+@pytest.mark.asyncio
+async def test_managed_quota_requires_redis():
+    handler = _PROXY_MaxParallelRequestsHandler(
+        internal_usage_cache=InternalUsageCache(DualCache())
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await handler._require_healthy_distributed_quota_storage()
+
+    assert error.value.status_code == 503
+
+
 @pytest.fixture
 def time_controller(monkeypatch):
     controller = TimeController()
