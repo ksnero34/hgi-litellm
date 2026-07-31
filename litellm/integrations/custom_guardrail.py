@@ -829,9 +829,14 @@ class CustomGuardrail(CustomLogger):
 
         clean_guardrail_response = mask_credentials_in_payload(clean_guardrail_response)
 
-        metadata = request_data.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = request_data.get("litellm_metadata")
+        metadata = None
+        litellm_params = request_data.get("litellm_params")
+        containers = (request_data, litellm_params) if isinstance(litellm_params, dict) else (request_data,)
+        for container in containers:
+            for metadata_key in ("metadata", "litellm_metadata"):
+                candidate = container.get(metadata_key)
+                if isinstance(candidate, dict) and ("_guardrail_policy_map" in candidate or metadata is None):
+                    metadata = candidate
         policy_map = metadata.get("_guardrail_policy_map", {}) if isinstance(metadata, dict) else {}
         policy_entries = policy_map.get(self.guardrail_name, []) if isinstance(policy_map, dict) else []
         if not isinstance(policy_entries, list):

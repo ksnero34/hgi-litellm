@@ -70,6 +70,94 @@ async def test_virtual_key_logging_only_invokes_presidio_from_async_success_hand
     presidio.check_pii.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_policy_logging_only_invokes_presidio_with_policy_attribution():
+    from litellm.proxy.litellm_pre_call_utils import (
+        _add_guardrails_from_policies_in_metadata,
+    )
+    from litellm.proxy.policy_engine.policy_registry import get_policy_registry
+    from litellm.types.proxy.policy_engine import Policy, PolicyGuardrails
+
+    registry = get_policy_registry()
+    original_policies = registry._policies
+    original_initialized = registry._initialized
+    registry._policies = {
+        "team-audit-policy": Policy(
+            guardrails=PolicyGuardrails(add=["policy-presidio"]),
+        )
+    }
+    registry._initialized = True
+    request_data = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": "홍길동"}],
+        "metadata": {},
+    }
+
+    try:
+        _add_guardrails_from_policies_in_metadata(
+            key_metadata={},
+            team_metadata={"policies": ["team-audit-policy"]},
+            data=request_data,
+            metadata_variable_name="metadata",
+        )
+
+        presidio = _OPTIONAL_PresidioPIIMasking(
+            guardrail_name="policy-presidio",
+            default_on=False,
+            logging_only=True,
+            presidio_filter_scope="input",
+            mock_testing=True,
+        )
+        presidio.analyze_text = AsyncMock(
+            return_value=[
+                {
+                    "entity_type": "PERSON",
+                    "start": 0,
+                    "end": 3,
+                    "score": 0.99,
+                }
+            ]
+        )
+        presidio.anonymize_text = AsyncMock(return_value="<PERSON>")
+        logging = Logging(
+            model="gpt-4o",
+            messages=request_data["messages"],
+            stream=False,
+            call_type="completion",
+            start_time=1.0,
+            litellm_call_id="policy-logging-only",
+            function_id="policy-logging-only",
+        )
+        logging.model_call_details["litellm_params"]["metadata"] = request_data["metadata"]
+        logging.model_call_details["messages"] = request_data["messages"]
+        response = ModelResponse(
+            model="gpt-4o",
+            choices=[
+                Choices(
+                    index=0,
+                    message=Message(role="assistant", content="안녕하세요"),
+                )
+            ],
+        )
+
+        with patch.object(logging, "get_combined_callback_list", return_value=[presidio]):
+            await logging.async_success_handler(
+                result=response,
+                start_time=1.0,
+                end_time=2.0,
+                cache_hit=False,
+            )
+
+        presidio.analyze_text.assert_awaited_once()
+        guardrail_information = logging.model_call_details["metadata"]["standard_logging_guardrail_information"]
+        assert guardrail_information[0]["usage_action"] == "flagged"
+        assert guardrail_information[0]["enforcement_mode"] == "observe"
+        assert guardrail_information[0]["policy_names"] == ["team-audit-policy"]
+    finally:
+        registry._policies = original_policies
+        registry._initialized = original_initialized
+
+
 def _make_mock_session_iterator(json_response, status=200, content_type="application/json", text_response=""):
     """Create a mock _get_session_iterator that yields a session returning json_response."""
 
