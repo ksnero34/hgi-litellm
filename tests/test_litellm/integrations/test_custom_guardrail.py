@@ -262,6 +262,54 @@ class TestCustomGuardrailShouldRunGuardrail:
 
         assert result is True
 
+    def test_logging_only_reads_guardrails_from_logging_model_call_details(self):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        custom_guardrail = CustomGuardrail(
+            guardrail_name="virtual-key-guardrail",
+            default_on=False,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+        data = {
+            "litellm_params": {
+                "metadata": {
+                    "guardrails": ["virtual-key-guardrail"],
+                },
+            },
+        }
+
+        result = custom_guardrail.should_run_guardrail(
+            data=data,
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is True
+
+    def test_logging_only_reads_global_disable_from_logging_model_call_details(self):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        custom_guardrail = CustomGuardrail(
+            guardrail_name="global-guardrail",
+            default_on=True,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+        data = {
+            "litellm_params": {
+                "metadata": {
+                    "user_api_key_metadata": {
+                        "disable_global_guardrails": True,
+                    },
+                },
+            },
+        }
+
+        result = custom_guardrail.should_run_guardrail(
+            data=data,
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is False
+
     def test_should_run_guardrail_with_root_level_guardrails(self):
         """Test that should_run_guardrail works with root level guardrails"""
         from litellm.types.guardrails import GuardrailEventHooks

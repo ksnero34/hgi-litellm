@@ -392,14 +392,17 @@ class CustomGuardrail(CustomLogger):
         """
         team_meta: dict = {}
         key_meta: dict = {}
-        for key in ("metadata", "litellm_metadata"):
-            # Defensive: an unparsed JSON-string metadata could leak past the
-            # proxy's normal parse path; don't AttributeError on .get().
-            meta = data.get(key)
-            if not isinstance(meta, dict):
-                continue
-            team_meta = meta.get("user_api_key_team_metadata") or team_meta
-            key_meta = meta.get("user_api_key_metadata") or key_meta
+        litellm_params = data.get("litellm_params")
+        containers = (data, litellm_params) if isinstance(litellm_params, dict) else (data,)
+        for container in containers:
+            for key in ("metadata", "litellm_metadata"):
+                # Defensive: an unparsed JSON-string metadata could leak past the
+                # proxy's normal parse path; don't AttributeError on .get().
+                meta = container.get(key)
+                if not isinstance(meta, dict):
+                    continue
+                team_meta = meta.get("user_api_key_team_metadata") or team_meta
+                key_meta = meta.get("user_api_key_metadata") or key_meta
         return {**team_meta, **key_meta}
 
     def get_disable_global_guardrail(self, data: dict) -> Optional[bool]:
@@ -455,10 +458,13 @@ class CustomGuardrail(CustomLogger):
         # key so that a non-empty litellm_metadata without guardrails does not shadow
         # the merged list stored in metadata (which would cause team guardrails to be
         # silently skipped while default_on=True policy guardrails still fire).
-        for meta_key in ("metadata", "litellm_metadata"):
-            meta = data.get(meta_key) or {}
-            if isinstance(meta, dict) and "guardrails" in meta:
-                return meta.get("guardrails") or []
+        litellm_params = data.get("litellm_params")
+        containers = (data, litellm_params) if isinstance(litellm_params, dict) else (data,)
+        for container in containers:
+            for meta_key in ("metadata", "litellm_metadata"):
+                meta = container.get(meta_key) or {}
+                if isinstance(meta, dict) and "guardrails" in meta:
+                    return meta.get("guardrails") or []
         return []
 
     def _guardrail_is_in_requested_guardrails(

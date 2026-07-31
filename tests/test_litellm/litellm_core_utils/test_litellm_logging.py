@@ -49,7 +49,7 @@ async def test_async_success_handler_persists_before_logging_only_guardrail():
         def __init__(self):
             super().__init__(
                 guardrail_name="audit",
-                default_on=True,
+                default_on=False,
                 event_hook=GuardrailEventHooks.logging_only,
             )
 
@@ -73,6 +73,9 @@ async def test_async_success_handler_persists_before_logging_only_guardrail():
         litellm_call_id="logging-only-update",
         function_id="logging-only-update",
     )
+    logging.model_call_details["litellm_params"]["metadata"] = {
+        "guardrails": ["audit"],
+    }
     callbacks = [TrackingLogger(), LoggingOnlyGuardrail()]
     with patch.object(logging, "get_combined_callback_list", return_value=callbacks):
         await logging.async_success_handler(

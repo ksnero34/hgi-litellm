@@ -7,7 +7,7 @@ import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -20,9 +20,54 @@ from litellm.proxy.guardrails.guardrail_hooks.presidio import (
     _OPTIONAL_PresidioPIIMasking,
 )
 from litellm.exceptions import BlockedPiiEntityError
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.guardrails import LitellmParams, PiiAction, PiiEntityType
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.utils import Choices, Message, ModelResponse
+
+
+@pytest.mark.asyncio
+async def test_virtual_key_logging_only_invokes_presidio_from_async_success_handler():
+    presidio = _OPTIONAL_PresidioPIIMasking(
+        guardrail_name="virtual-key-presidio",
+        default_on=False,
+        logging_only=True,
+        presidio_filter_scope="input",
+        mock_testing=True,
+    )
+    presidio.check_pii = AsyncMock(return_value="<PERSON>")
+    logging = Logging(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "홍길동"}],
+        stream=False,
+        call_type="completion",
+        start_time=1.0,
+        litellm_call_id="virtual-key-logging-only",
+        function_id="virtual-key-logging-only",
+    )
+    logging.model_call_details["litellm_params"]["metadata"] = {
+        "guardrails": ["virtual-key-presidio"],
+    }
+    logging.model_call_details["messages"] = [{"role": "user", "content": "홍길동"}]
+    response = ModelResponse(
+        model="gpt-4o",
+        choices=[
+            Choices(
+                index=0,
+                message=Message(role="assistant", content="안녕하세요"),
+            )
+        ],
+    )
+
+    with patch.object(logging, "get_combined_callback_list", return_value=[presidio]):
+        await logging.async_success_handler(
+            result=response,
+            start_time=1.0,
+            end_time=2.0,
+            cache_hit=False,
+        )
+
+    presidio.check_pii.assert_awaited_once()
 
 
 def _make_mock_session_iterator(json_response, status=200, content_type="application/json", text_response=""):
