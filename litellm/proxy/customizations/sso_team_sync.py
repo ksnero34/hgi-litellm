@@ -105,7 +105,7 @@ async def ensure_human_organization(prisma_client: PrismaClient) -> str:
                 "organization_id": organization_id,
                 "organization_alias": HUMAN_ORGANIZATION_ALIAS,
                 "budget_id": budget_id,
-                "metadata": {"quota_pool_type": "human"},
+                "metadata": json.dumps({"quota_pool_type": "human"}),
                 "models": [],
                 "created_by": "oidc-sso",
                 "updated_by": "oidc-sso",
@@ -286,7 +286,11 @@ async def sync_sso_team_memberships(
         )
         await tx.litellm_usertable.update_many(
             where={"user_id": user_id},
-            data={"metadata": metadata, "organization_id": organization_id, "teams": {"set": updated_user_teams}},
+            data={
+                "metadata": json.dumps(metadata),
+                "organization_id": organization_id,
+                "teams": {"set": updated_user_teams},
+            },
         )
         audit_action = (
             "sso_first_provisioned"
@@ -304,14 +308,16 @@ async def sync_sso_team_memberships(
                 "table_name": "LiteLLM_UserTable",
                 "object_id": user_id,
                 "action": audit_action,
-                "updated_values": {
-                    "organization_id": organization_id,
-                    "previous_department_team_ids": sorted(previous_set),
-                    "department_team_ids": sorted(target_set),
-                    "added_team_ids": sorted(target_set - previous_set),
-                    "removed_team_ids": sorted(previous_set - target_set),
-                    "result": "success",
-                },
+                "updated_values": json.dumps(
+                    {
+                        "organization_id": organization_id,
+                        "previous_department_team_ids": sorted(previous_set),
+                        "department_team_ids": sorted(target_set),
+                        "added_team_ids": sorted(target_set - previous_set),
+                        "removed_team_ids": sorted(previous_set - target_set),
+                        "result": "success",
+                    }
+                ),
             }
         )
         registry = await tx.corporatepersonalkeyregistry.find_unique(where={"user_id": user_id})

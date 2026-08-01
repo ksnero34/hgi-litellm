@@ -10,6 +10,7 @@ from litellm.proxy.customizations.sso_team_sync import (
     SSO_MANAGED_TEAM_IDS_METADATA_KEY,
     build_sso_team_id,
     normalize_sso_team_claim,
+    ensure_human_organization,
     resolve_or_create_sso_teams,
     sync_sso_team_memberships,
 )
@@ -40,6 +41,18 @@ def test_normalize_sso_team_claim(raw_value, expected):
 
 def test_build_sso_team_id_is_stable_and_case_insensitive():
     assert build_sso_team_id("IT지원파트") == build_sso_team_id("  it지원파트 ")
+
+
+@pytest.mark.asyncio
+async def test_ensure_human_organization_serializes_metadata_for_prisma_json_input():
+    prisma_client = MagicMock()
+    prisma_client.db.litellm_budgettable.upsert = AsyncMock()
+    prisma_client.db.litellm_organizationtable.upsert = AsyncMock()
+
+    await ensure_human_organization(prisma_client)
+
+    organization_create = prisma_client.db.litellm_organizationtable.upsert.await_args.kwargs["data"]["create"]
+    assert organization_create["metadata"] == json.dumps({"quota_pool_type": "human"})
 
 
 def test_generic_response_convertor_supports_string_team_name_claim():
@@ -178,8 +191,12 @@ async def test_sync_sso_team_memberships_moves_department_without_deleting_keys(
         where={"user_id": "user-1", "team_id": "old-sso-team"}
     )
     tx.litellm_teammembership.upsert.assert_awaited_once()
-    persisted_metadata = tx.litellm_usertable.update_many.await_args.kwargs["data"]["metadata"]
+    persisted_metadata = json.loads(tx.litellm_usertable.update_many.await_args.kwargs["data"]["metadata"])
     assert persisted_metadata[SSO_MANAGED_TEAM_IDS_METADATA_KEY] == ["new-sso-team"]
+    persisted_audit_values = json.loads(tx.litellm_auditlog.create.await_args.kwargs["data"]["updated_values"])
+    assert persisted_audit_values["previous_department_team_ids"] == ["old-sso-team"]
+    assert persisted_audit_values["department_team_ids"] == ["new-sso-team"]
+    assert persisted_audit_values["result"] == "success"
     assert tx.litellm_usertable.update_many.await_args.kwargs["data"]["organization_id"] == "human-default"
     assert tx.litellm_usertable.update_many.await_args.kwargs["data"]["teams"] == {
         "set": ["manual-team", "new-sso-team"]
