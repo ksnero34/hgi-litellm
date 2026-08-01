@@ -8,7 +8,7 @@ sys.path.insert(
     0, os.path.abspath("../../..")
 )  # Adds the parent directory to the system path
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -32,6 +32,7 @@ from litellm.proxy._types import (
 )
 from litellm.proxy.auth.auth_checks import (
     ExperimentalUIJWTToken,
+    _cache_key_object,
     _cache_management_object,
     _can_object_call_model,
     _can_object_call_vector_stores,
@@ -43,6 +44,7 @@ from litellm.proxy.auth.auth_checks import (
     _tag_max_budget_check,
     _team_max_budget_check,
     _virtual_key_max_budget_alert_check,
+    _key_object_cache_ttl,
     _virtual_key_max_budget_check,
     _virtual_key_soft_budget_check,
     get_key_object,
@@ -101,6 +103,70 @@ def invalid_sso_user_defined_values():
         models=["gpt-3.5-turbo"],
         max_budget=100.0,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resolved_hash", "expected_cache_calls"),
+    (("presented-hash", 1), ("active-hash", 0)),
+)
+async def test_get_key_object_only_caches_the_presented_active_key(
+    resolved_hash: str,
+    expected_cache_calls: int,
+):
+    cache = MagicMock()
+    cache.async_get_cache = AsyncMock(return_value=None)
+    cache.async_set_cache = AsyncMock()
+    prisma = MagicMock()
+    prisma.get_data = AsyncMock(return_value=UserAPIKeyAuth(token=resolved_hash))
+
+    result = await get_key_object(
+        hashed_token="presented-hash",
+        prisma_client=prisma,
+        user_api_key_cache=cache,
+    )
+
+    assert result.token == resolved_hash
+    assert cache.async_set_cache.await_count == expected_cache_calls
+
+
+def test_key_object_cache_ttl_is_capped_by_expiry():
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    cache = MagicMock(default_in_memory_ttl=300.0)
+    key = UserAPIKeyAuth(token="active-hash", expires=now + timedelta(seconds=30))
+
+    ttl = _key_object_cache_ttl(key, cache, now=now)
+
+    assert ttl == 30.0
+
+
+def test_key_object_cache_ttl_is_short_for_blocked_keys():
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    cache = MagicMock(default_in_memory_ttl=300.0)
+    key = UserAPIKeyAuth(token="blocked-hash", blocked=True, expires=now + timedelta(days=1))
+
+    ttl = _key_object_cache_ttl(key, cache, now=now)
+
+    assert ttl == 1.0
+
+
+@pytest.mark.asyncio
+async def test_cache_key_object_uses_bounded_ttl_for_near_expiry_key():
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    cache = MagicMock(default_in_memory_ttl=300.0)
+    cache.async_set_cache = AsyncMock()
+    key = UserAPIKeyAuth(token="active-hash", expires=now + timedelta(seconds=30))
+
+    with patch("litellm.proxy.auth.auth_checks.get_utc_datetime", return_value=now):
+        await _cache_key_object(
+            hashed_token="active-hash",
+            user_api_key_obj=key,
+            user_api_key_cache=cache,
+            proxy_logging_obj=None,
+        )
+
+    assert cache.async_set_cache.await_count == 1
+    assert cache.async_set_cache.await_args.kwargs["ttl"] == 30.0
 
 
 def test_get_experimental_ui_login_jwt_auth_token_valid(valid_sso_user_defined_values):

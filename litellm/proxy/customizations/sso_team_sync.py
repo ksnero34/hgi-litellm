@@ -8,13 +8,9 @@ from typing import Any, Dict, List
 
 from fastapi import Request
 
-from litellm._logging import verbose_proxy_logger
 from litellm.proxy._types import (
     LitellmUserRoles,
-    Member,
     NewTeamRequest,
-    TeamMemberAddRequest,
-    TeamMemberDeleteRequest,
     UserAPIKeyAuth,
 )
 from litellm.proxy.customizations.personal_key_policy import human_organization_id
@@ -175,13 +171,53 @@ def _get_user_metadata(user_info: Any) -> Dict[str, Any]:
     return deepcopy(metadata) if isinstance(metadata, dict) else {}
 
 
+def get_managed_sso_team_ids(user_info: Any) -> List[str]:
+    metadata = _get_user_metadata(user_info)
+    value = metadata.get(SSO_MANAGED_TEAM_IDS_METADATA_KEY)
+    if not isinstance(value, list):
+        return []
+    return list(dict.fromkeys(str(team_id) for team_id in value if isinstance(team_id, str) and team_id))
+
+
+def _member_data(member: Any) -> Dict[str, Any]:
+    if isinstance(member, dict):
+        return deepcopy(member)
+    model_dump = getattr(member, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump()
+        return deepcopy(dumped) if isinstance(dumped, dict) else {}
+    return {}
+
+
+def _updated_members_with_roles(
+    members_with_roles: Any,
+    user_id: str,
+    user_email: str | None,
+    include_user: bool,
+) -> List[Dict[str, Any]]:
+    members = members_with_roles if isinstance(members_with_roles, list) else []
+    serialized_members = [_member_data(member) for member in members]
+    matching_members = [
+        member
+        for member in serialized_members
+        if member.get("user_id") == user_id or (user_email is not None and member.get("user_email") == user_email)
+    ]
+    other_members = [
+        member
+        for member in serialized_members
+        if member.get("user_id") != user_id and (user_email is None or member.get("user_email") != user_email)
+    ]
+    if not include_user:
+        return other_members
+    existing_member = matching_members[0] if matching_members else {"user_id": user_id, "role": "user"}
+    return [*other_members, existing_member]
+
+
 async def sync_sso_team_memberships(
     prisma_client: PrismaClient,
     user_info: Any,
     target_team_ids: List[str],
 ) -> None:
-    from litellm.proxy.management_endpoints.team_endpoints import team_member_add, team_member_delete
-
     user_id: str | None = getattr(user_info, "user_id", None)
     if not user_id:
         return
@@ -198,45 +234,40 @@ async def sync_sso_team_memberships(
         if current_user is None:
             raise ValueError(f"SSO user {user_id} no longer exists")
         metadata = _get_user_metadata(current_user)
-        previous_value = metadata.get(SSO_MANAGED_TEAM_IDS_METADATA_KEY, [])
-        previous_team_ids = [str(team_id) for team_id in previous_value] if isinstance(previous_value, list) else []
+        previous_team_ids = get_managed_sso_team_ids(current_user)
         previous_set = set(previous_team_ids)
         current_set = set(current_user.teams or [])
-        operation_failed = False
-
-        for team_id in target_set - current_set:
-            add_result = await asyncio.gather(
-                team_member_add(
-                    data=TeamMemberAddRequest(
-                        member=Member(user_id=user_id, role="user"),
-                        team_id=team_id,
-                    ),
-                    user_api_key_dict=UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN),
-                ),
-                return_exceptions=True,
+        managed_team_ids = sorted(previous_set | target_set)
+        for team_id in managed_team_ids:
+            await tx.query_raw(
+                'SELECT "team_id" FROM "LiteLLM_TeamTable" WHERE "team_id" = $1 FOR UPDATE',
+                team_id,
             )
-            if isinstance(add_result[0], Exception):
-                operation_failed = True
-                verbose_proxy_logger.error(f"Failed to add SSO user {user_id} to team {team_id}: {add_result[0]}")
-
-        for team_id in (previous_set - target_set) & current_set:
-            delete_result = await asyncio.gather(
-                team_member_delete(
-                    data=TeamMemberDeleteRequest(team_id=team_id, user_id=user_id),
-                    user_api_key_dict=UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN),
-                ),
-                return_exceptions=True,
+        for team_id in managed_team_ids:
+            team = await tx.litellm_teamtable.find_unique(where={"team_id": team_id})
+            if team is None:
+                raise ValueError(f"SSO department team {team_id} no longer exists")
+            updated_members = _updated_members_with_roles(
+                members_with_roles=team.members_with_roles,
+                user_id=user_id,
+                user_email=getattr(current_user, "user_email", None),
+                include_user=team_id in target_set,
             )
-            if isinstance(delete_result[0], Exception):
-                operation_failed = True
-                verbose_proxy_logger.error(
-                    f"Failed to remove SSO user {user_id} from team {team_id}: {delete_result[0]}"
-                )
+            await tx.litellm_teamtable.update(
+                where={"team_id": team_id},
+                data={"members_with_roles": json.dumps(updated_members)},
+            )
 
-        if operation_failed:
-            raise RuntimeError(f"SSO department membership synchronization failed for {user_id}")
+        for team_id in sorted(previous_set - target_set):
+            await tx.litellm_teammembership.delete_many(where={"user_id": user_id, "team_id": team_id})
+        for team_id in sorted(target_set):
+            await tx.litellm_teammembership.upsert(
+                where={"user_id_team_id": {"user_id": user_id, "team_id": team_id}},
+                data={"create": {"user_id": user_id, "team_id": team_id}, "update": {}},
+            )
 
         metadata[SSO_MANAGED_TEAM_IDS_METADATA_KEY] = sorted(target_set)
+        updated_user_teams = sorted((current_set - previous_set) | target_set)
         await tx.litellm_organizationmembership.upsert(
             where={
                 "user_id_organization_id": {
@@ -255,7 +286,7 @@ async def sync_sso_team_memberships(
         )
         await tx.litellm_usertable.update_many(
             where={"user_id": user_id},
-            data={"metadata": metadata, "organization_id": organization_id},
+            data={"metadata": metadata, "organization_id": organization_id, "teams": {"set": updated_user_teams}},
         )
         audit_action = (
             "sso_first_provisioned"

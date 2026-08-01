@@ -1,6 +1,7 @@
 import json
 import secrets
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -55,12 +56,18 @@ def _is_proxy_admin(auth: UserAPIKeyAuth) -> bool:
     return auth.user_role in {LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN.value}
 
 
-def _target_user_id(requested_user_id: str | None, auth: UserAPIKeyAuth) -> str:
+def _target_user_id(requested_user_id: str | None, auth: UserAPIKeyAuth, *, read_only: bool = False) -> str:
     caller_user_id = auth.user_id
-    if not _is_proxy_admin(auth) and auth.user_role not in {
+    allowed_roles = {
         LitellmUserRoles.INTERNAL_USER,
         LitellmUserRoles.INTERNAL_USER.value,
-    }:
+    }
+    if read_only:
+        allowed_roles = allowed_roles | {
+            LitellmUserRoles.INTERNAL_USER_VIEW_ONLY,
+            LitellmUserRoles.INTERNAL_USER_VIEW_ONLY.value,
+        }
+    if not _is_proxy_admin(auth) and auth.user_role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only internal users and proxy administrators can manage personal keys",
@@ -80,6 +87,28 @@ def _target_user_id(requested_user_id: str | None, auth: UserAPIKeyAuth) -> str:
             detail="Personal keys can only be managed from an authenticated UI session",
         )
     return target
+
+
+async def _delete_personal_key_cache_entry(token_hash: str) -> None:
+    from litellm.proxy.auth.auth_checks import _delete_cache_key_object
+    from litellm.proxy.proxy_server import proxy_logging_obj, user_api_key_cache
+
+    await _delete_cache_key_object(
+        hashed_token=token_hash,
+        user_api_key_cache=user_api_key_cache,
+        proxy_logging_obj=proxy_logging_obj,
+    )
+
+
+async def _invalidate_personal_key_cache(
+    token_hashes: tuple[str, ...],
+    invalidate: Callable[[str], Awaitable[None]] = _delete_personal_key_cache_entry,
+) -> None:
+    for token_hash in token_hashes:
+        try:
+            await invalidate(token_hash)
+        except Exception:
+            verbose_proxy_logger.exception("Failed to invalidate personal key cache for token hash %s", token_hash)
 
 
 def _writer_database(prisma_client: "PrismaClient") -> Prisma:
@@ -104,6 +133,59 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _rotation_grace(
+    old_expires: datetime,
+    configured_revoke_at: datetime,
+    now: datetime,
+) -> tuple[datetime, bool]:
+    revoke_at = min(_as_utc(configured_revoke_at), _as_utc(old_expires))
+    return revoke_at, revoke_at > _as_utc(now)
+
+
+async def _retarget_deprecated_personal_keys(
+    db: Prisma,
+    old_hash: str,
+    new_hash: str,
+    ancestor_hashes: tuple[str, ...],
+    revoke_at: datetime,
+    old_key_has_grace: bool,
+) -> None:
+    if not old_key_has_grace:
+        if ancestor_hashes:
+            await db.litellm_deprecatedverificationtoken.delete_many(where={"token": {"in": list(ancestor_hashes)}})
+        return
+    await db.litellm_deprecatedverificationtoken.upsert(
+        where={"token": old_hash},
+        data={
+            "create": {"token": old_hash, "active_token_id": new_hash, "revoke_at": revoke_at},
+            "update": {"active_token_id": new_hash, "revoke_at": revoke_at},
+        },
+    )
+    if ancestor_hashes:
+        await db.litellm_deprecatedverificationtoken.update_many(
+            where={"token": {"in": list(ancestor_hashes)}},
+            data={"active_token_id": new_hash},
+        )
+
+
+async def _delete_deprecated_personal_keys(db: Prisma, active_hash: str) -> tuple[str, ...]:
+    ancestors = await db.litellm_deprecatedverificationtoken.find_many(where={"active_token_id": active_hash})
+    ancestor_hashes = tuple(str(row.token) for row in ancestors)
+    if ancestor_hashes:
+        await db.litellm_deprecatedverificationtoken.delete_many(where={"token": {"in": list(ancestor_hashes)}})
+    return ancestor_hashes
+
+
+async def _count_active_personal_keys(db: Prisma, token_hashes: tuple[str, ...], now: datetime) -> int:
+    return await db.litellm_verificationtoken.count(
+        where={
+            "token": {"in": token_hashes},
+            "blocked": False,
+            "expires": {"gt": now},
+        }
+    )
 
 
 def _personal_key_status(
@@ -371,16 +453,7 @@ async def create_personal_key(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Personal key creation failed",
         ) from error
-    if legacy_token_hashes:
-        from litellm.proxy.auth.auth_checks import _delete_cache_key_object
-        from litellm.proxy.proxy_server import proxy_logging_obj, user_api_key_cache
-
-        for legacy_token_hash in legacy_token_hashes:
-            await _delete_cache_key_object(
-                hashed_token=legacy_token_hash,
-                user_api_key_cache=user_api_key_cache,
-                proxy_logging_obj=proxy_logging_obj,
-            )
+    await _invalidate_personal_key_cache(legacy_token_hashes)
     view = _view_from_rows(registry, token_row)
     return PersonalKeyCreateResponse(**view.model_dump(), key=plaintext)
 
@@ -399,7 +472,7 @@ async def get_personal_key(
     if prisma_client is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not connected")
     database = _writer_database(prisma_client)
-    target_user_id = _target_user_id(user_id, auth)
+    target_user_id = _target_user_id(user_id, auth, read_only=True)
     registry, token_row = await _registry_and_token(database, target_user_id)
     return _view_from_rows(registry, token_row)
 
@@ -413,8 +486,7 @@ async def rotate_personal_key(
     auth: PersonalKeyAuth,
     user_id: PersonalKeyUserId = None,
 ) -> PersonalKeyRotateResponse:
-    from litellm.proxy.auth.auth_checks import _delete_cache_key_object
-    from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj, user_api_key_cache
+    from litellm.proxy.proxy_server import prisma_client
 
     if prisma_client is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not connected")
@@ -424,13 +496,24 @@ async def rotate_personal_key(
     plaintext = f"sk-{secrets.token_urlsafe(LENGTH_OF_LITELLM_GENERATED_KEY)}"
     new_hash = hash_token(plaintext)
     expires = personal_key_expiry()
-    revoke_at = personal_key_revoke_at()
+    configured_revoke_at = personal_key_revoke_at()
+    revoke_at = configured_revoke_at
     old_hash = ""
     ancestor_hashes: tuple[str, ...] = ()
     async with database.tx() as tx:
         await tx.execute_raw("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", target_user_id)
         registry, token_row = await _registry_and_token(tx, target_user_id)
         old_hash = str(registry.active_token_hash)
+        if not isinstance(token_row.expires, datetime):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Personal key expiry is missing",
+            )
+        revoke_at, old_key_has_grace = _rotation_grace(
+            token_row.expires,
+            configured_revoke_at,
+            datetime.now(timezone.utc),
+        )
         next_generation = int(registry.generation) + 1
         logical_key_id = str(registry.logical_key_id)
         metadata = build_personal_key_metadata(
@@ -439,9 +522,7 @@ async def rotate_personal_key(
             generation=next_generation,
             lifecycle=PersonalKeyLifecycle.ACTIVE,
         )
-        ancestors = await tx.litellm_deprecatedverificationtoken.find_many(
-            where={"active_token_id": old_hash, "revoke_at": {"gt": datetime.now(timezone.utc)}}
-        )
+        ancestors = await tx.litellm_deprecatedverificationtoken.find_many(where={"active_token_id": old_hash})
         ancestor_hashes = tuple(str(row.token) for row in ancestors)
         await tx.litellm_verificationtoken.update(
             where={"token": old_hash},
@@ -455,25 +536,14 @@ async def rotate_personal_key(
                 "updated_by": actor_user_id,
             },
         )
-        await tx.litellm_deprecatedverificationtoken.upsert(
-            where={"token": old_hash},
-            data={
-                "create": {
-                    "token": old_hash,
-                    "active_token_id": new_hash,
-                    "revoke_at": revoke_at,
-                },
-                "update": {
-                    "active_token_id": new_hash,
-                    "revoke_at": revoke_at,
-                },
-            },
+        await _retarget_deprecated_personal_keys(
+            tx,
+            old_hash,
+            new_hash,
+            ancestor_hashes,
+            revoke_at,
+            old_key_has_grace,
         )
-        if ancestor_hashes:
-            await tx.litellm_deprecatedverificationtoken.update_many(
-                where={"token": {"in": list(ancestor_hashes)}},
-                data={"active_token_id": new_hash},
-            )
         registry = await tx.corporatepersonalkeyregistry.update(
             where={"user_id": target_user_id},
             data={
@@ -491,14 +561,13 @@ async def rotate_personal_key(
                 detail="Rotated personal key is missing",
             )
         await _audit(tx, actor_user_id, target_user_id, logical_key_id, "rotated", "success")
-    for cached_hash in (old_hash, *ancestor_hashes):
-        await _delete_cache_key_object(
-            hashed_token=cached_hash,
-            user_api_key_cache=user_api_key_cache,
-            proxy_logging_obj=proxy_logging_obj,
-        )
+    await _invalidate_personal_key_cache((old_hash, *ancestor_hashes))
     view = _view_from_rows(registry, token_row)
-    return PersonalKeyRotateResponse(**view.model_dump(), key=plaintext, previous_key_revoke_at=revoke_at)
+    return PersonalKeyRotateResponse(
+        **view.model_dump(),
+        key=plaintext,
+        previous_key_revoke_at=revoke_at if old_key_has_grace else None,
+    )
 
 
 @router.delete(
@@ -510,8 +579,7 @@ async def delete_personal_key(
     auth: PersonalKeyAuth,
     user_id: PersonalKeyUserId = None,
 ) -> PersonalKeyDeleteResponse:
-    from litellm.proxy.auth.auth_checks import _delete_cache_key_object
-    from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj, user_api_key_cache
+    from litellm.proxy.proxy_server import prisma_client
 
     if prisma_client is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not connected")
@@ -523,17 +591,14 @@ async def delete_personal_key(
         registry, _ = await _registry_and_token(tx, target_user_id)
         token_hash = str(registry.active_token_hash)
         logical_key_id = str(registry.logical_key_id)
+        ancestor_hashes = await _delete_deprecated_personal_keys(tx, token_hash)
         await tx.litellm_verificationtoken.update(
             where={"token": token_hash},
             data={"blocked": True, "updated_by": actor_user_id},
         )
         await tx.corporatepersonalkeyregistry.delete(where={"user_id": target_user_id})
         await _audit(tx, actor_user_id, target_user_id, logical_key_id, "deleted", "success")
-    await _delete_cache_key_object(
-        hashed_token=token_hash,
-        user_api_key_cache=user_api_key_cache,
-        proxy_logging_obj=proxy_logging_obj,
-    )
+    await _invalidate_personal_key_cache((token_hash, *ancestor_hashes))
     return PersonalKeyDeleteResponse(deleted=True, logical_key_id=logical_key_id)
 
 
@@ -553,9 +618,6 @@ async def get_personal_key_metrics(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not connected")
     database = _writer_database(prisma_client)
     now = datetime.now(timezone.utc)
-    active_personal_keys = await database.corporatepersonalkeyregistry.count(
-        where={"status": PersonalKeyRegistryStatus.ACTIVE.value}
-    )
     active_registries = await database.corporatepersonalkeyregistry.find_many(
         where={
             "status": PersonalKeyRegistryStatus.ACTIVE.value,
@@ -565,6 +627,7 @@ async def get_personal_key_metrics(
     active_token_hashes = tuple(
         registry.active_token_hash for registry in active_registries if registry.active_token_hash is not None
     )
+    active_personal_keys = await _count_active_personal_keys(database, active_token_hashes, now)
     expiring_within_seven_days = await database.litellm_verificationtoken.count(
         where={
             "token": {"in": active_token_hashes},

@@ -23,6 +23,7 @@ export default function ApiKeysDashboard() {
 
   const autoOpenCreate = searchParams.get("create") === "true";
   const isInternalUser = ["Internal User", "internal_user"].includes(userRole || "");
+  const isInternalViewer = ["Internal Viewer", "internal_user_viewer"].includes(userRole || "");
   const prefillData: CreateKeyPrefillData | undefined = useMemo(() => {
     if (!autoOpenCreate) return undefined;
 
@@ -79,8 +80,8 @@ export default function ApiKeysDashboard() {
     }
   }, [accessToken, userID, userRole]);
 
-  if (accessToken && isInternalUser) {
-    return <PersonalKeyDashboard accessToken={accessToken} />;
+  if (accessToken && (isInternalUser || isInternalViewer)) {
+    return <PersonalKeyDashboard accessToken={accessToken} readOnly={isInternalViewer} />;
   }
 
   return (

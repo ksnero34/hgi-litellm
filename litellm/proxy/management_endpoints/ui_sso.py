@@ -96,6 +96,7 @@ from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.customizations.oidc import resolve_generic_oidc_endpoints
 from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
 from litellm.proxy.customizations.sso_team_sync import (
+    get_managed_sso_team_ids,
     normalize_sso_team_claim,
     resolve_or_create_sso_teams,
     sync_sso_team_memberships,
@@ -2796,8 +2797,15 @@ class SSOAuthenticationHandler:
             verbose_proxy_logger.debug("User not found in LiteLLM DB, skipping team member addition")
             return
         if getattr(result, "sso_team_mapping_configured", False):
+            team_ids_attribute = "team_ids"
             if not getattr(result, "sso_team_claim_present", False):
-                verbose_proxy_logger.warning("Configured SSO team claim was absent; preserving existing memberships")
+                managed_team_ids = get_managed_sso_team_ids(user_info)
+                if len(managed_team_ids) != 1:
+                    raise ValueError(
+                        "Configured SSO team claim is required until exactly one managed department is provisioned"
+                    )
+                setattr(result, team_ids_attribute, managed_team_ids)
+                verbose_proxy_logger.warning("Configured SSO team claim was absent; preserving managed department")
                 return
             from litellm.proxy.proxy_server import prisma_client
 
@@ -2814,7 +2822,7 @@ class SSOAuthenticationHandler:
                 user_info=user_info,
                 target_team_ids=resolved_team_ids,
             )
-            setattr(result, "team_ids", resolved_team_ids)
+            setattr(result, team_ids_attribute, resolved_team_ids)
             return
         sso_teams = getattr(result, "team_ids", [])
         await add_missing_team_member(user_info=user_info, sso_teams=sso_teams)

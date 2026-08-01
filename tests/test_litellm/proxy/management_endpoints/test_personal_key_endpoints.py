@@ -1,3 +1,7 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import HTTPException
 from prisma import Prisma
@@ -10,6 +14,11 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
     _reject_session_generic_key_read,
 )
 from litellm.proxy.management_endpoints.personal_key_endpoints import (
+    _count_active_personal_keys,
+    _delete_deprecated_personal_keys,
+    _invalidate_personal_key_cache,
+    _retarget_deprecated_personal_keys,
+    _rotation_grace,
     _target_user_id,
     _writer_database,
 )
@@ -129,3 +138,144 @@ def test_personal_key_transactions_use_the_writer_prisma_client():
     prisma_client = type("PrismaClientStub", (), {"db": wrapper})()
 
     assert _writer_database(prisma_client) is database
+
+
+def test_internal_viewer_can_read_but_cannot_mutate_personal_key():
+    auth = UserAPIKeyAuth(
+        user_id="viewer-1",
+        user_role=LitellmUserRoles.INTERNAL_USER_VIEW_ONLY,
+        is_session_token=True,
+    )
+
+    assert _target_user_id(None, auth, read_only=True) == "viewer-1"
+
+    with pytest.raises(HTTPException) as error:
+        _target_user_id(None, auth)
+
+    assert error.value.status_code == 403
+
+
+def test_rotation_grace_is_capped_at_old_key_expiry():
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    old_expires = now + timedelta(hours=2)
+    configured_revoke_at = now + timedelta(hours=72)
+
+    revoke_at, has_grace = _rotation_grace(old_expires, configured_revoke_at, now)
+
+    assert revoke_at == old_expires
+    assert has_grace is True
+
+
+def test_rotation_grace_rejects_already_expired_old_key():
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    old_expires = now - timedelta(seconds=1)
+
+    revoke_at, has_grace = _rotation_grace(old_expires, now + timedelta(hours=72), now)
+
+    assert revoke_at == old_expires
+    assert has_grace is False
+
+
+@pytest.mark.asyncio
+async def test_expired_rotation_removes_ancestors_without_creating_deprecated_mapping():
+    deprecated_tokens = SimpleNamespace(
+        delete_many=AsyncMock(),
+        upsert=AsyncMock(),
+        update_many=AsyncMock(),
+    )
+    database = SimpleNamespace(litellm_deprecatedverificationtoken=deprecated_tokens)
+    revoke_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    await _retarget_deprecated_personal_keys(
+        database,
+        "old-hash",
+        "new-hash",
+        ("ancestor-1", "ancestor-2"),
+        revoke_at,
+        False,
+    )
+
+    deprecated_tokens.delete_many.assert_awaited_once_with(where={"token": {"in": ["ancestor-1", "ancestor-2"]}})
+    deprecated_tokens.upsert.assert_not_awaited()
+    deprecated_tokens.update_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_valid_rotation_uses_capped_revoke_at_for_old_key_mapping():
+    deprecated_tokens = SimpleNamespace(
+        delete_many=AsyncMock(),
+        upsert=AsyncMock(),
+        update_many=AsyncMock(),
+    )
+    database = SimpleNamespace(litellm_deprecatedverificationtoken=deprecated_tokens)
+    capped_revoke_at = datetime(2026, 8, 1, 2, tzinfo=timezone.utc)
+
+    await _retarget_deprecated_personal_keys(
+        database,
+        "old-hash",
+        "new-hash",
+        (),
+        capped_revoke_at,
+        True,
+    )
+
+    deprecated_tokens.upsert.assert_awaited_once_with(
+        where={"token": "old-hash"},
+        data={
+            "create": {
+                "token": "old-hash",
+                "active_token_id": "new-hash",
+                "revoke_at": capped_revoke_at,
+            },
+            "update": {"active_token_id": "new-hash", "revoke_at": capped_revoke_at},
+        },
+    )
+    deprecated_tokens.delete_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_deprecated_personal_keys_removes_every_ancestor_mapping():
+    deprecated_tokens = SimpleNamespace(
+        find_many=AsyncMock(
+            return_value=(
+                SimpleNamespace(token="ancestor-1"),
+                SimpleNamespace(token="ancestor-2"),
+            )
+        ),
+        delete_many=AsyncMock(),
+    )
+    database = SimpleNamespace(litellm_deprecatedverificationtoken=deprecated_tokens)
+
+    hashes = await _delete_deprecated_personal_keys(database, "active-hash")
+
+    assert hashes == ("ancestor-1", "ancestor-2")
+    deprecated_tokens.find_many.assert_awaited_once_with(where={"active_token_id": "active-hash"})
+    deprecated_tokens.delete_many.assert_awaited_once_with(where={"token": {"in": ["ancestor-1", "ancestor-2"]}})
+
+
+@pytest.mark.asyncio
+async def test_cache_invalidation_is_best_effort_and_continues_after_failure():
+    invalidate = AsyncMock(side_effect=(RuntimeError("cache unavailable"), None))
+
+    await _invalidate_personal_key_cache(("old-hash", "ancestor-hash"), invalidate)
+
+    assert invalidate.await_args_list[0].args == ("old-hash",)
+    assert invalidate.await_args_list[1].args == ("ancestor-hash",)
+
+
+@pytest.mark.asyncio
+async def test_active_personal_key_count_requires_unblocked_unexpired_token():
+    verification_tokens = SimpleNamespace(count=AsyncMock(return_value=3))
+    database = SimpleNamespace(litellm_verificationtoken=verification_tokens)
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    count = await _count_active_personal_keys(database, ("active-1", "expired-1", "blocked-1"), now)
+
+    assert count == 3
+    verification_tokens.count.assert_awaited_once_with(
+        where={
+            "token": {"in": ("active-1", "expired-1", "blocked-1")},
+            "blocked": False,
+            "expires": {"gt": now},
+        }
+    )

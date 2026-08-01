@@ -27,6 +27,7 @@ type PersonalKeySecret = PersonalKey & {
 
 type PersonalKeyDashboardProps = {
   accessToken: string;
+  readOnly?: boolean;
 };
 
 const personalKeyClient = createApiClient({
@@ -38,7 +39,14 @@ async function personalKeyRequest<T>(accessToken: string, path: string, method: 
   return personalKeyClient.request<T>(method, path, { accessToken, body });
 }
 
-export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboardProps) {
+function personalKeyErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Personal key request failed";
+}
+
+export default function PersonalKeyDashboard({ accessToken, readOnly = false }: PersonalKeyDashboardProps) {
   const [keyInfo, setKeyInfo] = useState<PersonalKey | null>(null);
   const [keyAlias, setKeyAlias] = useState("");
   const [newSecret, setNewSecret] = useState<PersonalKeySecret | null>(null);
@@ -56,7 +64,7 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
         if (active && error instanceof ApiError && error.status === 404) {
           setKeyInfo(null);
         } else if (active) {
-          MessageManager.fromBackend(error);
+          MessageManager.error(personalKeyErrorMessage(error));
         }
       } finally {
         if (active) {
@@ -80,7 +88,7 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
       setNewSecret(created);
       MessageManager.success("Personal key created");
     } catch (error) {
-      MessageManager.fromBackend(error);
+      MessageManager.error(personalKeyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -94,7 +102,7 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
       setNewSecret(rotated);
       MessageManager.success("Personal key rotated");
     } catch (error) {
-      MessageManager.fromBackend(error);
+      MessageManager.error(personalKeyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -111,7 +119,7 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
       setNewSecret(null);
       MessageManager.success("Personal key deleted");
     } catch (error) {
-      MessageManager.fromBackend(error);
+      MessageManager.error(personalKeyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -150,7 +158,7 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
               )}
             </div>
           )}
-          {keyInfo === null ? (
+          {keyInfo === null && !readOnly && (
             <div className="space-y-3">
               <Input
                 value={keyAlias}
@@ -160,7 +168,8 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
               />
               <p className="text-sm text-muted-foreground">You can have one active personal key.</p>
             </div>
-          ) : (
+          )}
+          {keyInfo !== null && (
             <dl className="grid grid-cols-[10rem_1fr] gap-3 text-sm">
               <dt className="text-muted-foreground">Alias</dt>
               <dd>{keyInfo.key_alias || "Personal key"}</dd>
@@ -174,23 +183,28 @@ export default function PersonalKeyDashboard({ accessToken }: PersonalKeyDashboa
               <dd>{new Date(keyInfo.expires).toLocaleString()}</dd>
             </dl>
           )}
-        </CardContent>
-        <CardFooter className="gap-2">
-          {keyInfo === null ? (
-            <Button disabled={loading} onClick={create}>
-              Create personal key
-            </Button>
-          ) : (
-            <>
-              <Button disabled={loading} onClick={rotate}>
-                Rotate
-              </Button>
-              <Button disabled={loading} variant="destructive" onClick={remove}>
-                Delete
-              </Button>
-            </>
+          {keyInfo === null && readOnly && (
+            <p className="text-sm text-muted-foreground">No personal key has been created.</p>
           )}
-        </CardFooter>
+        </CardContent>
+        {!readOnly && (
+          <CardFooter className="gap-2">
+            {keyInfo === null ? (
+              <Button disabled={loading} onClick={create}>
+                Create personal key
+              </Button>
+            ) : (
+              <>
+                <Button disabled={loading} onClick={rotate}>
+                  Rotate
+                </Button>
+                <Button disabled={loading} variant="destructive" onClick={remove}>
+                  Delete
+                </Button>
+              </>
+            )}
+          </CardFooter>
+        )}
       </Card>
     </div>
   );

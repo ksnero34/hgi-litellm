@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -110,19 +111,40 @@ async def test_resolve_or_create_sso_teams_reuses_id_alias_and_creates_missing_t
 
 
 @pytest.mark.asyncio
-async def test_sync_sso_team_memberships_only_removes_previously_managed_teams():
+async def test_sync_sso_team_memberships_moves_department_without_deleting_keys():
     user_info = SimpleNamespace(
         user_id="user-1",
+        user_email="user@example.com",
         teams=["old-sso-team", "manual-team"],
         metadata={SSO_MANAGED_TEAM_IDS_METADATA_KEY: ["old-sso-team"]},
     )
+    teams = {
+        "old-sso-team": SimpleNamespace(
+            members_with_roles=[
+                {"user_id": "user-1", "role": "user"},
+                {"user_id": "other-user", "role": "user"},
+            ]
+        ),
+        "new-sso-team": SimpleNamespace(members_with_roles=[{"user_id": "new-team-user", "role": "user"}]),
+    }
     tx = MagicMock()
     tx.execute_raw = AsyncMock()
+    tx.query_raw = AsyncMock()
+    tx.litellm_teamtable.find_unique = AsyncMock(side_effect=lambda where: teams[where["team_id"]])
+    tx.litellm_teamtable.update = AsyncMock()
+    tx.litellm_teammembership.delete_many = AsyncMock()
+    tx.litellm_teammembership.upsert = AsyncMock()
     tx.litellm_organizationmembership.upsert = AsyncMock()
     tx.litellm_usertable.update_many = AsyncMock()
     tx.litellm_usertable.find_unique = AsyncMock(return_value=user_info)
     tx.litellm_auditlog.create = AsyncMock()
-    tx.corporatepersonalkeyregistry.find_unique = AsyncMock(return_value=None)
+    tx.corporatepersonalkeyregistry.find_unique = AsyncMock(
+        return_value=SimpleNamespace(active_token_hash="active-key-hash")
+    )
+    tx.corporatepersonalkeyregistry.update = AsyncMock()
+    tx.litellm_deprecatedverificationtoken.find_many = AsyncMock(return_value=[])
+    tx.litellm_verificationtoken.update = AsyncMock()
+    tx.litellm_verificationtoken.delete_many = AsyncMock()
     transaction = MagicMock()
     transaction.__aenter__ = AsyncMock(return_value=tx)
     transaction.__aexit__ = AsyncMock(return_value=None)
@@ -132,6 +154,7 @@ async def test_sync_sso_team_memberships_only_removes_previously_managed_teams()
     with (
         patch("litellm.proxy.management_endpoints.team_endpoints.team_member_add", new_callable=AsyncMock) as add,
         patch("litellm.proxy.management_endpoints.team_endpoints.team_member_delete", new_callable=AsyncMock) as delete,
+        patch("litellm.proxy.auth.auth_checks._delete_cache_key_object", new_callable=AsyncMock),
     ):
         await sync_sso_team_memberships(
             prisma_client=prisma_client,
@@ -139,11 +162,40 @@ async def test_sync_sso_team_memberships_only_removes_previously_managed_teams()
             target_team_ids=["new-sso-team"],
         )
 
-    assert add.await_args.kwargs["data"].team_id == "new-sso-team"
-    assert delete.await_args.kwargs["data"].team_id == "old-sso-team"
+    add.assert_not_awaited()
+    delete.assert_not_awaited()
+    tx.litellm_verificationtoken.delete_many.assert_not_awaited()
+    team_updates = {
+        call.kwargs["where"]["team_id"]: json.loads(call.kwargs["data"]["members_with_roles"])
+        for call in tx.litellm_teamtable.update.await_args_list
+    }
+    assert team_updates["old-sso-team"] == [{"user_id": "other-user", "role": "user"}]
+    assert team_updates["new-sso-team"] == [
+        {"user_id": "new-team-user", "role": "user"},
+        {"user_id": "user-1", "role": "user"},
+    ]
+    tx.litellm_teammembership.delete_many.assert_awaited_once_with(
+        where={"user_id": "user-1", "team_id": "old-sso-team"}
+    )
+    tx.litellm_teammembership.upsert.assert_awaited_once()
     persisted_metadata = tx.litellm_usertable.update_many.await_args.kwargs["data"]["metadata"]
     assert persisted_metadata[SSO_MANAGED_TEAM_IDS_METADATA_KEY] == ["new-sso-team"]
     assert tx.litellm_usertable.update_many.await_args.kwargs["data"]["organization_id"] == "human-default"
+    assert tx.litellm_usertable.update_many.await_args.kwargs["data"]["teams"] == {
+        "set": ["manual-team", "new-sso-team"]
+    }
+    tx.litellm_verificationtoken.update.assert_awaited_once_with(
+        where={"token": "active-key-hash"},
+        data={
+            "team_id": "new-sso-team",
+            "organization_id": "human-default",
+            "updated_by": "oidc-sso",
+        },
+    )
+    tx.corporatepersonalkeyregistry.update.assert_awaited_once_with(
+        where={"user_id": "user-1"},
+        data={"department_team_id": "new-sso-team", "organization_id": "human-default"},
+    )
 
 
 @pytest.mark.asyncio
@@ -153,12 +205,38 @@ async def test_missing_configured_team_claim_preserves_existing_memberships():
         sso_team_mapping_configured=True,
         sso_team_claim_present=False,
     )
-    user_info = SimpleNamespace(user_id="user-1", teams=["existing-team"])
+    user_info = SimpleNamespace(
+        user_id="user-1",
+        teams=["existing-team"],
+        metadata={SSO_MANAGED_TEAM_IDS_METADATA_KEY: ["existing-team"]},
+    )
 
     with patch("litellm.proxy.management_endpoints.ui_sso.add_missing_team_member", new_callable=AsyncMock) as add:
         await SSOAuthenticationHandler.add_user_to_teams_from_sso_response(result=result, user_info=user_info)
 
     add.assert_not_awaited()
+    assert result.team_ids == ["existing-team"]
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {},
+        {SSO_MANAGED_TEAM_IDS_METADATA_KEY: []},
+        {SSO_MANAGED_TEAM_IDS_METADATA_KEY: ["department-a", "department-b"]},
+    ],
+)
+@pytest.mark.asyncio
+async def test_missing_configured_team_claim_rejects_first_or_inconsistent_provisioning(metadata):
+    result = SimpleNamespace(
+        team_ids=[],
+        sso_team_mapping_configured=True,
+        sso_team_claim_present=False,
+    )
+    user_info = SimpleNamespace(user_id="user-1", teams=[], metadata=metadata)
+
+    with pytest.raises(ValueError, match="exactly one managed department"):
+        await SSOAuthenticationHandler.add_user_to_teams_from_sso_response(result=result, user_info=user_info)
 
 
 @pytest.mark.asyncio
