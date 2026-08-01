@@ -594,9 +594,7 @@ describe("Teams - delete team warning copy", () => {
   it("warns that the team's models are deleted when the team has keys", async () => {
     await openDeleteModal({ ...baseTableTeam, keys: [], keys_count: 5 });
 
-    expect(screen.getByText(/Warning: This team has 5 keys associated with it/i)).toHaveTextContent(
-      /along with any models created for this team/i,
-    );
+    expect(screen.getByText((content) => /5 keys/i.test(content))).toHaveTextContent(/models created for this team/i);
     expect(screen.getByText(/Are you sure you want to delete this team/i)).toHaveTextContent(
       /any models created for it/i,
     );

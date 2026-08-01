@@ -189,8 +189,14 @@ const MemberModal = <T extends BaseMember>({
         )}
 
         {config.showUserId && (
-          <Form.Item label="User ID" name="user_id" className="mb-4">
-            <TextInput placeholder="user_123" />
+          <Form.Item
+            label={t("identityAdmin.team.memberModal.userId", { defaultValue: "User ID" })}
+            name="user_id"
+            className="mb-4"
+          >
+            <TextInput
+              placeholder={t("identityAdmin.team.memberModal.userIdPlaceholder", { defaultValue: "user_123" })}
+            />
           </Form.Item>
         )}
 

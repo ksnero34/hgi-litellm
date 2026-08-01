@@ -59,7 +59,7 @@ describe("AvailableTeamsPanel", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/No available teams to join/i)).toBeInTheDocument();
-      expect(screen.getByText(/See how to set available teams/i)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /here/i })).toBeInTheDocument();
     });
   });
 

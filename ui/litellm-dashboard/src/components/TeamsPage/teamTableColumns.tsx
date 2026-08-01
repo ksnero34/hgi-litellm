@@ -2,6 +2,8 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { Copy, KeyRound, Layers, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import { DataTableSortHeader } from "@/components/shared/DataTable";
 import { DateCell, IdentityCell, SpendBudgetCell } from "@/components/shared/table_cells";
@@ -36,10 +38,29 @@ const teamModelCount = (team: Team): number => team.models?.length ?? 0;
 const teamKeyCount = (team: Team): number => team.keys_count ?? team.keys?.length ?? 0;
 
 function ResourcesCell({ team }: { team: Team }) {
+  const { t } = useTranslation();
   const items = [
-    { key: "members" as const, label: "members", count: teamMemberCount(team) },
-    { key: "models" as const, label: "models", count: teamModelCount(team) },
-    { key: "keys" as const, label: "keys", count: teamKeyCount(team) },
+    {
+      key: "members" as const,
+      label: t("access.teams.resources.members", { defaultValue: "Members" }),
+      title: t("access.teams.resources.membersCount", {
+        count: teamMemberCount(team),
+        defaultValue: "{{count}} members",
+      }),
+      count: teamMemberCount(team),
+    },
+    {
+      key: "models" as const,
+      label: t("access.teams.resources.models", { defaultValue: "Models" }),
+      title: t("access.teams.resources.modelsCount", { count: teamModelCount(team), defaultValue: "{{count}} models" }),
+      count: teamModelCount(team),
+    },
+    {
+      key: "keys" as const,
+      label: t("access.teams.resources.keys", { defaultValue: "Keys" }),
+      title: t("access.teams.resources.keysCount", { count: teamKeyCount(team), defaultValue: "{{count}} keys" }),
+      count: teamKeyCount(team),
+    },
   ];
 
   return (
@@ -50,7 +71,7 @@ function ResourcesCell({ team }: { team: Team }) {
         return (
           <span
             key={item.key}
-            title={`${item.count} ${item.label}`}
+            title={item.title}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset [&_svg]:size-3.5",
               tone.className,
@@ -66,10 +87,13 @@ function ResourcesCell({ team }: { team: Team }) {
 }
 
 function RateLimitLine({ label, value }: { label: string; value: number | null }) {
+  const { t } = useTranslation();
   return (
     <div>
       <span className="text-[10px] font-semibold text-muted-foreground">{label} </span>
-      <span className="tabular-nums">{value != null ? formatNumberWithCommas(value) : "Unlimited"}</span>
+      <span className="tabular-nums">
+        {value != null ? formatNumberWithCommas(value) : t("access.common.unlimited", { defaultValue: "Unlimited" })}
+      </span>
     </div>
   );
 }
@@ -82,14 +106,15 @@ interface TeamRowActionsProps {
 }
 
 function TeamRowActions({ team, canManage, onEditTeam, onDeleteTeam }: TeamRowActionsProps) {
+  const { t } = useTranslation();
   const handleCopy = () => {
-    void copyToClipboard(team.team_id, "Team ID copied");
+    void copyToClipboard(team.team_id, t("access.teams.notifications.idCopied", { defaultValue: "Team ID copied" }));
   };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Open team actions"
+        aria-label={t("access.teams.actions.open", { defaultValue: "Open team actions" })}
         data-testid={`team-actions-${team.team_id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -99,19 +124,19 @@ function TeamRowActions({ team, canManage, onEditTeam, onDeleteTeam }: TeamRowAc
         {canManage && (
           <DropdownMenuItem onClick={() => onEditTeam(team)} data-testid="team-action-edit">
             <Pencil />
-            Edit team
+            {t("access.teams.actions.edit", { defaultValue: "Edit team" })}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={handleCopy} data-testid="team-action-copy">
           <Copy />
-          Copy team ID
+          {t("access.teams.actions.copyId", { defaultValue: "Copy team ID" })}
         </DropdownMenuItem>
         {canManage && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => onDeleteTeam(team)} data-testid="team-action-delete">
               <Trash2 />
-              Delete team
+              {t("access.teams.actions.delete", { defaultValue: "Delete team" })}
             </DropdownMenuItem>
           </>
         )}
@@ -126,6 +151,7 @@ interface TeamTableColumnsDeps {
   onSelectTeam: (team: Team) => void;
   onEditTeam: (team: Team) => void;
   onDeleteTeam: (team: Team) => void;
+  t: TFunction;
 }
 
 export const getTeamTableColumns = ({
@@ -134,6 +160,7 @@ export const getTeamTableColumns = ({
   onSelectTeam,
   onEditTeam,
   onDeleteTeam,
+  t,
 }: TeamTableColumnsDeps): ColumnDef<Team>[] => {
   const canManage = userRole === "Admin";
 
@@ -142,7 +169,7 @@ export const getTeamTableColumns = ({
       id: "team_alias",
       accessorKey: "team_alias",
       meta: {
-        title: "Team",
+        title: t("access.teams.columns.team", { defaultValue: "Team" }),
         renderSkeleton: () => (
           <div className="flex flex-col gap-2 py-1">
             <Skeleton className="h-4 w-32" />
@@ -150,7 +177,13 @@ export const getTeamTableColumns = ({
           </div>
         ),
       },
-      header: ({ column }) => <DataTableSortHeader column={column} title="Team" variant="header-cycle" />,
+      header: ({ column }) => (
+        <DataTableSortHeader
+          column={column}
+          title={t("access.teams.columns.team", { defaultValue: "Team" })}
+          variant="header-cycle"
+        />
+      ),
       size: 260,
       enableSorting: true,
       cell: ({ row }) => {
@@ -168,13 +201,14 @@ export const getTeamTableColumns = ({
     {
       id: "organization_alias",
       accessorKey: "organization_id",
-      meta: { title: "Organization" },
-      header: "Organization",
+      meta: { title: t("access.teams.columns.organization", { defaultValue: "Organization" }) },
+      header: t("access.teams.columns.organization", { defaultValue: "Organization" }),
       size: 160,
       enableSorting: false,
       cell: (info) => {
         const orgId = info.getValue() as string | null;
-        if (!orgId) return <span className="text-muted-foreground">—</span>;
+        if (!orgId)
+          return <span className="text-muted-foreground">{t("access.common.none", { defaultValue: "—" })}</span>;
         const org = organizations.find((o) => o.organization_id === orgId);
         const displayValue = org?.organization_alias || orgId;
         const width = info.cell.column.getSize();
@@ -188,7 +222,7 @@ export const getTeamTableColumns = ({
     {
       id: "resources",
       meta: {
-        title: "Resources",
+        title: t("access.teams.columns.resources", { defaultValue: "Resources" }),
         renderSkeleton: () => (
           <div className="flex items-center gap-1.5">
             <Skeleton className="h-6 w-12 rounded-md" />
@@ -197,7 +231,7 @@ export const getTeamTableColumns = ({
           </div>
         ),
       },
-      header: "Resources",
+      header: t("access.teams.columns.resources", { defaultValue: "Resources" }),
       size: 210,
       enableSorting: false,
       cell: ({ row }) => <ResourcesCell team={row.original} />,
@@ -205,8 +239,8 @@ export const getTeamTableColumns = ({
     {
       id: "spend",
       accessorKey: "spend",
-      meta: { title: "Spend / Budget", skeleton: "meter" },
-      header: "Spend / Budget",
+      meta: { title: t("access.teams.columns.spendBudget", { defaultValue: "Spend / Budget" }), skeleton: "meter" },
+      header: t("access.teams.columns.spendBudget", { defaultValue: "Spend / Budget" }),
       size: 200,
       enableSorting: false,
       cell: ({ row }) => <SpendBudgetCell spend={row.original.spend} maxBudget={row.original.max_budget} />,
@@ -214,32 +248,38 @@ export const getTeamTableColumns = ({
     {
       id: "created_at",
       accessorKey: "created_at",
-      meta: { title: "Created" },
-      header: ({ column }) => <DataTableSortHeader column={column} title="Created" variant="header-cycle" />,
+      meta: { title: t("access.teams.columns.created", { defaultValue: "Created" }) },
+      header: ({ column }) => (
+        <DataTableSortHeader
+          column={column}
+          title={t("access.teams.columns.created", { defaultValue: "Created" })}
+          variant="header-cycle"
+        />
+      ),
       size: 130,
       enableSorting: true,
       cell: (info) => <DateCell value={info.getValue() as string | null} precision="date" />,
     },
     {
       id: "members",
-      meta: { title: "Members" },
-      header: "Members",
+      meta: { title: t("access.teams.columns.members", { defaultValue: "Members" }) },
+      header: t("access.teams.columns.members", { defaultValue: "Members" }),
       size: 110,
       enableSorting: false,
       cell: ({ row }) => <span className="text-sm tabular-nums">{teamMemberCount(row.original)}</span>,
     },
     {
       id: "models",
-      meta: { title: "Models" },
-      header: "Models",
+      meta: { title: t("access.teams.columns.models", { defaultValue: "Models" }) },
+      header: t("access.teams.columns.models", { defaultValue: "Models" }),
       size: 100,
       enableSorting: false,
       cell: ({ row }) => <span className="text-sm tabular-nums">{teamModelCount(row.original)}</span>,
     },
     {
       id: "rate_limits",
-      meta: { title: "Rate Limits", skeleton: "twoLine" },
-      header: "Rate Limits",
+      meta: { title: t("access.teams.columns.rateLimits", { defaultValue: "Rate Limits" }), skeleton: "twoLine" },
+      header: t("access.teams.columns.rateLimits", { defaultValue: "Rate Limits" }),
       size: 140,
       enableSorting: false,
       cell: ({ row }) => (
@@ -252,16 +292,22 @@ export const getTeamTableColumns = ({
     {
       id: "updated_at",
       accessorKey: "updated_at",
-      meta: { title: "Updated" },
-      header: "Updated",
+      meta: { title: t("access.teams.columns.updated", { defaultValue: "Updated" }) },
+      header: t("access.teams.columns.updated", { defaultValue: "Updated" }),
       size: 130,
       enableSorting: false,
-      cell: (info) => <DateCell value={info.getValue() as string | null} precision="date" fallback="Never" />,
+      cell: (info) => (
+        <DateCell
+          value={info.getValue() as string | null}
+          precision="date"
+          fallback={t("access.common.never", { defaultValue: "Never" })}
+        />
+      ),
     },
     {
       id: "actions",
       meta: { className: "text-right", headerClassName: "text-right" },
-      header: () => <span className="sr-only">Actions</span>,
+      header: () => <span className="sr-only">{t("access.teams.columns.actions", { defaultValue: "Actions" })}</span>,
       size: 60,
       enableSorting: false,
       enableHiding: false,
