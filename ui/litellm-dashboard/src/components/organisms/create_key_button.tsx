@@ -48,6 +48,7 @@ import {
   keyCreateCall,
   keyCreateServiceAccountCall,
   modelAvailableCall,
+  personalKeyCreateCall,
   proxyBaseUrl,
   userFilterUICall,
 } from "../networking";
@@ -62,7 +63,7 @@ const { Option } = Select;
  * Interface for pre-filling the create key form from URL parameters
  */
 export interface CreateKeyPrefillData {
-  owned_by?: "you" | "service_account" | "another_user";
+  owned_by?: "you" | "service_account" | "another_user" | "agent";
   team_id?: string;
   key_alias?: string;
   models?: string[];
@@ -179,7 +180,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [softBudget, setSoftBudget] = useState(null);
   const [userModels, setUserModels] = useState<string[]>([]);
   const [modelsToPick, setModelsToPick] = useState<string[]>([]);
-  const [keyOwner, setKeyOwner] = useState("you");
+  const [keyOwner, setKeyOwner] = useState("service_account");
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [pendingPrefillModels, setPendingPrefillModels] = useState<string[] | null>(null);
   const [guardrailsList, setGuardrailsList] = useState<string[]>([]);
@@ -320,7 +321,9 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
         if (prefillData.owned_by) {
           if (prefillData.owned_by === "another_user" && userRole !== "Admin") {
             // Ignore invalid owned_by for non-admin users, fall back to default
-            setKeyOwner("you");
+            setKeyOwner("service_account");
+          } else if (prefillData.owned_by === "you") {
+            setKeyOwner("service_account");
           } else {
             setKeyOwner(prefillData.owned_by);
           }
@@ -375,9 +378,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       NotificationsManager.info("Making API Call");
       setIsModalVisible(true);
 
-      if (keyOwner === "you") {
-        formValues.user_id = userID;
-      } else if (keyOwner === "agent") {
+      if (keyOwner === "agent") {
         if (!selectedAgentId) {
           NotificationsManager.fromBackend("Please select an agent");
           return;
@@ -520,10 +521,14 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       }
 
       let response;
-      if (keyOwner === "service_account") {
+      if (keyOwner === "another_user") {
+        response = await personalKeyCreateCall(accessToken, formValues.user_id, formValues.key_alias);
+      } else if (keyOwner === "service_account") {
         response = await keyCreateServiceAccountCall(accessToken, formValues);
+      } else if (keyOwner === "agent" && selectedAgentId) {
+        response = await keyCreateCall(accessToken, null, formValues);
       } else {
-        response = await keyCreateCall(accessToken, userID, formValues);
+        response = await keyCreateServiceAccountCall(accessToken, formValues);
       }
 
       // Add the data to the state in the parent component
@@ -683,7 +688,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               className="mb-4"
             >
               <Radio.Group onChange={(e) => setKeyOwner(e.target.value)} value={keyOwner}>
-                <Radio value="you">You</Radio>
                 <Radio value="service_account">Service Account</Radio>
                 {userRole === "Admin" && <Radio value="another_user">Another User</Radio>}
                 <Radio value="agent">
@@ -759,98 +763,102 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 </div>
               </div>
             )}
-            <Form.Item
-              label={
-                <span>
-                  Organization{" "}
-                  <Tooltip title="The organization this key belongs to. Selecting an organization filters the available teams.">
-                    <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                  </Tooltip>
-                </span>
-              }
-              name="organization_id"
-              className="mt-4"
-            >
-              <OrganizationDropdown
-                organizations={organizations}
-                loading={isOrganizationsLoading}
-                disabled={userRole !== "Admin"}
-                onChange={(orgId) => {
-                  setSelectedOrganizationId(orgId || null);
-                  // Clear team and project when org changes
-                  setSelectedCreateKeyTeam(null);
-                  setSelectedProjectId(null);
-                  form.setFieldValue("team_id", undefined);
-                  form.setFieldValue("project_id", undefined);
-                }}
-              />
-            </Form.Item>
-            <Form.Item
-              label={
-                <span>
-                  Team{" "}
-                  <Tooltip title="The team this key belongs to, which determines available models and budget limits">
-                    <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                  </Tooltip>
-                </span>
-              }
-              name="team_id"
-              initialValue={team ? team.team_id : null}
-              className="mt-4"
-              rules={[
-                {
-                  required: keyOwner === "service_account",
-                  message: "Please select a team for the service account",
-                },
-              ]}
-              help={keyOwner === "service_account" ? "required" : ""}
-            >
-              <TeamDropdown
-                disabled={selectedProjectId !== null}
-                organizationId={selectedOrganizationId}
-                onTeamSelect={(team) => {
-                  setSelectedCreateKeyTeam(team);
-                  setSelectedProjectId(null);
-                  form.setFieldValue("project_id", undefined);
-                  // Auto-populate org from team for non-admin users
-                  if (team?.organization_id) {
-                    setSelectedOrganizationId(team.organization_id);
-                    form.setFieldValue("organization_id", team.organization_id);
-                  } else if (!team) {
-                    setSelectedOrganizationId(null);
-                    form.setFieldValue("organization_id", undefined);
+            {keyOwner !== "another_user" && (
+              <>
+                <Form.Item
+                  label={
+                    <span>
+                      Organization{" "}
+                      <Tooltip title="The organization this key belongs to. Selecting an organization filters the available teams.">
+                        <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                      </Tooltip>
+                    </span>
                   }
-                }}
-              />
-            </Form.Item>
-            {enableProjectsUI && (
-              <Form.Item
-                label={
-                  <span>
-                    Project{" "}
-                    <Tooltip title="Assign this key to a project. Selecting a project will lock the team to the project's team.">
-                      <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                    </Tooltip>
-                  </span>
-                }
-                name="project_id"
-                className="mt-4"
-              >
-                <ProjectDropdown
-                  projects={projects}
-                  teamId={selectedCreateKeyTeam?.team_id}
-                  loading={isProjectsLoading || !teams}
-                  onChange={(projectId) => {
-                    if (!projectId) {
-                      setSelectedProjectId(null);
+                  name="organization_id"
+                  className="mt-4"
+                >
+                  <OrganizationDropdown
+                    organizations={organizations}
+                    loading={isOrganizationsLoading}
+                    disabled={userRole !== "Admin"}
+                    onChange={(orgId) => {
+                      setSelectedOrganizationId(orgId || null);
+                      // Clear team and project when org changes
                       setSelectedCreateKeyTeam(null);
+                      setSelectedProjectId(null);
                       form.setFieldValue("team_id", undefined);
-                      return;
+                      form.setFieldValue("project_id", undefined);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={
+                    <span>
+                      Team{" "}
+                      <Tooltip title="The team this key belongs to, which determines available models and budget limits">
+                        <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="team_id"
+                  initialValue={team ? team.team_id : null}
+                  className="mt-4"
+                  rules={[
+                    {
+                      required: keyOwner === "service_account",
+                      message: "Please select a team for the service account",
+                    },
+                  ]}
+                  help={keyOwner === "service_account" ? "required" : ""}
+                >
+                  <TeamDropdown
+                    disabled={selectedProjectId !== null}
+                    organizationId={selectedOrganizationId}
+                    onTeamSelect={(team) => {
+                      setSelectedCreateKeyTeam(team);
+                      setSelectedProjectId(null);
+                      form.setFieldValue("project_id", undefined);
+                      // Auto-populate org from team for non-admin users
+                      if (team?.organization_id) {
+                        setSelectedOrganizationId(team.organization_id);
+                        form.setFieldValue("organization_id", team.organization_id);
+                      } else if (!team) {
+                        setSelectedOrganizationId(null);
+                        form.setFieldValue("organization_id", undefined);
+                      }
+                    }}
+                  />
+                </Form.Item>
+                {enableProjectsUI && (
+                  <Form.Item
+                    label={
+                      <span>
+                        Project{" "}
+                        <Tooltip title="Assign this key to a project. Selecting a project will lock the team to the project's team.">
+                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                        </Tooltip>
+                      </span>
                     }
-                    setSelectedProjectId(projectId);
-                  }}
-                />
-              </Form.Item>
+                    name="project_id"
+                    className="mt-4"
+                  >
+                    <ProjectDropdown
+                      projects={projects}
+                      teamId={selectedCreateKeyTeam?.team_id}
+                      loading={isProjectsLoading || !teams}
+                      onChange={(projectId) => {
+                        if (!projectId) {
+                          setSelectedProjectId(null);
+                          setSelectedCreateKeyTeam(null);
+                          form.setFieldValue("team_id", undefined);
+                          return;
+                        }
+                        setSelectedProjectId(projectId);
+                      }}
+                    />
+                  </Form.Item>
+                )}
+              </>
             )}
           </div>
 
@@ -871,10 +879,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               <Form.Item
                 label={
                   <span>
-                    {keyOwner === "you" || keyOwner === "another_user" ? "Key Name" : "Service Account ID"}{" "}
+                    {keyOwner === "another_user" ? "Key Name" : "Service Account ID"}{" "}
                     <Tooltip
                       title={
-                        keyOwner === "you" || keyOwner === "another_user"
+                        keyOwner === "another_user"
                           ? "A descriptive name to identify this key"
                           : "Unique identifier for this service account"
                       }
@@ -887,7 +895,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 rules={[
                   {
                     required: true,
-                    message: `Please input a ${keyOwner === "you" ? "key name" : "service account ID"}`,
+                    message: `Please input a ${keyOwner === "another_user" ? "key name" : "service account ID"}`,
                   },
                 ]}
                 help="required"
@@ -895,112 +903,116 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 <TextInput placeholder="" />
               </Form.Item>
 
-              <Form.Item
-                label={
-                  <span>
-                    {t("gateway.keyEdit.models")}{" "}
-                    <Tooltip title="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
-                      <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                    </Tooltip>
-                  </span>
-                }
-                name="models"
-                rules={[]}
-                help={
-                  keyType === "management" || keyType === "read_only"
-                    ? t("gateway.createKey.modelsDisabled")
-                    : "optional - leave empty to allow access to all models"
-                }
-                className="mt-4"
-              >
-                <Select
-                  mode="multiple"
-                  placeholder={t("gateway.createKey.modelsPlaceholder")}
-                  style={{ width: "100%" }}
-                  disabled={keyType === "management" || keyType === "read_only"}
-                  onChange={(values) => {
-                    if (values.includes("all-team-models")) {
-                      form.setFieldsValue({ models: ["all-team-models"] });
-                    } else if (values.includes("all-proxy-models")) {
-                      form.setFieldsValue({ models: ["all-proxy-models"] });
-                    }
-                  }}
+              {keyOwner !== "another_user" && (
+                <Form.Item
+                  label={
+                    <span>
+                      {t("gateway.keyEdit.models")}{" "}
+                      <Tooltip title="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
+                        <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="models"
+                  rules={[]}
+                  help={
+                    keyType === "management" || keyType === "read_only"
+                      ? t("gateway.createKey.modelsDisabled")
+                      : "optional - leave empty to allow access to all models"
+                  }
+                  className="mt-4"
                 >
-                  {!selectedProjectId && selectedCreateKeyTeam && (
-                    <Option key="all-team-models" value="all-team-models">
-                      {t("gateway.createKey.modelsAllTeam")}
-                    </Option>
-                  )}
-                  {!selectedProjectId && !selectedCreateKeyTeam && (
-                    <Option key="all-proxy-models" value="all-proxy-models">
-                      {t("gateway.createKey.modelsAllProxy")}
-                    </Option>
-                  )}
-                  {modelsToPick.map((model: string) => (
-                    <Option key={model} value={model} disabled={hasAllModelsSentinel(selectedModels)}>
-                      {getModelDisplayName(model)}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
+                  <Select
+                    mode="multiple"
+                    placeholder={t("gateway.createKey.modelsPlaceholder")}
+                    style={{ width: "100%" }}
+                    disabled={keyType === "management" || keyType === "read_only"}
+                    onChange={(values) => {
+                      if (values.includes("all-team-models")) {
+                        form.setFieldsValue({ models: ["all-team-models"] });
+                      } else if (values.includes("all-proxy-models")) {
+                        form.setFieldsValue({ models: ["all-proxy-models"] });
+                      }
+                    }}
+                  >
+                    {!selectedProjectId && selectedCreateKeyTeam && (
+                      <Option key="all-team-models" value="all-team-models">
+                        {t("gateway.createKey.modelsAllTeam")}
+                      </Option>
+                    )}
+                    {!selectedProjectId && !selectedCreateKeyTeam && (
+                      <Option key="all-proxy-models" value="all-proxy-models">
+                        {t("gateway.createKey.modelsAllProxy")}
+                      </Option>
+                    )}
+                    {modelsToPick.map((model: string) => (
+                      <Option key={model} value={model} disabled={hasAllModelsSentinel(selectedModels)}>
+                        {getModelDisplayName(model)}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )}
 
-              <Form.Item
-                label={
-                  <span>
-                    {t("gateway.createKey.keyTypePlaceholder")}{" "}
-                    <Tooltip title="Select the type of key to determine what routes and operations this key can access">
-                      <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                    </Tooltip>
-                  </span>
-                }
-                name="key_type"
-                initialValue="llm_api"
-                className="mt-4"
-              >
-                <Select
-                  defaultValue="llm_api"
-                  placeholder={t("gateway.createKey.keyTypePlaceholder")}
-                  style={{ width: "100%" }}
-                  optionLabelProp="label"
-                  onChange={(value) => {
-                    setKeyType(value);
-                    // Clear models field and disable if management or read_only
-                    if (value === "management" || value === "read_only") {
-                      form.setFieldsValue({ models: [] });
-                    }
-                  }}
+              {keyOwner !== "another_user" && (
+                <Form.Item
+                  label={
+                    <span>
+                      {t("gateway.createKey.keyTypePlaceholder")}{" "}
+                      <Tooltip title="Select the type of key to determine what routes and operations this key can access">
+                        <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="key_type"
+                  initialValue="llm_api"
+                  className="mt-4"
                 >
-                  <Option value="llm_api" label={t("gateway.createKey.keyType.aiApis")}>
-                    <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>{t("gateway.createKey.keyType.aiApis")}</Typography.Text>
-                      <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        {t("gateway.createKey.keyType.aiApisDescription")}
-                      </Typography.Paragraph>
-                    </div>
-                  </Option>
-                  <Option value="management" label={t("gateway.createKey.keyType.management")}>
-                    <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>{t("gateway.createKey.keyType.management")}</Typography.Text>
-                      <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        {t("gateway.createKey.keyType.managementDescription")}
-                      </Typography.Paragraph>
-                    </div>
-                  </Option>
-                  <Option value="default" label={t("gateway.createKey.keyType.fullAccess")}>
-                    <div style={{ padding: "4px 0" }}>
-                      <Typography.Text strong>{t("gateway.createKey.keyType.fullAccess")}</Typography.Text>
-                      <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
-                        {t("gateway.createKey.keyType.fullAccessDescription")}
-                      </Typography.Paragraph>
-                    </div>
-                  </Option>
-                </Select>
-              </Form.Item>
+                  <Select
+                    defaultValue="llm_api"
+                    placeholder={t("gateway.createKey.keyTypePlaceholder")}
+                    style={{ width: "100%" }}
+                    optionLabelProp="label"
+                    onChange={(value) => {
+                      setKeyType(value);
+                      // Clear models field and disable if management or read_only
+                      if (value === "management" || value === "read_only") {
+                        form.setFieldsValue({ models: [] });
+                      }
+                    }}
+                  >
+                    <Option value="llm_api" label={t("gateway.createKey.keyType.aiApis")}>
+                      <div style={{ padding: "4px 0" }}>
+                        <Typography.Text strong>{t("gateway.createKey.keyType.aiApis")}</Typography.Text>
+                        <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
+                          {t("gateway.createKey.keyType.aiApisDescription")}
+                        </Typography.Paragraph>
+                      </div>
+                    </Option>
+                    <Option value="management" label={t("gateway.createKey.keyType.management")}>
+                      <div style={{ padding: "4px 0" }}>
+                        <Typography.Text strong>{t("gateway.createKey.keyType.management")}</Typography.Text>
+                        <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
+                          {t("gateway.createKey.keyType.managementDescription")}
+                        </Typography.Paragraph>
+                      </div>
+                    </Option>
+                    <Option value="default" label={t("gateway.createKey.keyType.fullAccess")}>
+                      <div style={{ padding: "4px 0" }}>
+                        <Typography.Text strong>{t("gateway.createKey.keyType.fullAccess")}</Typography.Text>
+                        <Typography.Paragraph type="secondary" style={{ fontSize: 11, margin: "2px 0 0" }}>
+                          {t("gateway.createKey.keyType.fullAccessDescription")}
+                        </Typography.Paragraph>
+                      </div>
+                    </Option>
+                  </Select>
+                </Form.Item>
+              )}
             </div>
           )}
 
           {/* Section 3: Optional Settings */}
-          {!isFormDisabled && (
+          {keyOwner !== "another_user" && !isFormDisabled && (
             <div className="mb-8">
               <Accordion className="mt-4 mb-4">
                 <AccordionHeader>

@@ -7,36 +7,51 @@ import { Team } from "../key_team_helpers/key_list";
 import { userFilterUICall } from "../networking";
 import CreateKey from "./create_key_button";
 
-const { formMock, setFieldsValueMock, radioGroupValueRef, formStateRef, mockKeyCreateCall, teamDropdownTeamsRef } =
-  vi.hoisted(() => {
-    const formStateRef = { current: {} as Record<string, any> };
-    const teamDropdownTeamsRef = { current: [] as Array<{ team_id: string; team_alias: string; models: string[] }> };
-    const mockKeyCreateCall = vi.fn().mockResolvedValue({
-      key: "test-api-key",
-      soft_budget: null,
-    });
-    const formMock = {
-      setFieldsValue: vi.fn((values: Record<string, any>) => {
-        Object.assign(formStateRef.current, values);
-      }),
-      setFieldValue: vi.fn((name: string, value: any) => {
-        formStateRef.current[name] = value;
-      }),
-      getFieldValue: vi.fn((name: string) => formStateRef.current[name]),
-      resetFields: vi.fn(() => {
-        formStateRef.current = {};
-      }),
-    };
-    const radioGroupValueRef = { current: null as string | null };
-    return {
-      formMock,
-      setFieldsValueMock: formMock.setFieldsValue,
-      radioGroupValueRef,
-      formStateRef,
-      mockKeyCreateCall,
-      teamDropdownTeamsRef,
-    };
+const {
+  formMock,
+  setFieldsValueMock,
+  radioGroupValueRef,
+  formStateRef,
+  mockKeyCreateCall,
+  mockKeyCreateServiceAccountCall,
+  mockPersonalKeyCreateCall,
+  teamDropdownTeamsRef,
+} = vi.hoisted(() => {
+  const formStateRef = { current: {} as Record<string, any> };
+  const teamDropdownTeamsRef = { current: [] as Array<{ team_id: string; team_alias: string; models: string[] }> };
+  const mockKeyCreateCall = vi.fn().mockResolvedValue({
+    key: "test-api-key",
+    soft_budget: null,
   });
+  const mockKeyCreateServiceAccountCall = vi.fn().mockResolvedValue({
+    key: "test-service-account-key",
+    soft_budget: null,
+  });
+  const mockPersonalKeyCreateCall = vi.fn().mockResolvedValue({ key: "test-personal-key", soft_budget: null });
+  const formMock = {
+    setFieldsValue: vi.fn((values: Record<string, any>) => {
+      Object.assign(formStateRef.current, values);
+    }),
+    setFieldValue: vi.fn((name: string, value: any) => {
+      formStateRef.current[name] = value;
+    }),
+    getFieldValue: vi.fn((name: string) => formStateRef.current[name]),
+    resetFields: vi.fn(() => {
+      formStateRef.current = {};
+    }),
+  };
+  const radioGroupValueRef = { current: null as string | null };
+  return {
+    formMock,
+    setFieldsValueMock: formMock.setFieldsValue,
+    radioGroupValueRef,
+    formStateRef,
+    mockKeyCreateCall,
+    mockKeyCreateServiceAccountCall,
+    mockPersonalKeyCreateCall,
+    teamDropdownTeamsRef,
+  };
+});
 
 const defaultAuthorizedState = {
   accessToken: "test-token",
@@ -231,12 +246,10 @@ vi.mock("../networking", () => ({
     User: { ui_label: "User" },
   }),
   userFilterUICall: vi.fn().mockResolvedValue([]),
-  keyCreateServiceAccountCall: vi.fn().mockResolvedValue({
-    key: "test-service-account-key",
-    soft_budget: null,
-  }),
+  keyCreateServiceAccountCall: mockKeyCreateServiceAccountCall,
+  personalKeyCreateCall: mockPersonalKeyCreateCall,
   fetchMCPAccessGroups: vi.fn().mockResolvedValue([]),
-  getAgentsList: vi.fn().mockResolvedValue({ agents: [] }),
+  getAgentsList: vi.fn().mockResolvedValue({ agents: [{ agent_id: "agent-1", agent_name: "Agent One" }] }),
 }));
 
 vi.mock("../molecules/notifications_manager", () => ({
@@ -399,6 +412,8 @@ describe("CreateKey", () => {
       key: "test-api-key",
       soft_budget: null,
     });
+    mockKeyCreateServiceAccountCall.mockResolvedValue({ key: "test-service-account-key", soft_budget: null });
+    mockPersonalKeyCreateCall.mockResolvedValue({ key: "test-personal-key", soft_budget: null });
   });
 
   it("should render the CreateKey component", () => {
@@ -407,11 +422,7 @@ describe("CreateKey", () => {
   });
 
   it("should display 'AI APIs' label for the llm_api key type option", async () => {
-    renderWithProviders(<CreateKey {...defaultProps} />);
-
-    act(() => {
-      fireEvent.click(screen.getByRole("button", { name: /create new key/i }));
-    });
+    renderWithProviders(<CreateKey {...defaultProps} autoOpenCreate />);
 
     await waitFor(() => {
       expect(screen.getByText("AI APIs")).toBeInTheDocument();
@@ -419,12 +430,8 @@ describe("CreateKey", () => {
     });
   });
 
-  it("should include access_group_ids in keyCreateCall payload when access groups are selected", async () => {
-    renderWithProviders(<CreateKey {...defaultProps} />);
-
-    act(() => {
-      fireEvent.click(screen.getByRole("button", { name: /create new key/i }));
-    });
+  it("should include access_group_ids in service account payload when access groups are selected", async () => {
+    renderWithProviders(<CreateKey {...defaultProps} autoOpenCreate />);
 
     await waitFor(() => {
       expect(screen.getByTestId("access-group-selector")).toBeInTheDocument();
@@ -440,11 +447,75 @@ describe("CreateKey", () => {
     });
 
     await waitFor(() => {
-      expect(mockKeyCreateCall).toHaveBeenCalled();
-      const formValues = mockKeyCreateCall.mock.calls[0][2];
+      expect(mockKeyCreateServiceAccountCall).toHaveBeenCalled();
+      const formValues = mockKeyCreateServiceAccountCall.mock.calls[0][1];
       expect(formValues).toHaveProperty("access_group_ids");
       expect(formValues.access_group_ids).toEqual(["ag-1", "ag-2"]);
     });
+  });
+
+  it("uses the service-account endpoint by default for admins", async () => {
+    renderWithProviders(<CreateKey {...defaultProps} autoOpenCreate />);
+    act(() => {
+      formMock.setFieldValue("key_alias", "admin-service");
+      fireEvent.click(screen.getByRole("button", { name: /create key/i }));
+    });
+    await waitFor(() => expect(mockKeyCreateServiceAccountCall).toHaveBeenCalledWith("test-token", expect.any(Object)));
+    expect(mockKeyCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("creates another user's managed personal key through the dedicated endpoint", async () => {
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "another_user", key_alias: "personal" }} />,
+    );
+    act(() => {
+      formMock.setFieldValue("user_id", "target-user");
+      fireEvent.click(screen.getByRole("button", { name: /create key/i }));
+    });
+    await waitFor(() =>
+      expect(mockPersonalKeyCreateCall).toHaveBeenCalledWith("test-token", "target-user", "personal"),
+    );
+    expect(mockKeyCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("creates agent keys without a user owner", async () => {
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "agent", key_alias: "agent-key" }} />,
+    );
+    await waitFor(() => expect(document.querySelector('select[placeholder="Select an agent"]')).toBeTruthy());
+    act(() => {
+      formMock.setFieldValue("access_group_ids", ["agent-access"]);
+      fireEvent.change(document.querySelector('select[placeholder="Select an agent"]') as HTMLElement, {
+        target: { value: "agent-1" },
+      });
+    });
+    await waitFor(() => expect(document.querySelector('select[placeholder="Select an agent"]')).toHaveValue("agent-1"));
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /create key/i }));
+    });
+    await waitFor(() =>
+      expect(mockKeyCreateCall).toHaveBeenCalledWith(
+        "test-token",
+        null,
+        expect.objectContaining({
+          access_group_ids: ["agent-access"],
+          agent_id: "agent-1",
+          key_alias: "agent-key",
+        }),
+      ),
+    );
+    expect(mockPersonalKeyCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("maps legacy admin-owned key prefill to a service account", async () => {
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "you", key_alias: "proxy-ops" }} />,
+    );
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /create key/i }));
+    });
+    await waitFor(() => expect(mockKeyCreateServiceAccountCall).toHaveBeenCalledWith("test-token", expect.any(Object)));
+    expect(mockKeyCreateCall).not.toHaveBeenCalled();
   });
 
   it("should prefill models when provided without team_id", async () => {
@@ -495,7 +566,7 @@ describe("CreateKey", () => {
     expect(setFieldsValueMock).not.toHaveBeenCalledWith({ team_id: "team-404" });
   });
 
-  it('should fall back to "you" when owned_by is another_user for non-admin', async () => {
+  it('should fall back to "service_account" when owned_by is another_user for non-admin', async () => {
     authorizedState = { ...defaultAuthorizedState, userRole: "Internal User" };
 
     renderWithProviders(
@@ -510,7 +581,7 @@ describe("CreateKey", () => {
       expect(setFieldsValueMock).toHaveBeenCalledWith({ key_alias: "example-key" });
     });
 
-    expect(radioGroupValueRef.current).toBe("you");
+    expect(radioGroupValueRef.current).toBe("service_account");
   });
 
   it("should apply owned_by another_user for admin", async () => {

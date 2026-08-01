@@ -733,9 +733,24 @@ export const keyCreateServiceAccountCall = async (
   }
 };
 
+export const personalKeyCreateCall = async (accessToken: string, userID: string, keyAlias: string) => {
+  try {
+    return await apiClient.post(`/internal/personal-key`, {
+      accessToken,
+      body: {
+        user_id: userID,
+        key_alias: keyAlias,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to create personal key:", error);
+    throw error;
+  }
+};
+
 export const keyCreateCall = async (
   accessToken: string,
-  userID: string,
+  userID: string | null,
   formValues: Record<string, any>, // Assuming formValues is an object
 ) => {
   try {
@@ -764,16 +779,16 @@ export const keyCreateCall = async (
     }
 
     const url = proxyBaseUrl ? `${proxyBaseUrl}/key/generate` : `/key/generate`;
+    const requestBody = userID
+      ? { user_id: userID, ...formValues }
+      : Object.fromEntries(Object.entries(formValues).filter(([field]) => field !== "user_id"));
     const response = await fetch(url, {
       method: "POST",
       headers: {
         [globalLitellmHeaderName]: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        user_id: userID,
-        ...formValues, // Include formValues in the request body
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
