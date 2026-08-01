@@ -18,6 +18,7 @@ from litellm.proxy.management_endpoints.personal_key_endpoints import (
     _count_active_personal_keys,
     _delete_deprecated_personal_keys,
     _invalidate_personal_key_cache,
+    _load_scope,
     _retarget_deprecated_personal_keys,
     _rotation_grace,
     _target_user_id,
@@ -165,6 +166,83 @@ def test_internal_viewer_can_read_but_cannot_mutate_personal_key():
         _target_user_id(None, auth)
 
     assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_human_org_team_can_resolve_personal_key_scope():
+    user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team"], team_id=None)
+    team = SimpleNamespace(team_id="admin-team", organization_id="human-default")
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[team])),
+        litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+    )
+
+    resolved_user, resolved_team, organization_id = await _load_scope(
+        database,
+        "admin-1",
+        allow_manual_scope=True,
+    )
+
+    assert resolved_user is user
+    assert resolved_team is team
+    assert organization_id == "human-default"
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_scope_requires_human_organization_membership():
+    user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team"], team_id=None)
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=None)),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await _load_scope(database, "admin-1", allow_manual_scope=True)
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "The administrator must belong to the Human organization"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("team_count", [0, 2])
+async def test_admin_manual_scope_requires_exactly_one_human_org_team(team_count: int):
+    teams = [
+        SimpleNamespace(team_id=f"admin-team-{index}", organization_id="human-default") for index in range(team_count)
+    ]
+    user = SimpleNamespace(
+        user_id="admin-1",
+        metadata={},
+        teams=[team.team_id for team in teams],
+        team_id=None,
+    )
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=teams)),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await _load_scope(database, "admin-1", allow_manual_scope=True)
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "The administrator must belong to exactly one team in the Human organization"
+
+
+@pytest.mark.asyncio
+async def test_missing_sso_team_metadata_returns_stable_conflict():
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(
+            find_unique=AsyncMock(return_value=SimpleNamespace(user_id="user-1", metadata={}))
+        )
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await _load_scope(database, "user-1")
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "The user must have exactly one OIDC-managed department team"
 
 
 def test_rotation_grace_is_capped_at_old_key_expiry():

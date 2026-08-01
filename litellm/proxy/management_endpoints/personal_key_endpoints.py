@@ -26,6 +26,7 @@ from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth, hash_token
 from litellm.proxy.auth.auth_utils import abbreviate_api_key
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.customizations.personal_key_policy import (
+    SSO_MANAGED_TEAM_IDS_METADATA_KEY,
     PersonalKeyLifecycle,
     PersonalKeyRegistryStatus,
     build_personal_key_metadata,
@@ -227,18 +228,62 @@ def _view_from_rows(
 async def _load_scope(
     db: Prisma,
     user_id: str,
+    allow_manual_scope: bool = False,
 ) -> tuple[LiteLLM_UserTable, LiteLLM_TeamTable, str]:
     user_row = await db.litellm_usertable.find_unique(where={"user_id": user_id})
     if user_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internal user not found")
-    try:
-        department_team_id = resolve_department_team_id(_json_object(user_row.metadata))
-    except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    team_row = await db.litellm_teamtable.find_unique(where={"team_id": department_team_id})
+
+    organization_id = human_organization_id()
+    metadata = _json_object(user_row.metadata)
+    if SSO_MANAGED_TEAM_IDS_METADATA_KEY in metadata:
+        try:
+            department_team_id = resolve_department_team_id(metadata)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The user must have exactly one OIDC-managed department team",
+            ) from error
+        team_row = await db.litellm_teamtable.find_unique(where={"team_id": department_team_id})
+    elif allow_manual_scope:
+        organization_membership = await db.litellm_organizationmembership.find_unique(
+            where={
+                "user_id_organization_id": {
+                    "user_id": user_id,
+                    "organization_id": organization_id,
+                }
+            }
+        )
+        if organization_membership is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The administrator must belong to the Human organization",
+            )
+        assigned_team_ids = (
+            *tuple(user_row.teams or []),
+            *((user_row.team_id,) if user_row.team_id is not None else ()),
+        )
+        team_ids = tuple(dict.fromkeys(team_id for team_id in assigned_team_ids if team_id != UI_SESSION_TOKEN_TEAM_ID))
+        teams = await db.litellm_teamtable.find_many(
+            where={
+                "team_id": {"in": list(team_ids)},
+                "organization_id": organization_id,
+            }
+        )
+        if len(teams) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The administrator must belong to exactly one team in the Human organization",
+            )
+        team_row = teams[0]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The user must have exactly one OIDC-managed department team",
+        )
+
     if team_row is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="OIDC department team not found")
-    organization_id = human_organization_id()
     if team_row.organization_id != organization_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -320,7 +365,11 @@ async def create_personal_key(
     try:
         async with database.tx() as tx:
             await tx.execute_raw("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", target_user_id)
-            user_row, team_row, organization_id = await _load_scope(tx, target_user_id)
+            user_row, team_row, organization_id = await _load_scope(
+                tx,
+                target_user_id,
+                allow_manual_scope=_is_proxy_admin(auth) and target_user_id == actor_user_id,
+            )
             if (
                 target_user_id != actor_user_id
                 and getattr(user_row, "user_role", None) != LitellmUserRoles.INTERNAL_USER.value
