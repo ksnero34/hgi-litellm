@@ -149,6 +149,12 @@ def _rotation_grace(
     return revoke_at, revoke_at > _as_utc(now)
 
 
+def _resolve_personal_key_alias(requested_alias: str | None, user_alias: str | None) -> str | None:
+    if requested_alias is not None and requested_alias.strip():
+        return requested_alias
+    return user_alias
+
+
 async def _retarget_deprecated_personal_keys(
     db: Prisma,
     old_hash: str,
@@ -370,6 +376,7 @@ async def create_personal_key(
                 target_user_id,
                 allow_manual_scope=_is_proxy_admin(auth) and target_user_id == actor_user_id,
             )
+            key_alias = _resolve_personal_key_alias(data.key_alias, user_row.user_alias)
             if (
                 target_user_id != actor_user_id
                 and getattr(user_row, "user_role", None) != LitellmUserRoles.INTERNAL_USER.value
@@ -441,7 +448,7 @@ async def create_personal_key(
                 data={
                     "token": token_hash,
                     "key_name": abbreviate_api_key(plaintext),
-                    "key_alias": data.key_alias,
+                    "key_alias": key_alias,
                     "expires": expires,
                     "models": ["all-team-models"],
                     "aliases": json.dumps({}),

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -20,9 +20,11 @@ from litellm.proxy.management_endpoints.personal_key_endpoints import (
     _invalidate_personal_key_cache,
     _load_scope,
     _retarget_deprecated_personal_keys,
+    _resolve_personal_key_alias,
     _rotation_grace,
     _target_user_id,
     _writer_database,
+    create_personal_key,
 )
 from litellm.types.proxy.management_endpoints.personal_key_endpoints import PersonalKeyCreateRequest
 
@@ -38,6 +40,75 @@ def test_personal_key_request_rejects_policy_fields():
     ):
         with pytest.raises(ValidationError):
             PersonalKeyCreateRequest.model_validate({field: value})
+
+
+@pytest.mark.parametrize("requested_alias", [None, "", "   "])
+def test_blank_personal_key_alias_defaults_to_sso_subject(requested_alias: str | None):
+    assert _resolve_personal_key_alias(requested_alias, "oidc-sub-123") == "oidc-sub-123"
+
+
+def test_explicit_personal_key_alias_takes_precedence_over_sso_subject():
+    assert _resolve_personal_key_alias("my-personal-key", "oidc-sub-123") == "my-personal-key"
+
+
+@pytest.mark.asyncio
+async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeypatch: pytest.MonkeyPatch):
+    from litellm.proxy import proxy_server
+    from litellm.proxy.management_endpoints import personal_key_endpoints
+
+    user = SimpleNamespace(
+        user_id="user-1",
+        user_alias="oidc-sub-123",
+        user_role=LitellmUserRoles.INTERNAL_USER.value,
+        metadata={"litellm_sso_managed_team_ids": ["department-1"]},
+    )
+    team = SimpleNamespace(team_id="department-1", organization_id="human-default")
+    verification_tokens = SimpleNamespace(
+        find_many=AsyncMock(return_value=[]),
+        create=AsyncMock(),
+    )
+    registries = SimpleNamespace(
+        find_unique=AsyncMock(return_value=None),
+        create=AsyncMock(),
+    )
+    transaction = SimpleNamespace(
+        execute_raw=AsyncMock(),
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
+        litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+        corporatepersonalkeyregistry=registries,
+        litellm_verificationtoken=verification_tokens,
+        litellm_auditlog=SimpleNamespace(create=AsyncMock()),
+    )
+    transaction_context = MagicMock()
+    transaction_context.__aenter__ = AsyncMock(return_value=transaction)
+    transaction_context.__aexit__ = AsyncMock(return_value=None)
+    database = SimpleNamespace(tx=MagicMock(return_value=transaction_context))
+
+    async def create_registry(data):
+        return SimpleNamespace(**data)
+
+    async def create_token(data):
+        return SimpleNamespace(**data, created_at=None, updated_at=None)
+
+    registries.create.side_effect = create_registry
+    verification_tokens.create.side_effect = create_token
+    monkeypatch.setattr(proxy_server, "prisma_client", SimpleNamespace())
+    monkeypatch.setattr(personal_key_endpoints, "_writer_database", lambda _: database)
+    monkeypatch.setattr(personal_key_endpoints, "_invalidate_personal_key_cache", AsyncMock())
+
+    response = await create_personal_key(
+        data=PersonalKeyCreateRequest(key_alias=None),
+        auth=UserAPIKeyAuth(
+            user_id="user-1",
+            user_role=LitellmUserRoles.INTERNAL_USER,
+            is_session_token=True,
+        ),
+    )
+
+    create_data = verification_tokens.create.await_args.kwargs["data"]
+    assert create_data["key_alias"] == "oidc-sub-123"
+    assert response.key_alias == "oidc-sub-123"
 
 
 def test_session_user_can_only_manage_own_personal_key():
