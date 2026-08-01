@@ -63,7 +63,10 @@ def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     # Act
     # Call the method being tested
     result = MicrosoftSSOHandler.openid_from_response(
-        response=mock_response, team_ids=expected_team_ids, user_role=None
+        response=mock_response,
+        team_ids=expected_team_ids,
+        user_role=None,
+        sub="microsoft-oidc-sub",
     )
 
     # Assert
@@ -74,6 +77,7 @@ def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     assert result.display_name == "Test User"
     assert result.provider == "microsoft"
     assert result.id == "user123"
+    assert result.sub == "microsoft-oidc-sub"
     assert result.first_name == "Test"
     assert result.last_name == "User"
     assert result.team_ids == expected_team_ids
@@ -305,6 +309,35 @@ def test_get_google_callback_response():
     assert result.get("sub") == "google123"
     assert result.get("given_name") == "Google"
     assert result.get("family_name") == "User"
+
+
+def test_get_google_callback_response_preserves_sub_as_alias_source():
+    from fastapi_sso.sso.base import OpenID
+
+    mock_request = MagicMock(spec=Request)
+    mock_openid = OpenID(
+        id="google-oidc-sub",
+        email="google_user@example.com",
+        display_name="Google User",
+        provider="google",
+    )
+
+    with patch.dict(os.environ, {"GOOGLE_CLIENT_SECRET": "mock_secret"}):
+        with patch(
+            "fastapi_sso.sso.google.GoogleSSO.verify_and_process",
+            new=AsyncMock(return_value=mock_openid),
+        ):
+            result = asyncio.run(
+                GoogleSSOHandler.get_google_callback_response(
+                    request=mock_request,
+                    google_client_id="mock_client_id",
+                    redirect_url="http://mock_redirect_url",
+                )
+            )
+
+    assert isinstance(result, CustomOpenID)
+    assert result.id == "google-oidc-sub"
+    assert result.sub == "google-oidc-sub"
 
 
 @pytest.mark.asyncio
@@ -776,9 +809,10 @@ def test_build_sso_user_update_data_with_valid_role():
     from litellm.proxy.management_endpoints.ui_sso import _build_sso_user_update_data
 
     sso_result = CustomOpenID(
-        id="test-user-123",
+        id="configured-user-id",
+        sub="oidc-sub-123",
         email="test@example.com",
-        display_name="Test User",
+        display_name="Different Display Name",
         provider="microsoft",
         team_ids=[],
         user_role=LitellmUserRoles.PROXY_ADMIN,
@@ -792,6 +826,7 @@ def test_build_sso_user_update_data_with_valid_role():
 
     assert update_data["user_email"] == "test@example.com"
     assert update_data["user_role"] == "proxy_admin"
+    assert update_data["user_alias"] == "oidc-sub-123"
 
 
 def test_build_sso_user_update_data_without_role():
@@ -818,6 +853,7 @@ def test_build_sso_user_update_data_without_role():
 
     assert update_data["user_email"] == "test@example.com"
     assert "user_role" not in update_data
+    assert "user_alias" not in update_data
 
 
 def test_normalize_email():
@@ -867,11 +903,13 @@ def test_build_sso_user_update_data_normalizes_email():
     assert "user_role" not in update_data
 
 
-def test_generic_response_convertor_normalizes_email():
+def test_generic_response_convertor_normalizes_email(monkeypatch: pytest.MonkeyPatch):
     """
     Test that generic_response_convertor normalizes email addresses.
     """
     from litellm.proxy.management_endpoints.ui_sso import generic_response_convertor
+
+    monkeypatch.setenv("GENERIC_USER_ID_ATTRIBUTE", "preferred_username")
 
     mock_response = {
         "preferred_username": "user123",
@@ -896,6 +934,7 @@ def test_generic_response_convertor_normalizes_email():
     # Email should be normalized to lowercase
     assert result.email == "test.user@example.com"
     assert result.id == "user123"
+    assert result.sub == "Test User"
     assert result.display_name == "Test User"
 
 
@@ -3410,6 +3449,21 @@ class TestGetAppRolesFromIdToken:
             assert result == []
 
 
+class TestGetSubjectFromIdToken:
+    def test_returns_subject(self):
+        with patch("jwt.decode", return_value={"sub": "microsoft-oidc-sub"}):
+            result = MicrosoftSSOHandler.get_subject_from_id_token("mock.jwt.token")
+
+        assert result == "microsoft-oidc-sub"
+
+    @pytest.mark.parametrize("payload", [{}, {"sub": None}, {"sub": ""}])
+    def test_returns_none_when_subject_is_missing(self, payload):
+        with patch("jwt.decode", return_value=payload):
+            result = MicrosoftSSOHandler.get_subject_from_id_token("mock.jwt.token")
+
+        assert result is None
+
+
 class TestProcessSSOJWTAccessToken:
     """Test the process_sso_jwt_access_token helper function"""
 
@@ -5404,8 +5458,9 @@ async def test_role_mappings_override_default_internal_user_params():
         # Mock SSO result
         mock_result_openid = CustomOpenID(
             id="test-user-123",
+            sub="oidc-sub-123",
             email="test@example.com",
-            display_name="Test User",
+            display_name="Different Display Name",
             provider="microsoft",
             team_ids=[],
         )
@@ -5441,6 +5496,8 @@ async def test_role_mappings_override_default_internal_user_params():
             mock_new_user.assert_called_once()
             call_args = mock_new_user.call_args
             new_user_request = call_args.kwargs["data"]
+
+            assert new_user_request.user_alias == "oidc-sub-123"
 
             # The role from SSO should be preserved, not overridden by default_internal_user_params
             assert (

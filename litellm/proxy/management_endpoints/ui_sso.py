@@ -1090,6 +1090,7 @@ def generic_response_convertor(
 
     return CustomOpenID(
         id=get_nested_value(response, generic_user_id_attribute_name),
+        sub=get_nested_value(response, "sub"),
         display_name=get_nested_value(response, generic_user_display_name_attribute_name),
         email=normalize_email(get_nested_value(response, generic_user_email_attribute_name)),
         first_name=get_nested_value(response, generic_user_first_name_attribute_name),
@@ -1664,6 +1665,9 @@ def _build_sso_user_update_data(
         dict: Update data containing user_email and optionally user_role if valid
     """
     update_data: dict = {"user_email": normalize_email(user_email)}
+    user_alias = _get_sso_subject(result)
+    if user_alias is not None:
+        update_data["user_alias"] = user_alias
 
     # Get SSO role from result and include if valid
     sso_role = getattr(result, "user_role", None)
@@ -1677,6 +1681,17 @@ def _build_sso_user_update_data(
             verbose_proxy_logger.info(f"Updating user {user_id} role from SSO: {sso_role_str}")
 
     return update_data
+
+
+def _get_sso_subject(
+    result: Union["CustomOpenID", OpenID, dict] | None,
+) -> str | None:
+    if result is None:
+        return None
+    subject = _extract_sso_claim_value(result, "sub")
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+    return subject
 
 
 async def _sync_user_role_from_jwt_role_map(
@@ -2236,6 +2251,7 @@ async def insert_sso_user(
     verbose_proxy_logger.debug(f"Inserting SSO user into DB. User values: {user_defined_values}")
     if result_openid is None:
         raise ValueError("result_openid is None")
+    user_alias = _get_sso_subject(result_openid)
     if isinstance(result_openid, dict):
         result_openid = OpenID(**result_openid)
 
@@ -2270,6 +2286,7 @@ async def insert_sso_user(
 
     new_user_request = NewUserRequest(
         user_id=user_defined_values["user_id"],
+        user_alias=user_alias,
         user_email=normalize_email(user_defined_values["user_email"]),
         user_role=user_defined_values["user_role"],  # type: ignore
         max_budget=user_defined_values["max_budget"],
@@ -3833,6 +3850,7 @@ class MicrosoftSSOHandler:
 
         # Extract app roles from the id_token JWT
         app_roles = MicrosoftSSOHandler.get_app_roles_from_id_token(id_token=microsoft_sso.id_token)
+        subject = MicrosoftSSOHandler.get_subject_from_id_token(id_token=microsoft_sso.id_token)
         verbose_proxy_logger.debug(f"Extracted app roles from id_token: {app_roles}")
 
         # Combine groups and app roles
@@ -3858,6 +3876,7 @@ class MicrosoftSSOHandler:
             response=original_msft_result,
             team_ids=user_team_ids,
             user_role=user_role,
+            sub=subject,
         )
         return result
 
@@ -3866,6 +3885,7 @@ class MicrosoftSSOHandler:
         response: Optional[dict],
         team_ids: List[str],
         user_role: Optional[LitellmUserRoles],
+        sub: str | None = None,
     ) -> CustomOpenID:
         response = response or {}
         verbose_proxy_logger.debug(f"Microsoft SSO Callback Response: {response}")
@@ -3874,6 +3894,7 @@ class MicrosoftSSOHandler:
             display_name=response.get(MICROSOFT_USER_DISPLAY_NAME_ATTRIBUTE),
             provider="microsoft",
             id=response.get(MICROSOFT_USER_ID_ATTRIBUTE),
+            sub=sub,
             first_name=response.get(MICROSOFT_USER_FIRST_NAME_ATTRIBUTE),
             last_name=response.get(MICROSOFT_USER_LAST_NAME_ATTRIBUTE),
             team_ids=team_ids,
@@ -3881,6 +3902,22 @@ class MicrosoftSSOHandler:
         )
         verbose_proxy_logger.debug(f"Microsoft SSO OpenID Response: {openid_response}")
         return openid_response
+
+    @staticmethod
+    def get_subject_from_id_token(id_token: str | None) -> str | None:
+        if not id_token:
+            return None
+
+        try:
+            decoded_token = jwt.decode(id_token, options={"verify_signature": False})
+            if not isinstance(decoded_token, dict):
+                return None
+            subject = decoded_token.get("sub")
+            if isinstance(subject, str) and subject.strip():
+                return subject
+        except jwt.PyJWTError as e:
+            verbose_proxy_logger.error(f"Error extracting subject from id_token: {e}")
+        return None
 
     @staticmethod
     def get_app_roles_from_id_token(id_token: Optional[str]) -> List[str]:
@@ -4126,6 +4163,7 @@ class GoogleSSOHandler:
         Args:
             return_raw_sso_response: If True, return the raw SSO response
         """
+        from fastapi_sso.sso.base import OpenID as FastAPISSOOpenID
         from fastapi_sso.sso.google import GoogleSSO
 
         google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", None)
@@ -4153,6 +4191,12 @@ class GoogleSSOHandler:
             )
 
         result = await google_sso.verify_and_process(request)
+        if isinstance(result, FastAPISSOOpenID):
+            return CustomOpenID(
+                **result.model_dump(),
+                sub=result.id,
+                team_ids=[],
+            )
         return result or {}
 
 
