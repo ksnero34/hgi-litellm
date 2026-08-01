@@ -712,8 +712,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               className="mb-4"
             >
               <Radio.Group onChange={(e) => setKeyOwner(e.target.value)} value={keyOwner}>
-                <Radio value="service_account">Service Account</Radio>
                 {userRole === "Admin" && <Radio value="you">You</Radio>}
+                <Radio value="service_account">Service Account</Radio>
                 {userRole === "Admin" && <Radio value="another_user">Another User</Radio>}
                 <Radio value="agent">
                   Agent <Tag color="purple">New</Tag>
