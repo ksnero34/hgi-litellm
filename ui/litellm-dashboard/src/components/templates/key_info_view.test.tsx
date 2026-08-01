@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useResetKeySpend } from "@/app/(dashboard)/hooks/keys/useResetKeySpend";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
-import { keyDeleteCall, keyUpdateCall } from "../networking";
+import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall } from "../networking";
 import { QueryClient } from "@tanstack/react-query";
 import KeyInfoView from "./key_info_view";
 import { i18n } from "@/i18n/i18n";
@@ -38,6 +38,7 @@ vi.mock("@/app/(dashboard)/hooks/projects/useProjects", () => ({
 
 vi.mock("../networking", () => ({
   keyDeleteCall: vi.fn().mockResolvedValue({}),
+  personalKeyDeleteCall: vi.fn().mockResolvedValue({}),
   keyUpdateCall: vi.fn().mockResolvedValue({}),
   getPolicyInfoWithGuardrails: vi.fn().mockResolvedValue({
     resolved_guardrails: ["guardrail-1", "guardrail-2"],
@@ -62,6 +63,8 @@ vi.mock("@/utils/dataUtils", () => ({
 describe("KeyInfoView", () => {
   beforeEach(() => {
     window.localStorage.setItem(languageStorageKey, "en");
+    vi.mocked(keyDeleteCall).mockClear();
+    vi.mocked(personalKeyDeleteCall).mockClear();
     void i18n.changeLanguage("en");
     vi.mocked(useTeams).mockReturnValue({
       teams: [],
@@ -824,6 +827,110 @@ describe("KeyInfoView", () => {
       });
 
       invalidateSpy.mockRestore();
+    });
+
+    it("deletes a managed personal key through its lifecycle endpoint", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "proxy_admin",
+      });
+      const managedPersonalKey = {
+        ...MOCK_KEY_DATA,
+        user_id: "personal-key-owner",
+        metadata: { personal_key: { key_purpose: "personal_llm" } },
+      };
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: /delete key/i }));
+      await userEvent.type(
+        await screen.findByPlaceholderText(managedPersonalKey.key_alias),
+        managedPersonalKey.key_alias,
+      );
+      await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+
+      await waitFor(() => {
+        expect(personalKeyDeleteCall).toHaveBeenCalledWith("test-token", "personal-key-owner");
+        expect(keyDeleteCall).not.toHaveBeenCalled();
+      });
+    });
+
+    it("does not misroute a managed personal key without an owner", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "proxy_admin",
+      });
+      const managedPersonalKeyWithoutOwner = {
+        ...MOCK_KEY_DATA,
+        user_id: "",
+        metadata: { personal_key: { key_purpose: "personal_llm" } },
+      };
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKeyWithoutOwner}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: /delete key/i }));
+      await userEvent.type(
+        await screen.findByPlaceholderText(managedPersonalKeyWithoutOwner.key_alias),
+        managedPersonalKeyWithoutOwner.key_alias,
+      );
+      await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+
+      await waitFor(() => {
+        expect(keyDeleteCall).toHaveBeenCalledWith("test-token", managedPersonalKeyWithoutOwner.token);
+        expect(personalKeyDeleteCall).not.toHaveBeenCalled();
+      });
+    });
+    it("does not route a managed personal key through the admin endpoint for a non-admin", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "personal-key-owner",
+        userRole: "internal_user",
+      });
+      const managedPersonalKey = {
+        ...MOCK_KEY_DATA,
+        user_id: "personal-key-owner",
+        metadata: { personal_key: { key_purpose: "personal_llm" } },
+      };
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: /delete key/i }));
+      await userEvent.type(
+        await screen.findByPlaceholderText(managedPersonalKey.key_alias),
+        managedPersonalKey.key_alias,
+      );
+      await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+
+      await waitFor(() => {
+        expect(keyDeleteCall).toHaveBeenCalledWith("test-token", managedPersonalKey.token);
+        expect(personalKeyDeleteCall).not.toHaveBeenCalled();
+      });
     });
   });
 });

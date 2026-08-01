@@ -18,7 +18,7 @@ import { extractLoggingSettings, formatMetadataForDisplay, stripTagsFromMetadata
 import { KeyResponse } from "../key_team_helpers/key_list";
 import LoggingSettingsView from "../logging_settings_view";
 import NotificationManager from "../molecules/notifications_manager";
-import { getPolicyInfoWithGuardrails, keyDeleteCall, keyUpdateCall } from "../networking";
+import { getPolicyInfoWithGuardrails, keyDeleteCall, keyUpdateCall, personalKeyDeleteCall } from "../networking";
 import { useResetKeySpend } from "@/app/(dashboard)/hooks/keys/useResetKeySpend";
 import { keyKeys } from "@/app/(dashboard)/hooks/keys/useKeys";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,6 +42,12 @@ const LICENSED_METADATA_FIELDS = ["prompts", "tags", "allowed_passthrough_routes
 const isEmptyValue = (v: unknown): boolean =>
   v == null || (Array.isArray(v) && v.length === 0) || (typeof v === "string" && v.trim() === "");
 
+const hasManagedPersonalKeyPurpose = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return "key_purpose" in value && value.key_purpose === "personal_llm";
+};
 /**
  * ─────────────────────────────────────────────────────────────────────────
  * @deprecated
@@ -310,7 +316,14 @@ export default function KeyInfoView({
     try {
       setDeleteLoading(true);
       if (!accessToken) return;
-      await keyDeleteCall(accessToken as string, currentKeyData.token || currentKeyData.token_id);
+      const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata.personal_key);
+      const canDeleteManagedPersonalKey = isProxyAdminRole(userRole) && Boolean(currentKeyData.user_id);
+
+      if (isManagedPersonalKey && canDeleteManagedPersonalKey) {
+        await personalKeyDeleteCall(accessToken, currentKeyData.user_id);
+      } else {
+        await keyDeleteCall(accessToken, currentKeyData.token || currentKeyData.token_id);
+      }
       NotificationManager.success(t("gateway.keyInfoView.deleteSuccess"));
       await queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
       if (onDelete) {

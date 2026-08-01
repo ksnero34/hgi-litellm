@@ -898,6 +898,18 @@ export const keyDeleteCall = async (accessToken: string, user_key: string) => {
   }
 };
 
+export const personalKeyDeleteCall = async (accessToken: string, userID: string) => {
+  try {
+    return await apiClient.delete(`/internal/personal-key`, {
+      accessToken,
+      query: { user_id: userID },
+    });
+  } catch (error) {
+    console.error("Failed to delete personal key:", error);
+    throw error;
+  }
+};
+
 export const userDeleteCall = async (accessToken: string, userIds: string[]) => {
   try {
     return await apiClient.post(`/user/delete`, { accessToken, body: { user_ids: userIds } });
