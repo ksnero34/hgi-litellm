@@ -2206,6 +2206,65 @@ async def test_generate_service_account_key_endpoint_validation():
 
 
 @pytest.mark.asyncio
+async def test_generate_service_account_key_passes_typed_key_to_common_helper():
+    from litellm.proxy._types import LiteLLMKeyType
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        generate_service_account_key_fn,
+    )
+
+    common_helper = AsyncMock(return_value={"key": "sk-generated"})
+    team = LiteLLM_TeamTableCachedObj(team_id="team-1", team_name="Team 1")
+    data = GenerateKeyRequest(
+        team_id="team-1",
+        user_id="ignored-user",
+        metadata={"environment": "production"},
+    )
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", AsyncMock()),
+        patch("litellm.proxy.proxy_server.user_custom_key_generate", None),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.validate_team_id_used_in_service_account_request",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.get_team_object",
+            new_callable=AsyncMock,
+            return_value=team,
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints._check_team_key_limits",
+            new_callable=AsyncMock,
+        ),
+        patch("litellm.proxy.management_endpoints.key_management_endpoints.key_generation_check"),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints._common_key_generation_helper",
+            common_helper,
+        ),
+    ):
+        result = await generate_service_account_key_fn(
+            data=data,
+            user_api_key_dict=UserAPIKeyAuth(
+                user_role=LitellmUserRoles.PROXY_ADMIN,
+                api_key="sk-admin",
+            ),
+            litellm_changed_by="admin-user",
+        )
+
+    assert result == {"key": "sk-generated"}
+    helper_data = common_helper.await_args.kwargs["data"]
+    assert helper_data.key_type is LiteLLMKeyType.LLM_API
+    assert helper_data.user_id is None
+    assert helper_data.metadata == {
+        "environment": "production",
+        "personal_key": {
+            "owner_type": "service",
+            "key_purpose": "service_account",
+        },
+    }
+
+
+@pytest.mark.asyncio
 async def test_unblock_key_supports_both_sk_and_hashed_tokens(monkeypatch):
     """
     Test that the unblock_key endpoint correctly handles both sk- prefixed tokens

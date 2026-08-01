@@ -1871,7 +1871,7 @@ async def generate_service_account_key_fn(
     )
 
     data.user_id = None
-    data.key_type = "llm_api"
+    data.key_type = LiteLLMKeyType.LLM_API
     data.metadata = {
         **(data.metadata or {}),
         "personal_key": {
