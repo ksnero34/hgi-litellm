@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,10 +30,27 @@ const renderWithQueryClient = (ui: React.ReactElement) => {
 
 describe("OrganizationsTable", () => {
   it("should render the OrganizationsTable component", () => {
-    const { getByText } = renderWithQueryClient(
-      <OrganizationsTable userRole="Admin" accessToken={null} premiumUser={true} />,
-    );
+    const { getByText } = renderWithQueryClient(<OrganizationsTable userRole="Admin" accessToken={null} />);
 
     expect(getByText("+ Create New Organization")).toBeInTheDocument();
   });
+
+  it.each(["Admin", "proxy_admin", "Org Admin", "org_admin"])(
+    "shows organization management for %s without an Enterprise license",
+    (userRole) => {
+      renderWithQueryClient(<OrganizationsTable userRole={userRole} accessToken={null} />);
+
+      expect(screen.getByText("+ Create New Organization")).toBeInTheDocument();
+      expect(screen.queryByText(/LiteLLM Enterprise feature/)).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["internal_user", "internal_user_viewer", "proxy_admin_viewer"])(
+    "does not expose organization creation to %s",
+    (userRole) => {
+      renderWithQueryClient(<OrganizationsTable userRole={userRole} accessToken={null} />);
+
+      expect(screen.queryByText("+ Create New Organization")).not.toBeInTheDocument();
+    },
+  );
 });

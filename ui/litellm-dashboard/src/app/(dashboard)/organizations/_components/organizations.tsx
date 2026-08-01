@@ -44,13 +44,13 @@ import {
 import OrganizationInfoView from "@/components/organization/organization_view";
 import NumericalInput from "@/components/shared/numerical_input";
 import VectorStoreSelector from "@/components/vector_store_management/VectorStoreSelector";
+import { isProxyAdminRole } from "@/utils/roles";
 
 interface OrganizationsTableProps {
   userRole: string;
   accessToken: string | null;
   lastRefreshed?: string;
   handleRefreshClick?: () => void;
-  premiumUser: boolean;
 }
 
 export const fetchOrganizations = async (
@@ -68,7 +68,6 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
   accessToken,
   lastRefreshed,
   handleRefreshClick,
-  premiumUser,
 }) => {
   const { t } = useTranslation();
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -90,6 +89,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
   const queryClient = useQueryClient();
   const { data: organizations = [] } = useOrganizations({ org_id: filters.org_id, org_alias: filters.org_alias });
   const { data: userModels = [] } = useUserModels();
+  const canCreateOrganization = isProxyAdminRole(userRole) || userRole === "Org Admin" || userRole === "org_admin";
 
   const refetchOrganizations = () => queryClient.invalidateQueries({ queryKey: organizationKeys.lists() });
 
@@ -178,25 +178,11 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
     form.resetFields();
   };
 
-  if (!premiumUser) {
-    return (
-      <div>
-        <Text>
-          This is a LiteLLM Enterprise feature, and requires a valid key to use. Get a trial key{" "}
-          <a href="https://www.litellm.ai/#pricing" target="_blank" rel="noopener noreferrer">
-            here
-          </a>
-          .
-        </Text>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-4 h-[75vh]">
       <Grid numItems={1} className="gap-2 p-8 w-full mt-2">
         <Col numColSpan={1} className="flex flex-col gap-2">
-          {(userRole === "Admin" || userRole === "Org Admin") && (
+          {canCreateOrganization && (
             <Button className="w-fit" onClick={() => setIsOrgModalVisible(true)}>
               + Create New Organization
             </Button>
@@ -210,7 +196,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
               }}
               accessToken={accessToken}
               is_org_admin={true} // You'll need to implement proper org admin check
-              is_proxy_admin={userRole === "Admin"}
+              is_proxy_admin={isProxyAdminRole(userRole)}
               userModels={userModels}
               editOrg={editOrg}
             />
@@ -400,7 +386,7 @@ const OrganizationsTable: React.FC<OrganizationsTableProps> = ({
                                         <Text>{org.members?.length || 0} Members</Text>
                                       </TableCell>
                                       <TableCell>
-                                        {userRole === "Admin" && (
+                                        {isProxyAdminRole(userRole) && (
                                           <>
                                             <TableIconActionButton
                                               variant="Edit"

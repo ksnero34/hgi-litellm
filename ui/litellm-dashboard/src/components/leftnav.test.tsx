@@ -5,7 +5,7 @@ import Sidebar, { menuGroups, getBreadcrumb } from "./leftnav";
 
 vi.mock("../utils/roles", () => {
   return {
-    all_admin_roles: ["admin", "admin_viewer"],
+    all_admin_roles: ["Admin", "admin", "admin_viewer", "proxy_admin", "proxy_admin_viewer", "org_admin"],
     internalUserRoles: ["internal"],
     rolesWithWriteAccess: ["admin", "internal"],
     rolesAllowedToViewWriteScopedPages: ["admin", "internal", "admin_viewer"],
@@ -129,6 +129,17 @@ describe("Sidebar (leftnav)", () => {
     const keys = collectNavKeys();
     const duplicates = keys.filter((key, i) => keys.indexOf(key) !== i);
     expect(duplicates).toEqual([]);
+  });
+
+  it("limits Organizations navigation to administrator roles", () => {
+    const organizationItem = menuGroups
+      .find((group) => group.groupLabel === "ACCESS CONTROL")
+      ?.items.find((item) => item.key === "organizations");
+
+    expect(organizationItem?.roles).toEqual(
+      expect.arrayContaining(["Admin", "proxy_admin", "proxy_admin_viewer", "org_admin"]),
+    );
+    expect(organizationItem?.roles).not.toEqual(expect.arrayContaining(["internal_user", "internal_user_viewer"]));
   });
 
   describe("Admin Viewer parity", () => {
