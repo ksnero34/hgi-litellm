@@ -733,14 +733,19 @@ export const keyCreateServiceAccountCall = async (
   }
 };
 
-export const personalKeyCreateCall = async (accessToken: string, userID: string, keyAlias: string) => {
+export const personalKeyCreateCall = async (accessToken: string, userID: string | null, keyAlias: string) => {
   try {
     return await apiClient.post(`/internal/personal-key`, {
       accessToken,
-      body: {
-        user_id: userID,
-        key_alias: keyAlias,
-      },
+      body:
+        userID === null
+          ? {
+              key_alias: keyAlias,
+            }
+          : {
+              user_id: userID,
+              key_alias: keyAlias,
+            },
     });
   } catch (error) {
     console.error("Failed to create personal key:", error);

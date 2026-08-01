@@ -91,6 +91,8 @@ interface UserOption {
   user: User;
 }
 
+const isPersonalKeyOwner = (owner: string): boolean => owner === "you" || owner === "another_user";
+
 const getPredefinedTags = (data: any[] | null) => {
   let allTags = [];
 
@@ -210,6 +212,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const handleOk = () => {
     setIsModalVisible(false);
     form.resetFields();
+    setKeyOwner("service_account");
     setKeyType("llm_api");
     setModelAliases({});
     setAutoRotationEnabled(false);
@@ -230,6 +233,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     setApiKey(null);
     setSelectedCreateKeyTeam(null);
     form.resetFields();
+    setKeyOwner("service_account");
     setKeyType("llm_api");
     setModelAliases({});
     setAutoRotationEnabled(false);
@@ -319,10 +323,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       if (prefillData) {
         // Set key owner (owned_by) - validate that "another_user" is only allowed for Admin
         if (prefillData.owned_by) {
-          if (prefillData.owned_by === "another_user" && userRole !== "Admin") {
+          if ((prefillData.owned_by === "another_user" || prefillData.owned_by === "you") && userRole !== "Admin") {
             // Ignore invalid owned_by for non-admin users, fall back to default
-            setKeyOwner("service_account");
-          } else if (prefillData.owned_by === "you") {
             setKeyOwner("service_account");
           } else {
             setKeyOwner(prefillData.owned_by);
@@ -360,13 +362,39 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   // Check if team selection is required
   const isTeamSelectionRequired = modelsToPick.includes("no-default-models");
-  const isFormDisabled = isTeamSelectionRequired && !selectedCreateKeyTeam;
+  const isFormDisabled = !isPersonalKeyOwner(keyOwner) && isTeamSelectionRequired && !selectedCreateKeyTeam;
 
   const handleCreate = async (formValues: Record<string, any>) => {
     try {
       const newKeyAlias = formValues?.key_alias ?? "";
-      const newKeyTeamId = formValues?.team_id ?? null;
 
+      NotificationsManager.info("Making API Call");
+      setIsModalVisible(true);
+
+      if (isPersonalKeyOwner(keyOwner)) {
+        const response = await personalKeyCreateCall(
+          accessToken,
+          keyOwner === "another_user" ? formValues.user_id : null,
+          newKeyAlias,
+        );
+
+        addKey(response);
+        queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
+
+        setApiKey(response["key"]);
+        setSoftBudget(response["soft_budget"]);
+        NotificationsManager.success("Virtual Key Created");
+        form.resetFields();
+        setKeyOwner("service_account");
+        setBudgetLimits([]);
+        setTagRateLimits([]);
+        setBudgetFallbacks({});
+        setBudgetFallbacksKey((k) => k + 1);
+        localStorage.removeItem("userData" + userID);
+        return;
+      }
+
+      const newKeyTeamId = formValues?.team_id ?? null;
       const existingKeyAliases = data?.filter((k) => k.team_id === newKeyTeamId).map((k) => k.key_alias) ?? [];
 
       if (existingKeyAliases.includes(newKeyAlias)) {
@@ -374,9 +402,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
           `Key alias ${newKeyAlias} already exists for team with ID ${newKeyTeamId}, please provide another key alias`,
         );
       }
-
-      NotificationsManager.info("Making API Call");
-      setIsModalVisible(true);
 
       if (keyOwner === "agent") {
         if (!selectedAgentId) {
@@ -521,9 +546,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       }
 
       let response;
-      if (keyOwner === "another_user") {
-        response = await personalKeyCreateCall(accessToken, formValues.user_id, formValues.key_alias);
-      } else if (keyOwner === "service_account") {
+      if (keyOwner === "service_account") {
         response = await keyCreateServiceAccountCall(accessToken, formValues);
       } else if (keyOwner === "agent" && selectedAgentId) {
         response = await keyCreateCall(accessToken, null, formValues);
@@ -543,6 +566,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       setSoftBudget(response["soft_budget"]);
       NotificationsManager.success("Virtual Key Created");
       form.resetFields();
+      setKeyOwner("service_account");
       setBudgetLimits([]);
       setTagRateLimits([]);
       setBudgetFallbacks({});
@@ -689,6 +713,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
             >
               <Radio.Group onChange={(e) => setKeyOwner(e.target.value)} value={keyOwner}>
                 <Radio value="service_account">Service Account</Radio>
+                {userRole === "Admin" && <Radio value="you">You</Radio>}
                 {userRole === "Admin" && <Radio value="another_user">Another User</Radio>}
                 <Radio value="agent">
                   Agent <Tag color="purple">New</Tag>
@@ -763,7 +788,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 </div>
               </div>
             )}
-            {keyOwner !== "another_user" && (
+            {!isPersonalKeyOwner(keyOwner) && (
               <>
                 <Form.Item
                   label={
@@ -879,10 +904,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               <Form.Item
                 label={
                   <span>
-                    {keyOwner === "another_user" ? "Key Name" : "Service Account ID"}{" "}
+                    {isPersonalKeyOwner(keyOwner) ? "Key Name" : "Service Account ID"}{" "}
                     <Tooltip
                       title={
-                        keyOwner === "another_user"
+                        isPersonalKeyOwner(keyOwner)
                           ? "A descriptive name to identify this key"
                           : "Unique identifier for this service account"
                       }
@@ -892,18 +917,28 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                   </span>
                 }
                 name="key_alias"
-                rules={[
-                  {
-                    required: true,
-                    message: `Please input a ${keyOwner === "another_user" ? "key name" : "service account ID"}`,
-                  },
-                ]}
-                help="required"
+                rules={
+                  isPersonalKeyOwner(keyOwner)
+                    ? []
+                    : [
+                        {
+                          required: true,
+                          message: "Please input a service account ID",
+                        },
+                      ]
+                }
+                help={isPersonalKeyOwner(keyOwner) ? undefined : "required"}
               >
                 <TextInput placeholder="" />
               </Form.Item>
 
-              {keyOwner !== "another_user" && (
+              {isPersonalKeyOwner(keyOwner) && (
+                <Typography.Paragraph type="secondary" className="mt-2">
+                  {t("access.personalKeys.form.singleKeyHint")}
+                </Typography.Paragraph>
+              )}
+
+              {!isPersonalKeyOwner(keyOwner) && (
                 <Form.Item
                   label={
                     <span>
@@ -954,7 +989,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 </Form.Item>
               )}
 
-              {keyOwner !== "another_user" && (
+              {!isPersonalKeyOwner(keyOwner) && (
                 <Form.Item
                   label={
                     <span>
@@ -1012,7 +1047,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
           )}
 
           {/* Section 3: Optional Settings */}
-          {keyOwner !== "another_user" && !isFormDisabled && (
+          {!isPersonalKeyOwner(keyOwner) && !isFormDisabled && (
             <div className="mb-8">
               <Accordion className="mt-4 mb-4">
                 <AccordionHeader>

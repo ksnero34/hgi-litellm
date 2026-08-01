@@ -4,7 +4,7 @@ import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils"
 import { i18n } from "@/i18n/i18n";
 import { languageStorageKey } from "@/i18n/resources";
 import { Team } from "../key_team_helpers/key_list";
-import { userFilterUICall } from "../networking";
+import { modelAvailableCall, userFilterUICall } from "../networking";
 import CreateKey from "./create_key_button";
 
 const {
@@ -507,15 +507,52 @@ describe("CreateKey", () => {
     expect(mockPersonalKeyCreateCall).not.toHaveBeenCalled();
   });
 
-  it("maps legacy admin-owned key prefill to a service account", async () => {
+  it("shows admin-only You ownership and keeps its form minimal", async () => {
     renderWithProviders(
       <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "you", key_alias: "proxy-ops" }} />,
     );
+
+    await waitFor(() => {
+      expect(radioGroupValueRef.current).toBe("you");
+    });
+
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("You can have one active personal key.")).toBeInTheDocument();
+    expect(screen.queryByText("User ID")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("org-dropdown")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("team-dropdown")).not.toBeInTheDocument();
+    expect(document.querySelector('select[placeholder="Select models"]')).toBeNull();
+    expect(screen.queryByText("Access Groups")).not.toBeInTheDocument();
+  });
+
+  it("creates the admin's personal key through the self endpoint without a target user", async () => {
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "you", key_alias: "proxy-ops" }} />,
+    );
+
     act(() => {
       fireEvent.click(screen.getByRole("button", { name: /create key/i }));
     });
-    await waitFor(() => expect(mockKeyCreateServiceAccountCall).toHaveBeenCalledWith("test-token", expect.any(Object)));
+
+    await waitFor(() => expect(mockPersonalKeyCreateCall).toHaveBeenCalledWith("test-token", null, "proxy-ops"));
+    expect(mockKeyCreateServiceAccountCall).not.toHaveBeenCalled();
     expect(mockKeyCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("does not disable admin self personal keys when team-only models require team selection", async () => {
+    vi.mocked(modelAvailableCall).mockResolvedValueOnce({ data: [{ id: "no-default-models" }] });
+
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate prefillData={{ owned_by: "you", key_alias: "proxy-ops" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /create key/i })).toBeEnabled();
+    });
+
+    expect(
+      screen.queryByText(/please select a team to continue configuring your virtual key/i),
+    ).not.toBeInTheDocument();
   });
 
   it("should prefill models when provided without team_id", async () => {
@@ -584,6 +621,20 @@ describe("CreateKey", () => {
     expect(radioGroupValueRef.current).toBe("service_account");
   });
 
+  it('should fall back to "service_account" when owned_by is you for non-admin', async () => {
+    authorizedState = { ...defaultAuthorizedState, userRole: "Internal User" };
+
+    renderWithProviders(
+      <CreateKey {...defaultProps} autoOpenCreate={true} prefillData={{ owned_by: "you", key_alias: "example-key" }} />,
+    );
+
+    await waitFor(() => {
+      expect(setFieldsValueMock).toHaveBeenCalledWith({ key_alias: "example-key" });
+    });
+
+    expect(radioGroupValueRef.current).toBe("service_account");
+  });
+
   it("should apply owned_by another_user for admin", async () => {
     renderWithProviders(
       <CreateKey {...defaultProps} autoOpenCreate={true} prefillData={{ owned_by: "another_user" }} />,
@@ -592,6 +643,20 @@ describe("CreateKey", () => {
     await waitFor(() => {
       expect(radioGroupValueRef.current).toBe("another_user");
     });
+  });
+
+  it("shows the You ownership option only for admins", async () => {
+    const adminView = renderWithProviders(<CreateKey {...defaultProps} autoOpenCreate={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("You")).toBeInTheDocument();
+    });
+
+    adminView.unmount();
+    authorizedState = { ...defaultAuthorizedState, userRole: "Internal User" };
+    renderWithProviders(<CreateKey {...defaultProps} autoOpenCreate={true} />);
+
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 
   it("should prefill key_type when provided", async () => {
