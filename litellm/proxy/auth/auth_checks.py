@@ -2330,6 +2330,7 @@ class ExperimentalUIJWTToken:
             models=user_info.models,
             max_parallel_requests=None,
             user_role=LitellmUserRoles(user_info.user_role),
+            is_session_token=True,
         )
 
         return encrypt_value_helper(valid_token.model_dump_json(exclude_none=True))

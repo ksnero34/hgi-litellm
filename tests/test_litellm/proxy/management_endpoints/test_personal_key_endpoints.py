@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from prisma import Prisma
 from pydantic import ValidationError
 
+from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.management_endpoints.key_management_endpoints import (
@@ -52,6 +53,17 @@ def test_session_user_can_only_manage_own_personal_key():
         _target_user_id("user-2", auth)
 
     assert error.value.status_code == 403
+
+
+def test_standard_sso_ui_session_can_manage_own_personal_key():
+    auth = UserAPIKeyAuth(
+        user_id="user-1",
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        team_id=UI_SESSION_TOKEN_TEAM_ID,
+        is_session_token=False,
+    )
+
+    assert _target_user_id(None, auth) == "user-1"
 
 
 def test_non_session_key_cannot_manage_personal_key():

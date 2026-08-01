@@ -56,6 +56,10 @@ def _is_proxy_admin(auth: UserAPIKeyAuth) -> bool:
     return auth.user_role in {LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN.value}
 
 
+def _is_ui_session(auth: UserAPIKeyAuth) -> bool:
+    return auth.is_session_token or auth.team_id == UI_SESSION_TOKEN_TEAM_ID
+
+
 def _target_user_id(requested_user_id: str | None, auth: UserAPIKeyAuth, *, read_only: bool = False) -> str:
     caller_user_id = auth.user_id
     allowed_roles = {
@@ -81,7 +85,7 @@ def _target_user_id(requested_user_id: str | None, auth: UserAPIKeyAuth, *, read
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="The authenticated principal has no user owner"
         )
-    if not _is_proxy_admin(auth) and not auth.is_session_token:
+    if not _is_proxy_admin(auth) and not _is_ui_session(auth):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Personal keys can only be managed from an authenticated UI session",

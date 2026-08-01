@@ -187,6 +187,7 @@ def test_get_experimental_ui_login_jwt_auth_token_valid(valid_sso_user_defined_v
     assert token_data["user_role"] == LitellmUserRoles.PROXY_ADMIN.value
     assert token_data["models"] == ["gpt-3.5-turbo"]
     assert token_data["max_budget"] == litellm.max_ui_session_budget
+    assert token_data["is_session_token"] is True
 
     # Verify expiration time is set and valid (Experimental UI uses fixed 10-min expiry)
     assert "expires" in token_data
@@ -286,6 +287,7 @@ def test_get_key_object_from_ui_hash_key_valid(
     assert key_object.user_role == LitellmUserRoles.PROXY_ADMIN
     assert key_object.models == ["gpt-3.5-turbo"]
     assert key_object.max_budget == litellm.max_ui_session_budget
+    assert key_object.is_session_token is True
 
 
 def test_get_key_object_from_ui_hash_key_invalid():
