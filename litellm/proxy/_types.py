@@ -742,6 +742,8 @@ class LiteLLMRoutes(enum.Enum):
     )
 
     self_managed_routes = [
+        "/internal/personal-key",
+        "/internal/personal-key/rotate",
         "/team/member_add",
         "/team/member_delete",
         "/team/member_update",

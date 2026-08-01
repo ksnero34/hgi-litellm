@@ -54,6 +54,47 @@ def test_non_admin_config_update_route_rejected():
 
 
 @pytest.mark.parametrize(
+    "method, route",
+    [
+        ("GET", "/internal/personal-key"),
+        ("POST", "/internal/personal-key"),
+        ("POST", "/internal/personal-key/rotate"),
+        ("DELETE", "/internal/personal-key"),
+    ],
+)
+def test_internal_user_can_reach_personal_key_endpoints(method, route):
+    role = LitellmUserRoles.INTERNAL_USER.value
+    request = MagicMock(spec=Request)
+    request.method = method
+    request.query_params = {}
+
+    RouteChecks.non_proxy_admin_allowed_routes_check(
+        user_obj=LiteLLM_UserTable(user_id="test_user", user_role=role),
+        _user_role=role,
+        route=route,
+        request=request,
+        valid_token=UserAPIKeyAuth(user_id="test_user", user_role=role),
+        request_data={},
+    )
+
+
+def test_internal_user_viewer_can_reach_personal_key_read_endpoint():
+    role = LitellmUserRoles.INTERNAL_USER_VIEW_ONLY.value
+    request = MagicMock(spec=Request)
+    request.method = "GET"
+    request.query_params = {}
+
+    RouteChecks.non_proxy_admin_allowed_routes_check(
+        user_obj=LiteLLM_UserTable(user_id="test_user", user_role=role),
+        _user_role=role,
+        route="/internal/personal-key",
+        request=request,
+        valid_token=UserAPIKeyAuth(user_id="test_user", user_role=role),
+        request_data={},
+    )
+
+
+@pytest.mark.parametrize(
     "role",
     [
         LitellmUserRoles.INTERNAL_USER.value,
