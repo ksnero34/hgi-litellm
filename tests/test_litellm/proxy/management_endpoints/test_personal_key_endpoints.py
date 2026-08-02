@@ -240,13 +240,15 @@ def test_internal_viewer_can_read_but_cannot_mutate_personal_key():
 
 
 @pytest.mark.asyncio
-async def test_admin_manual_human_org_team_can_resolve_personal_key_scope():
+async def test_admin_manual_org_team_can_resolve_personal_key_scope():
     user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team"], team_id=None)
-    team = SimpleNamespace(team_id="admin-team", organization_id="human-default")
+    team = SimpleNamespace(team_id="admin-team", organization_id="admin-org")
     database = SimpleNamespace(
         litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
-        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
-        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[team])),
+        litellm_organizationmembership=SimpleNamespace(
+            find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="admin-org")])
+        ),
+        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
         litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
     )
 
@@ -258,29 +260,69 @@ async def test_admin_manual_human_org_team_can_resolve_personal_key_scope():
 
     assert resolved_user is user
     assert resolved_team is team
-    assert organization_id == "human-default"
+    assert organization_id == "admin-org"
+    database.litellm_organizationmembership.find_many.assert_awaited_once_with(where={"user_id": "admin-1"})
+    database.litellm_teamtable.find_unique.assert_awaited_once_with(where={"team_id": "admin-team"})
 
 
 @pytest.mark.asyncio
-async def test_admin_manual_scope_requires_human_organization_membership():
+async def test_admin_manual_scope_uses_org_backed_team_without_organization_membership():
     user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team"], team_id=None)
+    team = SimpleNamespace(team_id="admin-team", organization_id="admin-org")
     database = SimpleNamespace(
         litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
-        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=None)),
+        litellm_organizationmembership=SimpleNamespace(find_many=AsyncMock(return_value=[])),
+        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
+        litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+    )
+
+    _, resolved_team, organization_id = await _load_scope(database, "admin-1", allow_manual_scope=True)
+
+    assert resolved_team is team
+    assert organization_id == "admin-org"
+    database.litellm_teamtable.find_unique.assert_awaited_once_with(where={"team_id": "admin-team"})
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_scope_rejects_team_outside_organization_memberships():
+    user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team"], team_id=None)
+    team = SimpleNamespace(team_id="admin-team", organization_id="team-org")
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(
+            find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="member-org")])
+        ),
+        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
     )
 
     with pytest.raises(HTTPException) as error:
         await _load_scope(database, "admin-1", allow_manual_scope=True)
 
     assert error.value.status_code == 409
-    assert error.value.detail == "The administrator must belong to the Human organization"
+    assert error.value.detail == "The administrator's team is outside their organization memberships"
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_scope_requires_discoverable_team_membership():
+    user = SimpleNamespace(user_id="admin-1", metadata={}, teams=[], team_id=None)
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(find_many=AsyncMock(return_value=[])),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await _load_scope(database, "admin-1", allow_manual_scope=True)
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "The administrator must belong to exactly one organization-backed team"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("team_count", [0, 2])
-async def test_admin_manual_scope_requires_exactly_one_human_org_team(team_count: int):
+async def test_admin_manual_scope_requires_exactly_one_org_team(team_count: int):
     teams = [
-        SimpleNamespace(team_id=f"admin-team-{index}", organization_id="human-default") for index in range(team_count)
+        SimpleNamespace(team_id=f"admin-team-{index}", organization_id="admin-org", members_with_roles=[])
+        for index in range(team_count)
     ]
     user = SimpleNamespace(
         user_id="admin-1",
@@ -290,7 +332,9 @@ async def test_admin_manual_scope_requires_exactly_one_human_org_team(team_count
     )
     database = SimpleNamespace(
         litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
-        litellm_organizationmembership=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+        litellm_organizationmembership=SimpleNamespace(
+            find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="admin-org")])
+        ),
         litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=teams)),
     )
 
@@ -298,7 +342,7 @@ async def test_admin_manual_scope_requires_exactly_one_human_org_team(team_count
         await _load_scope(database, "admin-1", allow_manual_scope=True)
 
     assert error.value.status_code == 409
-    assert error.value.detail == "The administrator must belong to exactly one team in the Human organization"
+    assert error.value.detail == "The administrator must belong to exactly one organization-backed team"
 
 
 @pytest.mark.asyncio

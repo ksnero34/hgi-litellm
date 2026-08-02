@@ -240,9 +240,9 @@ async def _load_scope(
     if user_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internal user not found")
 
-    organization_id = human_organization_id()
     metadata = _json_object(user_row.metadata)
     if SSO_MANAGED_TEAM_IDS_METADATA_KEY in metadata:
+        organization_id = human_organization_id()
         try:
             department_team_id = resolve_department_team_id(metadata)
         except ValueError as error:
@@ -252,36 +252,38 @@ async def _load_scope(
             ) from error
         team_row = await db.litellm_teamtable.find_unique(where={"team_id": department_team_id})
     elif allow_manual_scope:
-        organization_membership = await db.litellm_organizationmembership.find_unique(
-            where={
-                "user_id_organization_id": {
-                    "user_id": user_id,
-                    "organization_id": organization_id,
-                }
-            }
-        )
-        if organization_membership is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="The administrator must belong to the Human organization",
+        organization_memberships = await db.litellm_organizationmembership.find_many(where={"user_id": user_id})
+        organization_ids = tuple(
+            dict.fromkeys(
+                str(membership.organization_id)
+                for membership in organization_memberships
+                if membership.organization_id is not None
             )
+        )
         assigned_team_ids = (
             *tuple(user_row.teams or []),
             *((user_row.team_id,) if user_row.team_id is not None else ()),
         )
         team_ids = tuple(dict.fromkeys(team_id for team_id in assigned_team_ids if team_id != UI_SESSION_TOKEN_TEAM_ID))
-        teams = await db.litellm_teamtable.find_many(
-            where={
-                "team_id": {"in": list(team_ids)},
-                "organization_id": organization_id,
-            }
-        )
-        if len(teams) != 1:
+        if len(team_ids) != 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="The administrator must belong to exactly one team in the Human organization",
+                detail="The administrator must belong to exactly one organization-backed team",
             )
-        team_row = teams[0]
+        team_row = await db.litellm_teamtable.find_unique(where={"team_id": team_ids[0]})
+        if team_row is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator team not found")
+        if team_row.organization_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The administrator's team must belong to an organization",
+            )
+        organization_id = str(team_row.organization_id)
+        if organization_ids and organization_id not in organization_ids:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The administrator's team is outside their organization memberships",
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -290,14 +292,14 @@ async def _load_scope(
 
     if team_row is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="OIDC department team not found")
-    if team_row.organization_id != organization_id:
+    if str(team_row.organization_id) != organization_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="OIDC department team is not assigned to the Human organization",
+            detail="Personal key team is not assigned to the resolved organization",
         )
     organization_row = await db.litellm_organizationtable.find_unique(where={"organization_id": organization_id})
     if organization_row is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Human organization not found")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal key organization not found")
     return user_row, team_row, organization_id
 
 
