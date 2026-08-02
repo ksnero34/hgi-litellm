@@ -14978,6 +14978,28 @@ def test_build_key_filter_conditions_active_applies_gte_and_null():
     assert "lt" not in str(clauses)
 
 
+def test_build_key_filter_conditions_active_only_excludes_blocked_and_expired_keys():
+    from litellm.proxy.management_endpoints.key_management_endpoints import (
+        _build_key_filter_conditions,
+    )
+
+    where = _build_key_filter_conditions(
+        user_id="u1",
+        team_id="team-1",
+        organization_id=None,
+        key_alias=None,
+        key_hash=None,
+        exclude_team_id=None,
+        admin_team_ids=None,
+        active_only=True,
+    )
+
+    assert {"OR": [{"blocked": False}, {"blocked": None}]} in where["AND"]
+    clauses = _find_expires_clauses(where)
+    assert None in clauses
+    assert any(isinstance(clause, dict) and "gte" in clause for clause in clauses)
+
+
 def test_build_key_filter_conditions_no_expires_filter_omits_clause():
     """Default (no expires_filter) must not add any expires constraint — preserves existing callers."""
     from litellm.proxy.management_endpoints.key_management_endpoints import (
@@ -15146,3 +15168,71 @@ async def test_list_keys_without_expires_param_forwards_none():
 
     mock_helper.assert_called_once()
     assert mock_helper.call_args.kwargs["expires_filter"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_role", "key_status", "expected_active_only"),
+    [
+        (LitellmUserRoles.INTERNAL_USER, None, True),
+        (LitellmUserRoles.PROXY_ADMIN, None, False),
+        (LitellmUserRoles.INTERNAL_USER, "deleted", False),
+    ],
+)
+async def test_team_key_list_forwards_effective_active_only(
+    user_role: LitellmUserRoles,
+    key_status: str | None,
+    expected_active_only: bool,
+):
+    from unittest.mock import Mock, patch
+
+    mock_prisma_client = AsyncMock()
+    mock_user_api_key_dict = UserAPIKeyAuth(user_id="user-1", user_role=user_role)
+    mock_user_info = LiteLLM_UserTable(
+        user_id="user-1",
+        user_email="user@example.com",
+        teams=["team-1"],
+        organization_memberships=[],
+    )
+    mock_helper = AsyncMock(return_value={"keys": [], "total_count": 0, "current_page": 1, "total_pages": 0})
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch(
+            "litellm.proxy.management_endpoints.key_management_endpoints.validate_key_list_check",
+            return_value=mock_user_info,
+        ),
+        patch("litellm.proxy.management_endpoints.key_management_endpoints._list_key_helper", mock_helper),
+    ):
+        await list_keys(
+            request=Mock(),
+            user_api_key_dict=mock_user_api_key_dict,
+            team_id="team-1",
+            include_team_keys=False,
+            include_created_by_keys=False,
+            status=key_status,
+            expires=None,
+        )
+
+    assert mock_helper.call_args.kwargs["active_only"] is expected_active_only
+
+
+@pytest.mark.asyncio
+async def test_non_admin_team_key_list_rejects_expired_filter():
+    from unittest.mock import Mock, patch
+
+    mock_prisma_client = AsyncMock()
+    auth = UserAPIKeyAuth(user_id="user-1", user_role=LitellmUserRoles.INTERNAL_USER)
+
+    with patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client):
+        with pytest.raises(ProxyException) as error:
+            await list_keys(
+                request=Mock(),
+                user_api_key_dict=auth,
+                team_id="team-1",
+                status=None,
+                expires="expired",
+            )
+
+    assert error.value.code == "400"
+    assert "only support active keys" in str(error.value.message)

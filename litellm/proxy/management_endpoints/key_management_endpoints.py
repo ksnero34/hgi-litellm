@@ -5330,6 +5330,12 @@ async def list_keys(
                 status_code=400,
                 detail={"error": "Invalid expires value. Supported: 'active', 'expired'."},
             )
+        effective_active_only = status != "deleted" and team_id is not None and not is_proxy_admin
+        if effective_active_only and expires == "expired":
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Non-admin team key lists only support active keys."},
+            )
 
         complete_user_info = await validate_key_list_check(
             user_api_key_dict=user_api_key_dict,
@@ -5380,7 +5386,6 @@ async def list_keys(
         # admin key) receive other users' keys (user_id="alice" -> "alice2"). Exact
         # by default restores the prior behavior; the dashboard opts in explicitly.
         use_substring_matching = substring_matching and is_proxy_admin
-
         # Admins may omit user_id to list all keys; non-admins are scoped to self.
         if not user_id and not is_proxy_admin:
             user_id = user_api_key_dict.user_id
@@ -5407,6 +5412,7 @@ async def list_keys(
             agent_id=agent_id,
             use_substring_matching=use_substring_matching,
             expires_filter=expires if isinstance(expires, str) else None,
+            active_only=effective_active_only,
         )
 
         verbose_proxy_logger.debug("Successfully prepared response")
@@ -5635,6 +5641,7 @@ def _build_key_filter_conditions(
     agent_id: Optional[str] = None,
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
+    active_only: bool = False,
 ) -> Dict[str, Union[str, Dict[str, Any], List[Dict[str, Any]]]]:
     """Build filter conditions for key listing.
 
@@ -5744,6 +5751,14 @@ def _build_key_filter_conditions(
         where = {"AND": [where, {"agent_id": agent_id}]}
     if expires_filter is not None and expires_filter in VALID_EXPIRES_FILTER_VALUES:
         where = {"AND": [where, _build_expires_where_clause(expires_filter, datetime.now(timezone.utc))]}
+    if active_only:
+        where = {
+            "AND": [
+                where,
+                {"OR": [{"blocked": False}, {"blocked": None}]},
+                _build_expires_where_clause("active", datetime.now(timezone.utc)),
+            ]
+        }
 
     verbose_proxy_logger.debug(f"Filter conditions: {where}")
     return where
@@ -5774,6 +5789,7 @@ async def _list_key_helper(
     agent_id: Optional[str] = None,
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
+    active_only: bool = False,
 ) -> KeyListResponseObject:
     """
     Helper function to list keys
@@ -5812,6 +5828,7 @@ async def _list_key_helper(
         agent_id=agent_id,
         use_substring_matching=use_substring_matching,
         expires_filter=expires_filter,
+        active_only=active_only,
     )
 
     # Calculate skip for pagination
