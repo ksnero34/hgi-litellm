@@ -34,6 +34,10 @@ HUMAN_ORGANIZATION_ALIAS = "Human quota pool"
 HUMAN_ORGANIZATION_BUDGET_SUFFIX = "-budget"
 
 
+def _canonical_sso_team_name(team_name: str) -> str:
+    return " ".join(team_name.split()).casefold()
+
+
 def _mapping_team_value(value: Dict[Any, Any]) -> Any:
     for key in _TEAM_VALUE_KEYS:
         if key in value:
@@ -75,11 +79,11 @@ def normalize_sso_team_claim(raw_value: Any) -> List[str]:
         normalized.append(str(value).strip())
 
     append_value(raw_value)
-    return list(dict.fromkeys(value for value in normalized if value))
+    return list({_canonical_sso_team_name(value): value for value in reversed(normalized) if value}.values())[::-1]
 
 
 def build_sso_team_id(team_name: str) -> str:
-    normalized_name = " ".join(team_name.split()).casefold()
+    normalized_name = _canonical_sso_team_name(team_name)
     digest = hashlib.sha256(normalized_name.encode("utf-8")).hexdigest()[:32]
     return f"litellm-sso-{digest}"
 
@@ -120,11 +124,12 @@ async def resolve_or_create_sso_teams(
     prisma_client: PrismaClient,
     team_claim_values: List[str],
 ) -> List[str]:
-    if len(team_claim_values) != 1:
+    normalized_team_claim_values = normalize_sso_team_claim(team_claim_values)
+    if len(normalized_team_claim_values) != 1:
         raise ValueError("OIDC user_orgnm must contain exactly one department")
     organization_id = await ensure_human_organization(prisma_client)
     resolved_team_ids: List[str] = []
-    for claim_value in team_claim_values:
+    for claim_value in normalized_team_claim_values:
         existing_team = await TeamRepository(prisma_client).table.find_unique(where={"team_id": claim_value})
         if existing_team is None:
             existing_team = await TeamRepository(prisma_client).table.find_first(where={"team_alias": claim_value})

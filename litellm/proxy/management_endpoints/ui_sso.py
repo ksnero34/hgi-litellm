@@ -2827,8 +2827,7 @@ class SSOAuthenticationHandler:
             from litellm.proxy.proxy_server import prisma_client
 
             if prisma_client is None:
-                verbose_proxy_logger.error("Prisma client not found, skipping SSO team synchronization")
-                return
+                raise ValueError("Prisma client is required for configured SSO team synchronization")
             team_claim_values = getattr(result, "sso_team_claim_values", [])
             resolved_team_ids = await resolve_or_create_sso_teams(
                 prisma_client=prisma_client,

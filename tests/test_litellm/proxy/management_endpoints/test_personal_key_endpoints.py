@@ -64,7 +64,34 @@ async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeyp
     )
     team = SimpleNamespace(team_id="department-1", organization_id="human-default")
     verification_tokens = SimpleNamespace(
-        find_many=AsyncMock(return_value=[]),
+        find_many=AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    token="managed-personal-hash",
+                    metadata={
+                        "personal_key": {
+                            "owner_type": "user",
+                            "key_purpose": "personal_llm",
+                            "logical_key_id": "legacy-logical-id",
+                            "generation": 1,
+                            "lifecycle": "active",
+                        }
+                    },
+                ),
+                SimpleNamespace(token="manual-key-hash", metadata={}),
+                SimpleNamespace(token="team-key-hash", metadata={"key_origin": "team"}),
+                SimpleNamespace(
+                    token="service-key-hash",
+                    metadata={
+                        "personal_key": {
+                            "owner_type": "service",
+                            "key_purpose": "service_account",
+                        }
+                    },
+                ),
+            ]
+        ),
+        update_many=AsyncMock(),
         create=AsyncMock(),
     )
     registries = SimpleNamespace(
@@ -109,6 +136,10 @@ async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeyp
     create_data = verification_tokens.create.await_args.kwargs["data"]
     assert create_data["key_alias"] == "oidc-sub-123"
     assert response.key_alias == "oidc-sub-123"
+    verification_tokens.update_many.assert_awaited_once_with(
+        where={"token": {"in": ["managed-personal-hash"]}},
+        data={"blocked": True, "updated_by": "user-1"},
+    )
 
 
 def test_session_user_can_only_manage_own_personal_key():

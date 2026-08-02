@@ -32,6 +32,7 @@ from litellm.types.proxy.management_endpoints.ui_sso import TeamMappings
         ({"teams": [{"name": "IT지원파트"}, {"team_alias": "AI플랫폼파트"}]}, ["IT지원파트", "AI플랫폼파트"]),
         ('[{"grpnm":"IT지원파트"}]', ["IT지원파트"]),
         ({"IT지원파트": True, "미사용": False}, ["IT지원파트"]),
+        (["Sales", " sales ", "SALES"], ["Sales"]),
         (None, []),
     ],
 )
@@ -114,7 +115,7 @@ async def test_resolve_or_create_sso_teams_reuses_id_alias_and_creates_missing_t
     ):
         resolved = await resolve_or_create_sso_teams(
             prisma_client=MagicMock(),
-            team_claim_values=["신규부서"],
+            team_claim_values=["신규부서", " 신규부서 "],
         )
 
     assert resolved == [build_sso_team_id("신규부서")]
@@ -292,6 +293,24 @@ async def test_configured_department_sync_failure_fails_sso_provisioning():
                 proxy_logging_obj=MagicMock(),
                 user_email="user@example.com",
                 user_defined_values=None,
+            )
+
+
+@pytest.mark.asyncio
+async def test_configured_department_sync_requires_prisma_client():
+    result = SimpleNamespace(
+        team_ids=["Sales"],
+        sso_team_mapping_configured=True,
+        sso_team_claim_present=True,
+        sso_team_claim_values=["Sales"],
+    )
+    user_info = SimpleNamespace(user_id="user-1")
+
+    with patch("litellm.proxy.proxy_server.prisma_client", None):
+        with pytest.raises(ValueError, match="Prisma client is required"):
+            await SSOAuthenticationHandler.add_user_to_teams_from_sso_response(
+                result=result,
+                user_info=user_info,
             )
 
 

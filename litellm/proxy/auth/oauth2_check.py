@@ -174,11 +174,7 @@ class Oauth2Handler:
             # If we get here, the request was successful
             data = response.json()
 
-            verbose_proxy_logger.debug(
-                "Oauth2 token validation for token=%s, response from endpoint=%s",
-                token,
-                data,
-            )
+            verbose_proxy_logger.debug("Oauth2 token validation succeeded")
 
             # For introspection endpoints, check if token is active
             if is_introspection_endpoint and not data.get("active", True):

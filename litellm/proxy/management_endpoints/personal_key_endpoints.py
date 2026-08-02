@@ -1,7 +1,7 @@
 import json
 import secrets
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -153,6 +153,18 @@ def _resolve_personal_key_alias(requested_alias: str | None, user_alias: str | N
     if requested_alias is not None and requested_alias.strip():
         return requested_alias
     return user_alias
+
+
+def _managed_personal_key_hashes(
+    token_rows: Sequence[LiteLLM_VerificationToken],
+    registry_token_hash: str | None,
+) -> tuple[str, ...]:
+    return tuple(
+        str(token_row.token)
+        for token_row in token_rows
+        if str(token_row.token) == registry_token_hash
+        or read_personal_key_metadata(_json_object(token_row.metadata)) is not None
+    )
 
 
 async def _retarget_deprecated_personal_keys(
@@ -388,6 +400,11 @@ async def create_personal_key(
                     detail="Administrators can issue on-behalf personal keys only for internal users",
                 )
             existing_registry = await tx.corporatepersonalkeyregistry.find_unique(where={"user_id": target_user_id})
+            registry_token_hash = (
+                str(existing_registry.active_token_hash)
+                if existing_registry is not None and existing_registry.active_token_hash is not None
+                else None
+            )
             if existing_registry is not None and existing_registry.active_token_hash is not None:
                 existing_token = await tx.litellm_verificationtoken.find_unique(
                     where={"token": existing_registry.active_token_hash}
@@ -423,7 +440,7 @@ async def create_personal_key(
                     ],
                 }
             )
-            legacy_token_hashes = tuple(token.token for token in legacy_tokens)
+            legacy_token_hashes = _managed_personal_key_hashes(legacy_tokens, registry_token_hash)
             if legacy_token_hashes:
                 await tx.litellm_verificationtoken.update_many(
                     where={"token": {"in": list(legacy_token_hashes)}},

@@ -19,7 +19,7 @@ import secrets
 import traceback
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Protocol, Tuple, cast
 
 import fastapi
 import yaml
@@ -111,7 +111,6 @@ from litellm.repositories.credentials_repository import CredentialsRepository
 from litellm.repositories.model_repository import ModelRepository
 from litellm.repositories.table_repositories import (
     DeletedVerificationTokenRepository,
-    DeprecatedVerificationTokenRepository,
 )
 from litellm.repositories.team_repository import TeamRepository
 from litellm.repositories.user_repository import UserRepository
@@ -1899,7 +1898,8 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
 
     # Reserved metadata fields are immutable once set. Preserve the existing value
     # when omitted, reject any explicit attempt to change it (including null).
-    for reserved_field in LiteLLM_Reserved_Metadata_Fields:
+    reserved_metadata_fields = (*LiteLLM_Reserved_Metadata_Fields, "personal_key")
+    for reserved_field in reserved_metadata_fields:
         existing_value = existing_metadata.get(reserved_field)
         if existing_value is None:
             continue
@@ -4024,7 +4024,7 @@ async def delete_verification_tokens(
                 - List of keys being deleted, this contains information about the key_alias, token, and user_id being deleted,
                 this is passed down to the KeyManagementEventHooks to delete the keys from the secret manager and handle audit logs
     """
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj
 
     failed_tokens: List = []
     try:
@@ -4087,10 +4087,11 @@ async def delete_verification_tokens(
         raise e
 
     for key in tokens:
-        user_api_key_cache.delete_cache(key)
-        # remove hash token from cache
-        hashed_token = hash_token(cast(str, key))
-        user_api_key_cache.delete_cache(hashed_token)
+        await _delete_cache_key_object(
+            hashed_token=cast(str, key),
+            user_api_key_cache=user_api_key_cache,
+            proxy_logging_obj=proxy_logging_obj,
+        )
 
     return {
         "deleted_keys": deleted_tokens,
@@ -4454,8 +4455,20 @@ class DeprecatedKeyRotationResult(NamedTuple):
     token_hashes: list[str]
 
 
+class _DeprecatedTokenRow(Protocol):
+    token: str | None
+
+
+class _DeprecatedTokenTable(Protocol):
+    async def find_many(self, *, where: dict[str, Any]) -> list[_DeprecatedTokenRow]: ...
+
+    async def upsert(self, *, where: dict[str, Any], data: dict[str, Any]) -> object: ...
+
+    async def update_many(self, *, where: dict[str, Any], data: dict[str, Any]) -> object: ...
+
+
 async def _insert_deprecated_key(
-    prisma_client: "PrismaClient",
+    deprecated_table: _DeprecatedTokenTable,
     old_token_hash: str,
     new_token_hash: str,
     grace_period: Optional[str],
@@ -4466,7 +4479,7 @@ async def _insert_deprecated_key(
     Uses upsert to handle concurrent rotations gracefully.
 
     Parameters:
-        prisma_client: DB client
+        deprecated_table: Transaction-scoped deprecated token table
         old_token_hash: Hash of the old key being rotated out
         new_token_hash: Hash of the new replacement key
         grace_period: Duration string (e.g. "24h", "2d") or None/empty for the configured default
@@ -4490,7 +4503,6 @@ async def _insert_deprecated_key(
     try:
         now = datetime.now(timezone.utc)
         revoke_at = now + timedelta(seconds=grace_seconds)
-        deprecated_table = DeprecatedVerificationTokenRepository(prisma_client).table
         ancestor_rows = await deprecated_table.find_many(
             where={
                 "active_token_id": old_token_hash,
@@ -4531,7 +4543,7 @@ async def _insert_deprecated_key(
             "Failed to insert deprecated key for grace period: %s",
             deprecated_err,
         )
-        return None
+        raise
 
 
 async def _execute_virtual_key_regeneration(
@@ -4590,16 +4602,17 @@ async def _execute_virtual_key_regeneration(
     update_data.update(non_default_values)
     update_data = prisma_client.jsonify_object(data=update_data)
 
-    updated_token = await VerificationTokenRepository(prisma_client).table.update(
-        where={"token": hashed_api_key},
-        data=update_data,  # type: ignore
-    )
-    deprecated_key_result = await _insert_deprecated_key(
-        prisma_client=prisma_client,
-        old_token_hash=hashed_api_key,
-        new_token_hash=new_token_hash,
-        grace_period=data.grace_period if data else None,
-    )
+    async with prisma_client.db.tx() as tx:
+        updated_token = await tx.litellm_verificationtoken.update(
+            where={"token": hashed_api_key},
+            data=update_data,  # type: ignore
+        )
+        deprecated_key_result = await _insert_deprecated_key(
+            deprecated_table=tx.litellm_deprecatedverificationtoken,
+            old_token_hash=hashed_api_key,
+            new_token_hash=new_token_hash,
+            grace_period=data.grace_period if data else None,
+        )
     updated_token_dict = dict(updated_token) if updated_token is not None else {}
     updated_token_dict["key"] = new_token
     updated_token_dict["token_id"] = updated_token_dict.pop("token")
@@ -5330,8 +5343,9 @@ async def list_keys(
                 status_code=400,
                 detail={"error": "Invalid expires value. Supported: 'active', 'expired'."},
             )
-        effective_active_only = status != "deleted" and team_id is not None and not is_proxy_admin
-        if effective_active_only and expires == "expired":
+        effective_active_only = status != "deleted" and not is_proxy_admin and team_id is not None
+        aggregate_team_active_only = status != "deleted" and not is_proxy_admin and include_team_keys
+        if (effective_active_only or aggregate_team_active_only) and expires == "expired":
             raise HTTPException(
                 status_code=400,
                 detail={"error": "Non-admin team key lists only support active keys."},
@@ -5413,6 +5427,7 @@ async def list_keys(
             use_substring_matching=use_substring_matching,
             expires_filter=expires if isinstance(expires, str) else None,
             active_only=effective_active_only,
+            active_team_branches_only=aggregate_team_active_only,
         )
 
         verbose_proxy_logger.debug("Successfully prepared response")
@@ -5642,6 +5657,7 @@ def _build_key_filter_conditions(
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
     active_only: bool = False,
+    active_team_branches_only: bool = False,
 ) -> Dict[str, Union[str, Dict[str, Any], List[Dict[str, Any]]]]:
     """Build filter conditions for key listing.
 
@@ -5659,6 +5675,14 @@ def _build_key_filter_conditions(
 
     # Build the OR conditions for user's keys and admin team keys
     or_conditions: List[Dict[str, Any]] = []
+    active_team_conditions: List[Dict[str, Any]] = (
+        [
+            {"OR": [{"blocked": False}, {"blocked": None}]},
+            _build_expires_where_clause("active", datetime.now(timezone.utc)),
+        ]
+        if active_team_branches_only
+        else []
+    )
 
     # Base conditions for user's own keys
     user_condition: Dict[str, Any] = {}
@@ -5717,7 +5741,10 @@ def _build_key_filter_conditions(
 
     # Add condition for admin team keys (admins see ALL team keys)
     if admin_team_ids:
-        or_conditions.append({"team_id": {"in": admin_team_ids}})
+        admin_team_condition: Dict[str, Any] = {"team_id": {"in": admin_team_ids}}
+        if active_team_conditions:
+            admin_team_condition = {"AND": [admin_team_condition, *active_team_conditions]}
+        or_conditions.append(admin_team_condition)
 
     # Add condition for member team service accounts (members only see keys with user_id=NULL)
     if member_team_ids:
@@ -5729,6 +5756,7 @@ def _build_key_filter_conditions(
                     "AND": [
                         {"team_id": {"in": member_only_team_ids}},
                         {"user_id": None},
+                        *active_team_conditions,
                     ]
                 }
             )
@@ -5790,6 +5818,7 @@ async def _list_key_helper(
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
     active_only: bool = False,
+    active_team_branches_only: bool = False,
 ) -> KeyListResponseObject:
     """
     Helper function to list keys
@@ -5829,6 +5858,7 @@ async def _list_key_helper(
         use_substring_matching=use_substring_matching,
         expires_filter=expires_filter,
         active_only=active_only,
+        active_team_branches_only=active_team_branches_only,
     )
 
     # Calculate skip for pagination

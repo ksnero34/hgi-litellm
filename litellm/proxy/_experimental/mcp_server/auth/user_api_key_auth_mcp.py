@@ -1060,10 +1060,10 @@ class MCPRequestHandler:
             else:
                 base = key_set & team_set  # both restrict → intersect
 
-            # 2. Add the key's access-group grants on top. These are additive:
-            # attaching a group to the key grants its servers regardless of the
-            # team ceiling.
-            allowed_mcp_servers: List[str] = list(base | grants_set)
+            # 2. Access-group grants remain subject to an explicit team ceiling.
+            # Without a team ceiling, they are additive key-level grants.
+            capped_grants = grants_set & team_set if team_set else grants_set
+            allowed_mcp_servers: List[str] = list(base | capped_grants)
 
             #########################################################
             # Check end_user permissions if end_user_id is set
@@ -1351,10 +1351,9 @@ class MCPRequestHandler:
     ) -> List[str]:
         """
         Resolve the key's unified `access_group_ids` (LiteLLM_AccessGroupTable) to
-        MCP server IDs as additive grants: a group attached to the key extends the
-        key's allowed servers on top of the key/team ceiling rather than being
-        capped by the team. Attaching the group to the key is itself the grant —
-        no `assigned_key_ids` / `assigned_team_ids` re-check. Tag-style
+        MCP server IDs as key-level grants. Attaching the group to the key is
+        itself the grant, with no `assigned_key_ids` / `assigned_team_ids`
+        re-check. The caller caps these grants to any explicit team ceiling. Tag-style
         `mcp_access_groups` (per-server tags) live in the key's object_permission
         scope, not here.
         """
@@ -1395,10 +1394,9 @@ class MCPRequestHandler:
         Get the key's own MCP ceiling from its object_permission
         (mcp_servers, tag-style mcp_access_groups, mcp_tool_permissions).
 
-        Unified key.access_group_ids are NOT resolved here — they are additive
-        grants handled by _get_key_access_group_mcp_server_extras and unioned on
-        top of the key/team ceiling, so they must not enter this scope (which is
-        intersected against the team).
+        Unified key.access_group_ids are NOT resolved here. They are handled by
+        _get_key_access_group_mcp_server_extras and merged after key inheritance,
+        while remaining subject to any explicit team ceiling.
         """
         if user_api_key_auth is None:
             return []
