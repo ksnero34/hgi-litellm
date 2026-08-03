@@ -24,10 +24,9 @@ import {
   Title,
 } from "@tremor/react";
 import { ExportOutlined, LoadingOutlined } from "@ant-design/icons";
-import { Alert, Button } from "antd";
+import { Alert, Button, Select } from "antd";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import TeamMultiSelect from "@/components/common_components/team_multi_select";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import { UsageExportHeader } from "@/components/EntityUsageExport";
 import type { EntityType } from "@/components/EntityUsageExport/types";
@@ -52,6 +51,7 @@ import { valueFormatterSpend } from "@/components/UsagePage/utils/value_formatte
 import EndpointUsage from "../EndpointUsage/EndpointUsage";
 import TopKeyView from "@/components/UsagePage/components/EntityUsage/TopKeyView";
 import TopModelView from "./TopModelView";
+import { all_admin_roles } from "@/utils/roles";
 
 interface EntityMetrics {
   metrics: {
@@ -108,7 +108,14 @@ const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
   user: userDailyActivityCall,
 };
 
-const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, entityId, entityList, dateValue }) => {
+const EntityUsage: React.FC<EntityUsageProps> = ({
+  accessToken,
+  entityType,
+  entityId,
+  entityList,
+  dateValue,
+  userRole,
+}) => {
   const { t } = useTranslation();
   const { teams } = useTeams();
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -125,7 +132,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
   }, [entityType, selectedTags]);
 
   const fetchFn = ENTITY_FETCH_FNS[entityType];
-  const enabled = !!accessToken && !!startTime && !!endTime;
+  const enabled = !!accessToken && !!startTime && !!endTime && (entityType !== "team" || selectedTags.length > 0);
+  const isAdmin = all_admin_roles.includes(userRole || "");
 
   const {
     data: spendDataRaw,
@@ -133,6 +141,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     progress,
     cancelled,
     cancel,
+    error,
+    retry,
   } = usePaginatedDailyActivity({
     fetchFn,
     args: [accessToken, startTime, endTime, entityFilterArg],
@@ -147,10 +157,12 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     progress: agentProgress,
     cancelled: agentCancelled,
     cancel: agentCancel,
+    error: agentError,
+    retry: agentRetry,
   } = usePaginatedDailyActivity({
     fetchFn: agentDailyActivityCall,
     args: [accessToken, startTime, endTime, null],
-    enabled: enabled && entityType === "team",
+    enabled: enabled && entityType === "team" && isAdmin,
   });
 
   const agentSpendData = agentSpendDataRaw as unknown as EntitySpendData;
@@ -446,6 +458,16 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           }
         />
       )}
+      {error && (
+        <Alert
+          banner
+          type="error"
+          className="mb-2"
+          message={t("observability.usage.load_failed")}
+          description={error.message}
+          action={<Button onClick={retry}>{t("observability.usage.retry")}</Button>}
+        />
+      )}
       {agentIsFetchingMore && entityType === "team" && (
         <Alert
           banner
@@ -486,10 +508,30 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           }
         />
       )}
+      {agentError && entityType === "team" && isAdmin && (
+        <Alert
+          banner
+          type="error"
+          className="mb-2"
+          message={t("observability.usage.agent_load_failed")}
+          description={agentError.message}
+          action={<Button onClick={agentRetry}>{t("observability.usage.retry")}</Button>}
+        />
+      )}
       {entityType === "team" && (
         <div className="mb-4">
           <Text className="mb-2">{t("observability.usage.filter_by_team")}</Text>
-          <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} />
+          <Select
+            mode="multiple"
+            value={selectedTags}
+            onChange={setSelectedTags}
+            options={entityList ?? []}
+            placeholder={t("observability.usage.select_team")}
+            className="w-full"
+          />
+          {selectedTags.length === 0 && (
+            <Text className="mt-2 text-gray-500">{t("observability.usage.team_required")}</Text>
+          )}
         </div>
       )}
       <UsageExportHeader
@@ -513,7 +555,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               ? t("observability.usage.request_token_consumption_tab")
               : t("observability.usage.model_activity_tab")}
           </Tab>
-          {entityType === "team" ? <Tab>{t("observability.usage.agent_activity_tab")}</Tab> : <></>}
+          {entityType === "team" && isAdmin ? <Tab>{t("observability.usage.agent_activity_tab")}</Tab> : <></>}
           <Tab>{t("observability.usage.key_activity_tab")}</Tab>
           <Tab>{t("observability.usage.endpoint_activity_tab")}</Tab>
         </TabList>
@@ -779,7 +821,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
               </Col>
 
               {/* Top Agents - only for team entity type */}
-              {entityType === "team" && (
+              {entityType === "team" && isAdmin && (
                 <Col numColSpan={2}>
                   <Card>
                     <Title>{t("observability.usage.top_agents_driving_spend")}</Title>
@@ -876,7 +918,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           <TabPanel>
             <ActivityMetrics modelMetrics={modelMetrics} hidePromptCachingMetrics={entityType === "agent"} />
           </TabPanel>
-          {entityType === "team" ? (
+          {entityType === "team" && isAdmin ? (
             <TabPanel>
               <ActivityMetrics modelMetrics={agentMetrics} />
             </TabPanel>

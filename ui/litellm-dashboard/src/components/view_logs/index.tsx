@@ -2,7 +2,10 @@ import moment from "moment";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@tremor/react";
+import { Alert, Select } from "antd";
 import { internalUserRoles } from "../../utils/roles";
+import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
+import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import DeletedKeysPage from "../DeletedKeysPage/DeletedKeysPage";
 import DeletedTeamsPage from "../DeletedTeamsPage/DeletedTeamsPage";
 import { KeyResponse } from "../key_team_helpers/key_list";
@@ -40,8 +43,16 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID }:
   const [filters, setFilters] = useState<LogFilterState>(defaultFilters);
   const [selectedKeyInfo, setSelectedKeyInfo] = useState<KeyResponse | null>(null);
   const [selectedKeyIdInfoView, setSelectedKeyIdInfoView] = useState<string | null>(null);
-  const [filterByCurrentUser, setFilterByCurrentUser] = useState(userRole && internalUserRoles.includes(userRole));
+  const [logScope, setLogScope] = useState<"mine" | "team">("mine");
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("request logs");
+  const isScopedUser = internalUserRoles.includes(userRole || "");
+  const { data: allTeams = [] } = useTeams();
+  const { data: currentUser } = useCurrentUser();
+  const managedTeamIds = useMemo(() => {
+    const value = currentUser?.metadata?.litellm_sso_managed_team_ids;
+    return new Set(Array.isArray(value) ? value.filter((teamId): teamId is string => typeof teamId === "string") : []);
+  }, [currentUser?.metadata]);
 
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -81,16 +92,9 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID }:
     fetchKeyInfo();
   }, [selectedKeyIdInfoView, accessToken]);
 
-  useEffect(() => {
-    if (userRole && internalUserRoles.includes(userRole)) {
-      setFilterByCurrentUser(true);
-    }
-  }, [userRole]);
-
   const {
     logsQuery,
     filteredLogs,
-    allTeams,
     handleFilterChange,
     handleFilterReset: handleFilterResetFromHook,
   } = useLogFilterLogic({
@@ -100,7 +104,9 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID }:
     userID,
     filters,
     setFilters,
-    filterByCurrentUser: !!filterByCurrentUser,
+    filterByCurrentUser: isScopedUser && logScope === "mine",
+    selectedTeamId: isScopedUser && logScope === "team" ? selectedTeamId : null,
+    scopeReady: !isScopedUser || logScope === "mine" || selectedTeamId !== null,
     activeTab,
     isLiveTail,
     startTime,
@@ -239,26 +245,68 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID }:
       <TabGroup defaultIndex={0} onIndexChange={(index) => setActiveTab(index === 0 ? "request logs" : "audit logs")}>
         <TabList>
           <Tab>{t("observability.logs.request_logs_tab")}</Tab>
-          <Tab>{t("observability.logs.deleted_keys_tab")}</Tab>
-          <Tab>{t("observability.logs.deleted_teams_tab")}</Tab>
+          {isScopedUser ? <></> : <Tab>{t("observability.logs.deleted_keys_tab")}</Tab>}
+          {isScopedUser ? <></> : <Tab>{t("observability.logs.deleted_teams_tab")}</Tab>}
         </TabList>
         <TabPanels>
           <TabPanel>
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-xl font-semibold">{t("observability.logs.request_logs_title")}</h1>
             </div>
+            {isScopedUser && (
+              <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-2">
+                <Select
+                  value={logScope}
+                  onChange={(value) => {
+                    setLogScope(value);
+                    setCurrentPage(1);
+                  }}
+                  options={[
+                    { value: "mine", label: t("observability.logs.scope_mine") },
+                    { value: "team", label: t("observability.logs.scope_team") },
+                  ]}
+                />
+                {logScope === "team" && (
+                  <Select
+                    value={selectedTeamId}
+                    onChange={(value) => {
+                      setSelectedTeamId(value);
+                      setCurrentPage(1);
+                    }}
+                    options={allTeams.map((team) => ({
+                      value: team.team_id,
+                      label: `${team.team_alias} (${t(
+                        managedTeamIds.has(team.team_id)
+                          ? "observability.usage.managed_department_team"
+                          : "observability.usage.service_team",
+                      )})`,
+                    }))}
+                    placeholder={t("observability.logs.select_team")}
+                  />
+                )}
+              </div>
+            )}
+            {logsQuery.isError && (
+              <Alert
+                type="error"
+                className="mb-4"
+                message={t("observability.logs.load_failed")}
+                description={logsQuery.error instanceof Error ? logsQuery.error.message : undefined}
+                action={<button onClick={() => logsQuery.refetch()}>{t("observability.logs.retry")}</button>}
+              />
+            )}
             {selectedKeyInfo && selectedKeyIdInfoView && selectedKeyInfo.api_key === selectedKeyIdInfoView ? (
               <KeyInfoView
                 keyId={selectedKeyIdInfoView}
                 keyData={selectedKeyInfo}
-                teams={allTeams ?? []}
+                teams={allTeams}
                 onClose={() => setSelectedKeyIdInfoView(null)}
                 backButtonText={t("observability.logs.back_to_logs")}
               />
             ) : (
               <>
                 <FilterComponent
-                  options={getLogFilterOptions(accessToken)}
+                  options={getLogFilterOptions(accessToken, !isScopedUser)}
                   onApplyFilters={handleFilterChange}
                   onResetFilters={handleFilterReset}
                 />
@@ -295,12 +343,16 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID }:
               </>
             )}
           </TabPanel>
-          <TabPanel>
-            <DeletedKeysPage />
-          </TabPanel>
-          <TabPanel>
-            <DeletedTeamsPage />
-          </TabPanel>
+          {!isScopedUser && (
+            <TabPanel>
+              <DeletedKeysPage />
+            </TabPanel>
+          )}
+          {!isScopedUser && (
+            <TabPanel>
+              <DeletedTeamsPage />
+            </TabPanel>
+          )}
         </TabPanels>
       </TabGroup>
 

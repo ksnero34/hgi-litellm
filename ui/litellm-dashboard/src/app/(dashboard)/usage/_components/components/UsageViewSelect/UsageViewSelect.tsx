@@ -53,13 +53,13 @@ const OPTIONS: OptionConfig[] = [
     descriptionForAdmin: "observabilityExtra.usage.allResourcesDescription",
     descriptionForNonAdmin: "observabilityExtra.usage.yoursDescription",
     icon: <GlobalOutlined style={{ fontSize: "16px" }} />,
+    adminOnly: true,
   },
   {
     value: "my-usage",
     label: "observabilityExtra.usage.yours",
     description: "observabilityExtra.usage.ownDescription",
     icon: <UserOutlined style={{ fontSize: "16px" }} />,
-    adminOnly: true,
   },
   {
     value: "organization",
@@ -70,6 +70,7 @@ const OPTIONS: OptionConfig[] = [
     descriptionForAdmin: "observabilityExtra.usage.allOrganizationsDescription",
     descriptionForNonAdmin: "observabilityExtra.usage.yourOrganizationDescription",
     icon: <BankOutlined style={{ fontSize: "16px" }} />,
+    adminOnly: true,
   },
   {
     value: "team",
@@ -125,10 +126,10 @@ export const UsageViewSelect: React.FC<UsageViewSelectProps> = ({
   const { t } = useTranslation();
   const getFilteredOptions = () => {
     return OPTIONS.filter((option) => {
-      if (option.value === "tag" && canViewTagUsage) {
-        return true;
-      }
       if (option.adminOnly && !isAdmin) {
+        return false;
+      }
+      if (option.value === "tag" && !isAdmin && !canViewTagUsage) {
         return false;
       }
       return true;

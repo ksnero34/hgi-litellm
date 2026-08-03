@@ -3,9 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDebouncer } from "@tanstack/react-pacer/debouncer";
 import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
 import { uiSpendLogsCall } from "../networking";
-import { Team } from "../key_team_helpers/key_list";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { fetchAllTeams } from "../../components/key_team_helpers/filter_helpers";
 import { defaultPageSize } from "../constants";
 import type { LogEntry, LogsSortField } from "./columns";
 
@@ -76,6 +74,8 @@ export function useLogFilterLogic({
   filters,
   setFilters,
   filterByCurrentUser,
+  selectedTeamId,
+  scopeReady = true,
   activeTab,
   isLiveTail,
   startTime,
@@ -94,6 +94,8 @@ export function useLogFilterLogic({
   filters: LogFilterState;
   setFilters: React.Dispatch<React.SetStateAction<LogFilterState>>;
   filterByCurrentUser: boolean | null;
+  selectedTeamId?: string | null;
+  scopeReady?: boolean;
   activeTab: string;
   isLiveTail: boolean;
   startTime: string;
@@ -131,6 +133,7 @@ export function useLogFilterLogic({
       isCustomDate,
       effectiveFilters,
       filterByCurrentUser ? userID : null,
+      selectedTeamId,
       sortBy,
       sortOrder,
     ],
@@ -158,10 +161,12 @@ export function useLogFilterLogic({
         page_size: pageSize,
         params: {
           api_key: effectiveFilters[FILTER_KEYS.KEY_HASH] || undefined,
-          team_id: effectiveFilters[FILTER_KEYS.TEAM_ID] || undefined,
+          team_id: selectedTeamId || effectiveFilters[FILTER_KEYS.TEAM_ID] || undefined,
           request_id: effectiveFilters[FILTER_KEYS.REQUEST_ID] || undefined,
           session_id: effectiveFilters[FILTER_KEYS.SESSION_ID] || undefined,
-          user_id: effectiveFilters[FILTER_KEYS.USER_ID] || (filterByCurrentUser ? userID ?? undefined : undefined),
+          user_id:
+            effectiveFilters[FILTER_KEYS.USER_ID] ||
+            (!selectedTeamId && filterByCurrentUser ? userID ?? undefined : undefined),
           end_user: effectiveFilters[FILTER_KEYS.END_USER] || undefined,
           status_filter: effectiveFilters[FILTER_KEYS.STATUS] || undefined,
           model_id: effectiveFilters[FILTER_KEYS.MODEL] || undefined,
@@ -176,7 +181,7 @@ export function useLogFilterLogic({
 
       return response;
     },
-    enabled: !!accessToken && !!token && !!userRole && !!userID && activeTab === "request logs",
+    enabled: !!accessToken && !!token && !!userRole && !!userID && activeTab === "request logs" && scopeReady,
     refetchInterval: getLiveTailRefetchInterval(isLiveTail, currentPage),
     placeholderData: keepPreviousData,
     // Only live-tail-poll while the tab is visible.
@@ -190,16 +195,6 @@ export function useLogFilterLogic({
     page_size: pageSize,
     total_pages: 0,
   };
-
-  const { data: allTeams } = useQuery<Team[], Error>({
-    queryKey: ["allTeamsForLogFilters", accessToken],
-    queryFn: async () => {
-      if (!accessToken) return [];
-      const teamsData = await fetchAllTeams(accessToken);
-      return teamsData || [];
-    },
-    enabled: !!accessToken,
-  });
 
   const handleFilterChange = (newFilters: Partial<LogFilterState>) => {
     setFilters((prev) => {
@@ -225,7 +220,6 @@ export function useLogFilterLogic({
   return {
     logsQuery,
     filteredLogs,
-    allTeams,
     handleFilterChange,
     handleFilterReset,
   };

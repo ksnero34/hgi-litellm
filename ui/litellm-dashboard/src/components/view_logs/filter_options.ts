@@ -6,13 +6,18 @@ import { allEndUsersCall } from "../networking";
 import { ERROR_CODE_OPTIONS } from "./constants";
 import { FILTER_KEYS } from "./log_filter_logic";
 
-export function getLogFilterOptions(accessToken: string): FilterOption[] {
+export function getLogFilterOptions(accessToken: string, includeTeamFilter = true): FilterOption[] {
+  const teamFilter: FilterOption[] = includeTeamFilter
+    ? [
+        {
+          name: "Team ID",
+          label: "Team ID",
+          customComponent: FilterTeamDropdown,
+        },
+      ]
+    : [];
   return [
-    {
-      name: "Team ID",
-      label: "Team ID",
-      customComponent: FilterTeamDropdown,
-    },
+    ...teamFilter,
     {
       name: "Status",
       label: "Status",

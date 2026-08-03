@@ -16,10 +16,6 @@ vi.mock("../networking", () => ({
   uiSpendLogsCall: vi.fn(),
 }));
 
-vi.mock("@/components/key_team_helpers/filter_helpers", () => ({
-  fetchAllTeams: vi.fn().mockResolvedValue([]),
-}));
-
 import { uiSpendLogsCall } from "../networking";
 
 const emptyResponse: PaginatedResponse = {
@@ -82,11 +78,10 @@ describe("useLogFilterLogic", () => {
   }
 
   describe("return shape", () => {
-    it("exposes filteredLogs, allTeams, handleFilterChange, handleFilterReset", () => {
+    it("exposes filteredLogs, handleFilterChange, handleFilterReset", () => {
       const { result } = renderFilterHook();
 
       expect(result.current.filteredLogs).toBeDefined();
-      expect(result.current).toHaveProperty("allTeams");
       expect(result.current.handleFilterChange).toBeInstanceOf(Function);
       expect(result.current.handleFilterReset).toBeInstanceOf(Function);
     });
@@ -629,6 +624,32 @@ describe("useLogFilterLogic", () => {
         },
         { timeout: 500 },
       );
+    });
+
+    it("sends only team_id for an explicitly selected team scope", async () => {
+      renderFilterHook({
+        filterByCurrentUser: false,
+        selectedTeamId: "team-123",
+      });
+
+      await waitFor(() => {
+        expect(uiSpendLogsCall).toHaveBeenCalledWith(
+          expect.objectContaining({
+            params: expect.objectContaining({ team_id: "team-123", user_id: undefined }),
+          }),
+        );
+      });
+    });
+
+    it("does not fetch while a required team scope has no selection", async () => {
+      renderFilterHook({
+        filterByCurrentUser: false,
+        selectedTeamId: null,
+        scopeReady: false,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(uiSpendLogsCall).not.toHaveBeenCalled();
     });
   });
 

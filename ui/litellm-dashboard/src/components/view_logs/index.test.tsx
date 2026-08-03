@@ -44,6 +44,18 @@ vi.mock("../key_team_helpers/filter_helpers", () => ({
   fetchAllTeams: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/app/(dashboard)/hooks/teams/useTeams", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/app/(dashboard)/hooks/teams/useTeams")>();
+  return {
+    ...actual,
+    useTeams: vi.fn(() => ({ data: [] })),
+  };
+});
+
+vi.mock("@/app/(dashboard)/hooks/users/useCurrentUser", () => ({
+  useCurrentUser: vi.fn(() => ({ data: { metadata: null } })),
+}));
+
 describe("SpendLogsTable", () => {
   const defaultProps = {
     accessToken: "test-token",
@@ -119,6 +131,21 @@ describe("SpendLogsTable", () => {
       expect(document.querySelector(".ant-spin")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Reset Filters" })).toBeInTheDocument();
     });
+  });
+
+  it("shows only request logs and scopes the initial query to an internal user", () => {
+    renderWithProviders(<SpendLogsTable {...defaultProps} userRole="internal_user" />);
+
+    expect(screen.getByText("My logs")).toBeInTheDocument();
+    expect(screen.queryByText("Deleted Keys")).not.toBeInTheDocument();
+    expect(screen.queryByText("Deleted Teams")).not.toBeInTheDocument();
+    expect(useLogFilterLogic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filterByCurrentUser: true,
+        selectedTeamId: null,
+        scopeReady: true,
+      }),
+    );
   });
 
   describe("Quick Select time range", () => {

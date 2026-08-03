@@ -35,7 +35,7 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { useInfiniteUsers } from "@/app/(dashboard)/hooks/users/useUsers";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
-import { all_admin_roles, internalUserRoles } from "@/utils/roles";
+import { all_admin_roles } from "@/utils/roles";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import CloudZeroExportModal from "@/components/cloudzero_export_modal";
 import EntityUsageExportModal from "@/components/EntityUsageExport";
@@ -92,7 +92,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const { data: agentsResponse } = useAgents();
   const { data: currentUser } = useCurrentUser();
   const isAdmin = all_admin_roles.includes(userRole || "");
-  const canViewTagUsage = isAdmin || internalUserRoles.includes(userRole || "");
+  const canViewTagUsage = isAdmin;
 
   // Debounced search for user selector
   const [userSearchInput, setUserSearchInput] = useState("");
@@ -149,11 +149,18 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const [isCloudZeroModalOpen, setIsCloudZeroModalOpen] = useState(false);
   const [isGlobalExportModalOpen, setIsGlobalExportModalOpen] = useState(false);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
-  const [usageView, setUsageView] = useState<UsageOption>("global");
+  const [usageView, setUsageView] = useState<UsageOption>(isAdmin ? "global" : "my-usage");
+  const previousAdminState = useRef(isAdmin);
   const [showCredentialBanner, setShowCredentialBanner] = useState(true);
   const [topKeysLimit, setTopKeysLimit] = useState<number>(5);
   const [topModelsLimit, setTopModelsLimit] = useState<number>(5);
   const [showTokenBreakdown, setShowTokenBreakdown] = useState(false);
+  useEffect(() => {
+    if (isAdmin !== previousAdminState.current) {
+      setUsageView(isAdmin ? "global" : "my-usage");
+      previousAdminState.current = isAdmin;
+    }
+  }, [isAdmin]);
   // Sync selectedUserId when auth state settles (isAdmin/userID may be null on initial render)
   useEffect(() => {
     if (!isAdmin && userID) {
@@ -168,7 +175,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const endTime = useMemo(() => (dateValue.to ? new Date(dateValue.to) : null), [dateValue.to]);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isAdmin) return;
     let cancelled = false;
     (async () => {
       try {
@@ -189,7 +196,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, startTime, endTime]);
+  }, [accessToken, isAdmin, startTime, endTime]);
 
   // Try aggregated endpoint first, fall back to paginated on failure
   const aggregatedFetchIdRef = useRef(0);
@@ -229,6 +236,12 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   }, [aggregatedData, aggregatedFailed, paginatedResult.data]);
 
   const loading = aggregatedLoading || paginatedResult.loading;
+  const usageError = aggregatedFailed ? paginatedResult.error : null;
+
+  const managedTeamIds = useMemo(() => {
+    const value = currentUser?.metadata?.litellm_sso_managed_team_ids;
+    return new Set(Array.isArray(value) ? value.filter((teamId): teamId is string => typeof teamId === "string") : []);
+  }, [currentUser?.metadata]);
 
   // Clear isDateChanging when paginated data starts arriving
   useEffect(() => {
@@ -498,6 +511,16 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
               }
             />
           )}
+          {usageError && (
+            <Alert
+              banner
+              type="error"
+              className="mb-2"
+              message={t("observability.usage.load_failed")}
+              description={usageError.message}
+              action={<Button onClick={paginatedResult.retry}>{t("observability.usage.retry")}</Button>}
+            />
+          )}
           {/* Your Usage / Global Usage Panel */}
           {(usageView === "global" || usageView === "my-usage") && (
             <>
@@ -540,33 +563,35 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     <Tab>{t("observabilityExtra.usage.mcpActivity")}</Tab>
                     <Tab>{t("observabilityExtra.usage.endpointActivity")}</Tab>
                   </TabList>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={() => setIsAiChatOpen(true)}
-                      icon={
-                        <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11 6.5 7.5 3 6l3.5-1.5L8 1zm4 7l.75 1.75L14.5 10.5l-1.75.75L12 13l-.75-1.75L9.5 10.5l1.75-.75L12 8zM4 9l.75 1.75L6.5 11.5l-1.75.75L4 14l-.75-1.75L1.5 11.5l1.75-.75L4 9z" />
-                        </svg>
-                      }
-                    >
-                      Ask AI
-                    </Button>
-                    <Button
-                      onClick={() => setIsGlobalExportModalOpen(true)}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                          />
-                        </svg>
-                      }
-                    >
-                      Export Data
-                    </Button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => setIsAiChatOpen(true)}
+                        icon={
+                          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11 6.5 7.5 3 6l3.5-1.5L8 1zm4 7l.75 1.75L14.5 10.5l-1.75.75L12 13l-.75-1.75L9.5 10.5l1.75-.75L12 8zM4 9l.75 1.75L6.5 11.5l-1.75.75L4 14l-.75-1.75L1.5 11.5l1.75-.75L4 9z" />
+                          </svg>
+                        }
+                      >
+                        Ask AI
+                      </Button>
+                      <Button
+                        onClick={() => setIsGlobalExportModalOpen(true)}
+                        icon={
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                            />
+                          </svg>
+                        }
+                      >
+                        Export Data
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <TabPanels>
                   {/* Cost Panel */}
@@ -890,7 +915,11 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
               userRole={userRole}
               entityList={
                 teams?.map((team) => ({
-                  label: team.team_alias,
+                  label: `${team.team_alias} (${t(
+                    managedTeamIds.has(team.team_id)
+                      ? "observability.usage.managed_department_team"
+                      : "observability.usage.service_team",
+                  )})`,
                   value: team.team_id,
                 })) || null
               }
@@ -987,21 +1016,25 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
       />
 
       {/* Global Usage Export Modal */}
-      <EntityUsageExportModal
-        isOpen={isGlobalExportModalOpen}
-        onClose={() => setIsGlobalExportModalOpen(false)}
-        entityType="team"
-        spendData={{
-          results: userSpendData.results,
-          metadata: userSpendData.metadata,
-        }}
-        dateRange={dateValue}
-        selectedFilters={[]}
-        customTitle={t("observabilityExtra.usage.exportData")}
-      />
+      {isAdmin && (
+        <EntityUsageExportModal
+          isOpen={isGlobalExportModalOpen}
+          onClose={() => setIsGlobalExportModalOpen(false)}
+          entityType="team"
+          spendData={{
+            results: userSpendData.results,
+            metadata: userSpendData.metadata,
+          }}
+          dateRange={dateValue}
+          selectedFilters={[]}
+          customTitle={t("observabilityExtra.usage.exportData")}
+        />
+      )}
 
       {/* AI Chat Panel */}
-      <UsageAIChatPanel open={isAiChatOpen} onClose={() => setIsAiChatOpen(false)} accessToken={accessToken} />
+      {isAdmin && (
+        <UsageAIChatPanel open={isAiChatOpen} onClose={() => setIsAiChatOpen(false)} accessToken={accessToken} />
+      )}
     </div>
   );
 };

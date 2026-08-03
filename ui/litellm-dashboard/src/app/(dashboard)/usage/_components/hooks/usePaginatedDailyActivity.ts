@@ -47,7 +47,9 @@ interface UsePaginatedDailyActivityReturn {
   isFetchingMore: boolean;
   progress: PaginationProgress;
   cancelled: boolean;
+  error: Error | null;
   cancel: () => void;
+  retry: () => void;
 }
 
 const EMPTY_DATA: DailyActivityResponse = {
@@ -99,6 +101,8 @@ export function usePaginatedDailyActivity({
     totalPages: 0,
   });
   const [cancelled, setCancelled] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const fetchIdRef = useRef(0);
   const cancelledRef = useRef(false);
@@ -122,6 +126,10 @@ export function usePaginatedDailyActivity({
     }
   }, []);
 
+  const retry = useCallback(() => {
+    setRetryCount((current) => current + 1);
+  }, []);
+
   useEffect(() => {
     if (!enabled) {
       setData(EMPTY_DATA);
@@ -129,12 +137,14 @@ export function usePaginatedDailyActivity({
       setIsFetchingMore(false);
       setProgress({ currentPage: 0, totalPages: 0 });
       setCancelled(false);
+      setError(null);
       return;
     }
 
     const currentFetchId = ++fetchIdRef.current;
     cancelledRef.current = false;
     setCancelled(false);
+    setError(null);
 
     const isStale = () => fetchIdRef.current !== currentFetchId || cancelledRef.current;
 
@@ -216,6 +226,7 @@ export function usePaginatedDailyActivity({
       } catch (error) {
         if (!isStale()) {
           console.error("Error fetching daily activity:", error);
+          setError(error instanceof Error ? error : new Error(String(error)));
           setLoading(false);
           setIsFetchingMore(false);
         }
@@ -233,7 +244,7 @@ export function usePaginatedDailyActivity({
     };
     // argsKey is a stable JSON string so the effect only re-fires when arg values change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, fetchFn, argsKey]);
+  }, [enabled, fetchFn, argsKey, retryCount]);
 
-  return { data, loading, isFetchingMore, progress, cancelled, cancel };
+  return { data, loading, isFetchingMore, progress, cancelled, error, cancel, retry };
 }

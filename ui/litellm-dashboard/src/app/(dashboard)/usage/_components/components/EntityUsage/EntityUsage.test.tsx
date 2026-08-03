@@ -350,6 +350,11 @@ describe("EntityUsage", () => {
     },
   };
 
+  const selectFirstTeam = async () => {
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("Tag 1"));
+  };
+
   beforeEach(() => {
     mockTagDailyActivityCall.mockClear();
     mockTeamDailyActivityCall.mockClear();
@@ -389,6 +394,7 @@ describe("EntityUsage", () => {
 
   it("should render with team entity type and call team API", async () => {
     renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+    await selectFirstTeam();
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
@@ -405,6 +411,14 @@ describe("EntityUsage", () => {
       const spendElements = screen.getAllByText("$100.50");
       expect(spendElements.length).toBeGreaterThan(0);
     });
+  });
+
+  it("should not call the team API before a team is selected", async () => {
+    renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mockTeamDailyActivityCall).not.toHaveBeenCalled();
+    expect(screen.getByText(i18n.t("observability.usage.team_required"))).toBeInTheDocument();
   });
 
   it("should render with organization entity type and call organization API", async () => {
@@ -633,6 +647,7 @@ describe("EntityUsage", () => {
 
   it("should display Agent Activity tab for team entity type", async () => {
     renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+    await selectFirstTeam();
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
@@ -653,6 +668,7 @@ describe("EntityUsage", () => {
 
   it("should display Top Agents Driving Spend card for team entity type", async () => {
     renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+    await selectFirstTeam();
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
@@ -673,6 +689,7 @@ describe("EntityUsage", () => {
 
   it("should fetch agent activity data when entity type is team", async () => {
     renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+    await selectFirstTeam();
 
     await waitFor(() => {
       expect(mockAgentDailyActivityCall).toHaveBeenCalledWith(
@@ -697,6 +714,7 @@ describe("EntityUsage", () => {
 
   it("should switch to Agent Activity tab for team entity type", async () => {
     renderWithProviders(<EntityUsage {...defaultProps} entityType="team" />);
+    await selectFirstTeam();
 
     await waitFor(() => {
       expect(mockTeamDailyActivityCall).toHaveBeenCalled();
