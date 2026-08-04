@@ -3,6 +3,7 @@ import { CrownOutlined, InfoCircleOutlined, UserAddOutlined, UserOutlined } from
 import { Button, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React from "react";
+import { useTranslation } from "react-i18next";
 import TableIconActionButton from "./IconActionButton/TableIconActionButtons/TableIconActionButton";
 
 const { Text } = Typography;
@@ -32,30 +33,39 @@ export default function MemberTable({
   showDeleteForMember,
   emptyText,
 }: MemberTableProps) {
+  const { t } = useTranslation();
+  const resolvedRoleColumnTitle =
+    roleColumnTitle === "Role" ? t("identityAdmin.team.memberTable.role", { defaultValue: "Role" }) : roleColumnTitle;
   const baseColumns: ColumnsType<Member> = [
     {
-      title: "User Email",
+      title: t("identityAdmin.team.memberTable.userEmail", { defaultValue: "User Email" }),
       dataIndex: "user_email",
       key: "user_email",
       render: (email: string | null) => <Text>{email || "-"}</Text>,
     },
     {
-      title: "User ID",
+      title: t("identityAdmin.team.memberTable.userId", { defaultValue: "User ID" }),
       dataIndex: "user_id",
       key: "user_id",
       render: (userId: string | null) =>
-        userId === "default_user_id" ? <Tag color="blue">Default Proxy Admin</Tag> : <Text>{userId || "-"}</Text>,
+        userId === "default_user_id" ? (
+          <Tag color="blue">
+            {t("identityAdmin.team.memberTable.defaultProxyAdmin", { defaultValue: "Default Proxy Admin" })}
+          </Tag>
+        ) : (
+          <Text>{userId || "-"}</Text>
+        ),
     },
     {
       title: roleTooltip ? (
         <Space direction="horizontal">
-          {roleColumnTitle}
+          {resolvedRoleColumnTitle}
           <Tooltip title={roleTooltip}>
             <InfoCircleOutlined />
           </Tooltip>
         </Space>
       ) : (
-        roleColumnTitle
+        resolvedRoleColumnTitle
       ),
       dataIndex: "role",
       key: "role",
@@ -72,7 +82,7 @@ export default function MemberTable({
     },
     ...extraColumns,
     {
-      title: "Actions",
+      title: t("identityAdmin.team.memberTable.actions", { defaultValue: "Actions" }),
       key: "actions",
       fixed: "right" as const,
       width: 120,
@@ -81,14 +91,14 @@ export default function MemberTable({
           <Space>
             <TableIconActionButton
               variant="Edit"
-              tooltipText="Edit member"
+              tooltipText={t("identityAdmin.team.memberTable.editMember", { defaultValue: "Edit member" })}
               dataTestId="edit-member"
               onClick={() => onEdit(record)}
             />
             {(!showDeleteForMember || showDeleteForMember(record)) && (
               <TableIconActionButton
                 variant="Delete"
-                tooltipText="Delete member"
+                tooltipText={t("identityAdmin.team.memberTable.deleteMember", { defaultValue: "Delete member" })}
                 dataTestId="delete-member"
                 onClick={() => onDelete(record)}
               />
@@ -101,7 +111,10 @@ export default function MemberTable({
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <span className="inline-flex text-sm text-gray-700">
-        {members.length} Member{members.length !== 1 ? "s" : ""}
+        {t("identityAdmin.team.memberTable.memberCount", {
+          defaultValue: members.length === 1 ? "{{count}} Member" : "{{count}} Members",
+          count: members.length,
+        })}
       </span>
       <Table
         columns={baseColumns}
@@ -114,7 +127,7 @@ export default function MemberTable({
       />
       {onAddMember && canEdit && (
         <Button icon={<UserAddOutlined />} type="primary" onClick={onAddMember}>
-          Add Member
+          {t("identityAdmin.team.memberTable.addMember", { defaultValue: "Add Member" })}
         </Button>
       )}
     </Space>

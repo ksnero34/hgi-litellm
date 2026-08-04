@@ -150,6 +150,8 @@ _UNTRUSTED_ROOT_CONTROL_FIELDS = (
     "applied_guardrails",
     "applied_policies",
     "policy_sources",
+    "policy_information",
+    "_guardrail_policy_map",
     "pillar_response_headers",
     "_guardrail_pipelines",
     "_pipeline_managed_guardrails",
@@ -197,6 +199,8 @@ _UNTRUSTED_METADATA_CONTROL_FIELDS = (
     "applied_guardrails",
     "applied_policies",
     "policy_sources",
+    "policy_information",
+    "_guardrail_policy_map",
     "standard_logging_object",
     "proxy_server_request",
     "secret_fields",
@@ -2233,13 +2237,11 @@ def _add_guardrails_from_key_or_team_metadata(
     # Add key-level guardrails first
     if key_metadata and "guardrails" in key_metadata:
         if isinstance(key_metadata["guardrails"], list) and len(key_metadata["guardrails"]) > 0:
-            _premium_user_check()
             combined_guardrails.update(key_metadata["guardrails"])
 
     # Add team-level guardrails (set automatically handles duplicates)
     if team_metadata and "guardrails" in team_metadata:
         if isinstance(team_metadata["guardrails"], list) and len(team_metadata["guardrails"]) > 0:
-            _premium_user_check()
             combined_guardrails.update(team_metadata["guardrails"])
 
     # Add project-level guardrails (set automatically handles duplicates)
@@ -2253,7 +2255,7 @@ def _add_guardrails_from_key_or_team_metadata(
         data[metadata_variable_name]["guardrails"] = list(combined_guardrails)
 
 
-def _add_guardrails_from_policies_in_metadata(
+def _add_guardrails_from_policies_in_metadata(  # noqa: C901  # Metadata policy resolution handles three attachment scopes.
     key_metadata: Optional[dict],
     team_metadata: Optional[dict],
     data: dict,
@@ -2277,35 +2279,39 @@ def _add_guardrails_from_policies_in_metadata(
     """
     from litellm._logging import verbose_proxy_logger
     from litellm.proxy.policy_engine.policy_registry import get_policy_registry
-    from litellm.proxy.policy_engine.policy_resolver import PolicyResolver
-    from litellm.proxy.utils import _premium_user_check
+    from litellm.proxy.common_utils.callback_utils import (
+        add_policy_sources_to_metadata,
+        add_policy_to_applied_policies_header,
+    )
+    from litellm.proxy.policy_engine.policy_matcher import PolicyMatcher
     from litellm.types.proxy.policy_engine import PolicyMatchContext
 
     # Collect policy names from key and team metadata
-    policy_names: set = set()
+    policy_sources: dict[str, str] = {}
 
     # Add key-level policies first
     if key_metadata and "policies" in key_metadata:
         if isinstance(key_metadata["policies"], list) and len(key_metadata["policies"]) > 0:
-            _premium_user_check()
-            policy_names.update(key_metadata["policies"])
+            policy_sources.update({name: "key_metadata" for name in key_metadata["policies"] if isinstance(name, str)})
 
     # Add team-level policies
     if team_metadata and "policies" in team_metadata:
         if isinstance(team_metadata["policies"], list) and len(team_metadata["policies"]) > 0:
-            _premium_user_check()
-            policy_names.update(team_metadata["policies"])
+            policy_sources.update(
+                {name: "team_metadata" for name in team_metadata["policies"] if isinstance(name, str)}
+            )
 
     # Add project-level policies
     if project_metadata and "policies" in project_metadata:
         if isinstance(project_metadata["policies"], list) and len(project_metadata["policies"]) > 0:
-            _premium_user_check()
-            policy_names.update(project_metadata["policies"])
+            policy_sources.update(
+                {name: "project_metadata" for name in project_metadata["policies"] if isinstance(name, str)}
+            )
 
-    if not policy_names:
+    if not policy_sources:
         return
 
-    verbose_proxy_logger.debug(f"Policy engine: resolving guardrails from key/team policies: {policy_names}")
+    verbose_proxy_logger.debug(f"Policy engine: resolving guardrails from key/team policies: {set(policy_sources)}")
 
     # Check if policy registry is initialized
     registry = get_policy_registry()
@@ -2316,49 +2322,29 @@ def _add_guardrails_from_policies_in_metadata(
     # Build context for policy resolution (model from request data)
     context = PolicyMatchContext(model=data.get("model"))
 
-    # Get all policies from registry
     all_policies = registry.get_all_policies()
-
-    # Resolve guardrails from the specified policies
-    resolved_guardrails: set = set()
-    for policy_name in policy_names:
-        if registry.has_policy(policy_name):
-            resolved_policy = PolicyResolver.resolve_policy_guardrails(
-                policy_name=policy_name,
-                policies=all_policies,
-                context=context,
-            )
-            resolved_guardrails.update(resolved_policy.guardrails)
-            verbose_proxy_logger.debug(
-                f"Policy engine: resolved guardrails from policy '{policy_name}': {resolved_policy.guardrails}"
-            )
-        else:
-            verbose_proxy_logger.warning(f"Policy engine: policy '{policy_name}' not found in registry")
-
-    if not resolved_guardrails:
+    applied_policy_names = PolicyMatcher.get_policies_with_matching_conditions(
+        policy_names=list(policy_sources),
+        context=context,
+        policies=all_policies,
+    )
+    if not applied_policy_names:
         return
 
-    # Add resolved guardrails to request metadata
-    if metadata_variable_name not in data:
-        data[metadata_variable_name] = {}
-
-    existing_guardrails = data[metadata_variable_name].get("guardrails", [])
-    if not isinstance(existing_guardrails, list):
-        existing_guardrails = []
-
-    # Combine existing guardrails with policy-resolved guardrails (no duplicates)
-    combined = set(existing_guardrails)
-    combined.update(resolved_guardrails)
-    data[metadata_variable_name]["guardrails"] = list(combined)
-
-    # Store applied policies in metadata for tracking
-    if "applied_policies" not in data[metadata_variable_name]:
-        data[metadata_variable_name]["applied_policies"] = []
-    data[metadata_variable_name]["applied_policies"].extend(list(policy_names))
-
-    verbose_proxy_logger.debug(
-        f"Policy engine: added guardrails from key/team policies to request metadata: {list(resolved_guardrails)}"
+    applied_sources = {name: policy_sources[name] for name in applied_policy_names}
+    for policy_name in applied_policy_names:
+        add_policy_to_applied_policies_header(request_data=data, policy_name=policy_name)
+    add_policy_sources_to_metadata(request_data=data, policy_sources=applied_sources)
+    _apply_resolved_guardrails_to_metadata(
+        data=data,
+        metadata_variable_name=metadata_variable_name,
+        context=context,
+        policy_names=applied_policy_names,
+        policies=all_policies,
+        policy_sources=applied_sources,
     )
+
+    verbose_proxy_logger.debug(f"Policy engine: applied metadata policies to request: {applied_policy_names}")
 
 
 async def move_guardrails_to_metadata(
@@ -2494,6 +2480,9 @@ def _match_and_track_policies(
     all_policy_names = set(matching_policy_names)
     if request_body_policies and isinstance(request_body_policies, list):
         all_policy_names.update(request_body_policies)
+        for policy_name in request_body_policies:
+            if isinstance(policy_name, str):
+                policy_reasons.setdefault(policy_name, "request")
         verbose_proxy_logger.debug(f"Policy engine: added dynamic policies from request body: {request_body_policies}")
 
     if not all_policy_names:
@@ -2516,19 +2505,22 @@ def _match_and_track_policies(
     applied_reasons = {name: policy_reasons[name] for name in applied_policy_names if name in policy_reasons}
     add_policy_sources_to_metadata(request_data=data, policy_sources=applied_reasons)
 
-    return applied_policy_names, policy_reasons
+    return applied_policy_names, applied_reasons
 
 
-def _apply_resolved_guardrails_to_metadata(
+def _apply_resolved_guardrails_to_metadata(  # noqa: C901  # Policy attribution is coupled to guardrail resolution.
     data: dict,
     metadata_variable_name: str,
     context: "PolicyMatchContext",
-    policy_names: Optional[List[str]] = None,
-    policies: Optional[Dict[str, Any]] = None,
+    policy_names: list[str] | None = None,
+    policies: dict[str, Any] | None = None,
+    policy_sources: dict[str, str] | None = None,
+    policy_ids: dict[str, str] | None = None,
 ) -> None:
     """Apply resolved guardrails and pipelines to request metadata."""
     from litellm._logging import verbose_proxy_logger
     from litellm.proxy.policy_engine.policy_resolver import PolicyResolver
+    from litellm.proxy.policy_engine.policy_registry import get_policy_registry
 
     # Resolve guardrails from matching policies
     resolved_guardrails = PolicyResolver.resolve_guardrails_for_context(
@@ -2549,6 +2541,57 @@ def _apply_resolved_guardrails_to_metadata(
     # Add resolved guardrails to request metadata
     if metadata_variable_name not in data:
         data[metadata_variable_name] = {}
+
+    registry = get_policy_registry()
+    selected_policy_names = policy_names or []
+    policy_entries = []
+    guardrail_policy_map: dict[str, list[dict[str, str]]] = {}
+    for policy_name in selected_policy_names:
+        policy_id = (policy_ids or {}).get(policy_name) or registry.get_production_policy_id(policy_name)
+        entry = {"policy_name": policy_name}
+        if policy_id is not None:
+            entry["policy_id"] = policy_id
+        source = (policy_sources or {}).get(policy_name)
+        if source is not None:
+            entry["source"] = source
+        policy_entries.append(entry)
+        resolved_policy = PolicyResolver.resolve_policy_guardrails(
+            policy_name=policy_name,
+            policies=policies or registry.get_all_policies(),
+            context=context,
+        )
+        owned_guardrails = set(resolved_policy.guardrails)
+        policy = (policies or registry.get_all_policies()).get(policy_name)
+        if policy is not None and policy.pipeline is not None:
+            owned_guardrails.update(step.guardrail for step in policy.pipeline.steps)
+        for guardrail_name in owned_guardrails:
+            guardrail_policy_map.setdefault(guardrail_name, []).append(entry)
+
+    existing_information = data[metadata_variable_name].get("policy_information", [])
+    if not isinstance(existing_information, list):
+        existing_information = []
+    data[metadata_variable_name]["policy_information"] = list(
+        {
+            (entry.get("policy_name"), entry.get("policy_id"), entry.get("source")): entry
+            for entry in existing_information + policy_entries
+            if isinstance(entry, dict) and isinstance(entry.get("policy_name"), str)
+        }.values()
+    )
+    existing_map = data[metadata_variable_name].get("_guardrail_policy_map", {})
+    if not isinstance(existing_map, dict):
+        existing_map = {}
+    for guardrail_name, entries in guardrail_policy_map.items():
+        current = existing_map.get(guardrail_name, [])
+        if not isinstance(current, list):
+            current = []
+        existing_map[guardrail_name] = list(
+            {
+                (entry.get("policy_name"), entry.get("policy_id"), entry.get("source")): entry
+                for entry in current + entries
+                if isinstance(entry, dict) and isinstance(entry.get("policy_name"), str)
+            }.values()
+        )
+    data[metadata_variable_name]["_guardrail_policy_map"] = existing_map
 
     # Track pipeline-managed guardrails to exclude from independent execution
     pipeline_managed_guardrails: set = set()
@@ -2648,14 +2691,16 @@ async def add_guardrails_from_policy_engine(
                 request_body_names.append(item)
 
     # Resolve policy versions by ID from in-memory cache (populated by sync job; no DB in hot path)
-    merged_policies: Dict[str, Any] = dict(registry.get_all_policies())
-    fetched_policy_names: List[str] = []
+    merged_policies: dict[str, Any] = dict(registry.get_all_policies())
+    fetched_policy_names: list[str] = []
+    fetched_policy_ids: dict[str, str] = {}
     for policy_id in request_body_version_ids:
         result = registry.get_policy_by_id_for_request(policy_id=policy_id)
         if result is not None:
             pname, policy = result
             merged_policies[pname] = policy
             fetched_policy_names.append(pname)
+            fetched_policy_ids[pname] = policy_id
             verbose_proxy_logger.debug(f"Policy engine: loaded version by ID policy_{policy_id} -> {pname}")
         else:
             verbose_proxy_logger.debug(f"Policy engine: policy version {policy_id} not found in cache, skipping")
@@ -2664,7 +2709,7 @@ async def add_guardrails_from_policy_engine(
     request_body_policies = request_body_names + fetched_policy_names
 
     # Match and track policies (with merged_policies when we have version overrides)
-    applied_policy_names, _ = _match_and_track_policies(
+    applied_policy_names, applied_sources = _match_and_track_policies(
         data,
         context,
         request_body_policies,
@@ -2677,8 +2722,10 @@ async def add_guardrails_from_policy_engine(
         data,
         metadata_variable_name,
         context,
-        policy_names=applied_policy_names if applied_policy_names else None,
+        policy_names=applied_policy_names,
         policies=merged_policies if request_body_version_ids else None,
+        policy_sources=applied_sources,
+        policy_ids=fetched_policy_ids,
     )
 
 

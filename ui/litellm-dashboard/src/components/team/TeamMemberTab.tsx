@@ -7,6 +7,7 @@ import { isProxyAdminRole, isUserTeamAdminForSingleTeam } from "@/utils/roles";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Space, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useTranslation } from "react-i18next";
 import MemberTable from "@/components/common_components/MemberTable";
 import { TeamData } from "./TeamInfo";
 
@@ -27,6 +28,7 @@ export default function TeamMemberTab({
   setIsEditMemberModalVisible,
   setIsAddMemberModalVisible,
 }: TeamMemberTabProps) {
+  const { t } = useTranslation();
   const formatNumber = (value: number | null): string => {
     if (value === null || value === undefined) return "0";
 
@@ -66,16 +68,22 @@ export default function TeamMemberTab({
 
   // Helper function to get rate limits for a user
   const getUserRateLimits = (userId: string | null): string => {
-    if (!userId) return "No Limits";
+    if (!userId) return t("identityAdmin.team.memberTable.noLimits", { defaultValue: "No Limits" });
     const membership = teamData.team_memberships.find((tm) => tm.user_id === userId);
     const rpmLimit = membership?.litellm_budget_table?.rpm_limit;
     const tpmLimit = membership?.litellm_budget_table?.tpm_limit;
 
-    const rpmText = rpmLimit ? `${formatNumber(rpmLimit)} RPM` : null;
-    const tpmText = tpmLimit ? `${formatNumber(tpmLimit)} TPM` : null;
+    const rpmText = rpmLimit
+      ? t("identityAdmin.team.memberTable.rpmValue", { defaultValue: "{{value}} RPM", value: formatNumber(rpmLimit) })
+      : null;
+    const tpmText = tpmLimit
+      ? t("identityAdmin.team.memberTable.tpmValue", { defaultValue: "{{value}} TPM", value: formatNumber(tpmLimit) })
+      : null;
 
     const limits = [rpmText, tpmText].filter(Boolean);
-    return limits.length > 0 ? limits.join(" / ") : "No Limits";
+    return limits.length > 0
+      ? limits.join(" / ")
+      : t("identityAdmin.team.memberTable.noLimits", { defaultValue: "No Limits" });
   };
 
   const { data: uiSettingsData } = useUISettings();
@@ -101,8 +109,12 @@ export default function TeamMemberTab({
     {
       title: (
         <Space direction="horizontal">
-          Model Scope
-          <Tooltip title="Models this member can access. Empty means they inherit all team models.">
+          {t("identityAdmin.team.memberTable.modelScope", { defaultValue: "Model Scope" })}
+          <Tooltip
+            title={t("identityAdmin.team.memberTable.modelScopeTooltip", {
+              defaultValue: "Models this member can access. Empty means they inherit all team models.",
+            })}
+          >
             <InfoCircleOutlined />
           </Tooltip>
         </Space>
@@ -111,7 +123,11 @@ export default function TeamMemberTab({
       render: (_: unknown, record: Member) => {
         const models = getUserAllowedModels(record.user_id);
         if (!models) {
-          return <Typography.Text type="secondary">(all team models)</Typography.Text>;
+          return (
+            <Typography.Text type="secondary">
+              {t("identityAdmin.team.memberTable.allTeamModels", { defaultValue: "(all team models)" })}
+            </Typography.Text>
+          );
         }
         const displayed = models.slice(0, 2);
         const remaining = models.length - displayed.length;
@@ -124,7 +140,12 @@ export default function TeamMemberTab({
             ))}
             {remaining > 0 && (
               <Tooltip title={models.slice(2).join(", ")}>
-                <Typography.Text type="secondary">+{remaining} more</Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("identityAdmin.team.memberTable.moreModels", {
+                    defaultValue: "+{{count}} more",
+                    count: remaining,
+                  })}
+                </Typography.Text>
               </Tooltip>
             )}
           </Space>
@@ -134,8 +155,13 @@ export default function TeamMemberTab({
     {
       title: (
         <Space direction="horizontal">
-          Current Cycle Spend (USD)
-          <Tooltip title="Spend for the current budget cycle. Resets to $0 when the member's budget window rolls over. This is the value checked against the member's budget.">
+          {t("identityAdmin.team.memberTable.currentCycleSpend", { defaultValue: "Current Cycle Spend (USD)" })}
+          <Tooltip
+            title={t("identityAdmin.team.memberTable.currentCycleSpendTooltip", {
+              defaultValue:
+                "Spend for the current budget cycle. Resets to $0 when the member's budget window rolls over. This is the value checked against the member's budget.",
+            })}
+          >
             <InfoCircleOutlined />
           </Tooltip>
         </Space>
@@ -148,8 +174,13 @@ export default function TeamMemberTab({
     {
       title: (
         <Space direction="horizontal">
-          Total Spend (USD)
-          <Tooltip title="Cumulative spend by this member within this team, across all budget cycles. Tracking began 2026-04-21; spend from before that date is not included.">
+          {t("identityAdmin.team.memberTable.totalSpend", { defaultValue: "Total Spend (USD)" })}
+          <Tooltip
+            title={t("identityAdmin.team.memberTable.totalSpendTooltip", {
+              defaultValue:
+                "Cumulative spend by this member within this team, across all budget cycles. Tracking began 2026-04-21; spend from before that date is not included.",
+            })}
+          >
             <InfoCircleOutlined />
           </Tooltip>
         </Space>
@@ -158,22 +189,31 @@ export default function TeamMemberTab({
       render: (_: unknown, record: Member) => <MoneyCell value={getUserTotalSpend(record.user_id)} decimals={4} />,
     },
     {
-      title: "Team Member Budget (USD)",
+      title: t("identityAdmin.team.memberTable.teamMemberBudget", { defaultValue: "Team Member Budget (USD)" }),
       key: "budget",
       render: (_: unknown, record: Member) => (
-        <MoneyCell value={getUserBudget(record.user_id)} decimals={4} emptyText="Unlimited" showZero />
+        <MoneyCell
+          value={getUserBudget(record.user_id)}
+          decimals={4}
+          emptyText={t("identityAdmin.team.memberTable.unlimited", { defaultValue: "Unlimited" })}
+          showZero
+        />
       ),
     },
     {
-      title: "Budget Reset",
+      title: t("identityAdmin.team.memberTable.budgetReset", { defaultValue: "Budget Reset" }),
       key: "budget_reset",
       render: (_: unknown, record: Member) => <DateCell value={getUserBudgetReset(record.user_id)} precision="date" />,
     },
     {
       title: (
         <Space direction="horizontal">
-          Team Member Rate Limits
-          <Tooltip title="Rate limits for this member's usage within this team.">
+          {t("identityAdmin.team.memberTable.teamMemberRateLimits", { defaultValue: "Team Member Rate Limits" })}
+          <Tooltip
+            title={t("identityAdmin.team.memberTable.teamMemberRateLimitsTooltip", {
+              defaultValue: "Rate limits for this member's usage within this team.",
+            })}
+          >
             <InfoCircleOutlined />
           </Tooltip>
         </Space>
@@ -202,8 +242,10 @@ export default function TeamMemberTab({
       }}
       onDelete={handleMemberDelete}
       onAddMember={() => setIsAddMemberModalVisible(true)}
-      roleColumnTitle="Team Role"
-      roleTooltip="This role applies only to this team and is independent from the user's proxy-level role."
+      roleColumnTitle={t("identityAdmin.team.memberTable.teamRole", { defaultValue: "Team Role" })}
+      roleTooltip={t("identityAdmin.team.memberTable.teamRoleTooltip", {
+        defaultValue: "This role applies only to this team and is independent from the user's proxy-level role.",
+      })}
       extraColumns={extraColumns}
       showDeleteForMember={() =>
         isProxyAdmin || (canEditTeam && !isUserTeamAdmin) || (isUserTeamAdmin && !disableTeamAdminDeleteTeamUser)

@@ -1,4 +1,5 @@
 import math
+from collections.abc import Set
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from fastapi import HTTPException, status
@@ -381,6 +382,7 @@ def _set_object_metadata_field(
     ],
     field_name: str,
     value: Any,
+    premium_exempt_fields: Set[str] = frozenset(),
 ) -> None:
     """
     Helper function to set metadata fields that require premium user checks
@@ -389,8 +391,13 @@ def _set_object_metadata_field(
         object_data: The team/key/organization/project data object to modify
         field_name: Name of the metadata field to set
         value: Value to set for the field
+        premium_exempt_fields: Premium fields allowed for this endpoint
     """
-    if field_name in LiteLLM_ManagementEndpoint_MetadataFields_Premium and value:
+    if (
+        field_name in LiteLLM_ManagementEndpoint_MetadataFields_Premium
+        and field_name not in premium_exempt_fields
+        and value
+    ):
         _premium_user_check(field_name)
 
     object_data.metadata = object_data.metadata or {}
@@ -536,15 +543,20 @@ async def _upsert_budget_and_membership(
     )
 
 
-def _update_metadata_field(updated_kv: dict, field_name: str) -> None:
+def _update_metadata_field(
+    updated_kv: dict,
+    field_name: str,
+    premium_exempt_fields: Set[str] = frozenset(),
+) -> None:
     """
     Helper function to update metadata fields that require premium user checks in the update endpoint
 
     Args:
         updated_kv: The key-value dict being used for the update
         field_name: Name of the metadata field being updated
+        premium_exempt_fields: Premium fields allowed for this endpoint
     """
-    if field_name in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
+    if field_name in LiteLLM_ManagementEndpoint_MetadataFields_Premium and field_name not in premium_exempt_fields:
         # The UI sends falsy defaults (False, [], {}) even when the user has not
         # enabled any enterprise feature (see #20304, #30285); require a license
         # only for a truthy value. The falsy value is still persisted below so a
@@ -572,16 +584,24 @@ def _has_non_empty_value(value: Any) -> bool:
     return True
 
 
-def _update_metadata_fields(updated_kv: dict) -> None:
+def _update_metadata_fields(
+    updated_kv: dict,
+    premium_exempt_fields: Set[str] = frozenset(),
+) -> None:
     """
     Helper function to update all metadata fields (both premium and standard).
 
     Args:
         updated_kv: The key-value dict being used for the update
+        premium_exempt_fields: Premium fields allowed for this endpoint
     """
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if field in updated_kv and updated_kv[field] is not None:
-            _update_metadata_field(updated_kv=updated_kv, field_name=field)
+            _update_metadata_field(
+                updated_kv=updated_kv,
+                field_name=field,
+                premium_exempt_fields=premium_exempt_fields,
+            )
 
     for field in LiteLLM_ManagementEndpoint_MetadataFields:
         if field in updated_kv and updated_kv[field] is not None:

@@ -42,6 +42,7 @@ from litellm.proxy.management_endpoints.team_endpoints import (
     _persist_deleted_team_records,
     _save_deleted_team_records,
     _transform_teams_to_deleted_records,
+    _update_team_metadata_fields,
     _update_model_table,
     _validate_and_populate_member_user_info,
     _verify_team_access,
@@ -73,6 +74,33 @@ mock_prisma_client = MagicMock()
 mock_prisma_client.db = MagicMock()
 mock_prisma_client.db.litellm_teamtable = MagicMock()
 mock_prisma_client.db.litellm_teamtable.update = AsyncMock()
+
+
+def test_update_team_metadata_fields_allows_oss_guardrails_and_policies():
+    updated_kv = {
+        "team_id": "team-1",
+        "guardrails": ["guardrail-1"],
+        "policies": ["policy-1"],
+    }
+
+    with patch(
+        "litellm.proxy.management_endpoints.common_utils._premium_user_check",
+        side_effect=AssertionError("OSS team assignments must not require a premium license"),
+    ):
+        _update_team_metadata_fields(updated_kv)
+
+    assert updated_kv["metadata"]["guardrails"] == ["guardrail-1"]
+    assert updated_kv["metadata"]["policies"] == ["policy-1"]
+    assert updated_kv["policies"] == ["policy-1"]
+
+
+def test_update_team_metadata_fields_keeps_other_premium_checks():
+    updated_kv = {"team_id": "team-1", "tags": ["production"]}
+
+    with patch("litellm.proxy.management_endpoints.common_utils._premium_user_check") as premium_check:
+        _update_team_metadata_fields(updated_kv)
+
+    premium_check.assert_called_once()
 
 
 # Fixture to provide the mock prisma client

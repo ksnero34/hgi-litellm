@@ -78,12 +78,8 @@ class TestKeyRotationManagerPassesKeyAlias:
             "litellm.proxy.common_utils.key_rotation_manager.regenerate_key_fn",
             side_effect=capture_regenerate_key_fn,
         ):
-            with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook",
-                new_callable=AsyncMock,
-            ):
-                rotation_manager = KeyRotationManager(mock_prisma)
-                await rotation_manager._rotate_key(mock_key)
+            rotation_manager = KeyRotationManager(mock_prisma)
+            await rotation_manager._rotate_key(mock_key)
 
         # CRITICAL ASSERTION: key_alias must be passed
         assert captured_request is not None, "regenerate_key_fn should have been called"
@@ -131,12 +127,8 @@ class TestKeyRotationManagerPassesKeyAlias:
             "litellm.proxy.common_utils.key_rotation_manager.regenerate_key_fn",
             side_effect=capture_regenerate_key_fn,
         ):
-            with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook",
-                new_callable=AsyncMock,
-            ):
-                rotation_manager = KeyRotationManager(mock_prisma)
-                await rotation_manager._rotate_key(mock_key)
+            rotation_manager = KeyRotationManager(mock_prisma)
+            await rotation_manager._rotate_key(mock_key)
 
         assert captured_request is not None
         assert captured_request.key == test_token

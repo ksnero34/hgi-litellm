@@ -13,6 +13,7 @@ import asyncio
 import math
 import re
 import time
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union, cast
 
 from fastapi import HTTPException, Request, status
@@ -26,6 +27,7 @@ from litellm.constants import (
     CLI_SESSION_KEY_PREFIX,
     DEFAULT_ACCESS_GROUP_CACHE_TTL,
     DEFAULT_IN_MEMORY_TTL,
+    DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL,
     DEFAULT_MAX_RECURSE_DEPTH,
     EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE,
 )
@@ -1755,6 +1757,7 @@ async def _cache_management_object(
     proxy_logging_obj: Optional[ProxyLogging],
     *,
     model_type: Type[BaseModel],
+    ttl: float | None = None,
 ):
     """
     Persist management objects via ``UserApiKeyCache`` (in-memory + optional Redis).
@@ -1765,8 +1768,28 @@ async def _cache_management_object(
         key=key,
         value=value,
         model_type=model_type,
-        ttl=get_management_object_ttl(user_api_key_cache),
+        ttl=ttl if ttl is not None else get_management_object_ttl(user_api_key_cache),
     )
+
+
+def _key_object_cache_ttl(
+    user_api_key_obj: UserAPIKeyAuth,
+    user_api_key_cache: UserApiKeyCache,
+    *,
+    now: datetime | None = None,
+) -> float:
+    default_ttl = get_management_object_ttl(user_api_key_cache)
+    if not isinstance(default_ttl, (int, float)):
+        default_ttl = DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL
+    bounded_ttls = [default_ttl]
+    if bool(user_api_key_obj.blocked):
+        bounded_ttls.append(1.0)
+    expires = user_api_key_obj.expires
+    if isinstance(expires, datetime):
+        normalized_expires = expires if expires.tzinfo is not None else expires.replace(tzinfo=timezone.utc)
+        remaining_seconds = (normalized_expires.astimezone(timezone.utc) - (now or get_utc_datetime())).total_seconds()
+        bounded_ttls.append(remaining_seconds if remaining_seconds > 0 else 1.0)
+    return max(1.0, min(bounded_ttls))
 
 
 async def _cache_team_object(
@@ -1825,6 +1848,7 @@ async def _cache_key_object(
         user_api_key_cache=user_api_key_cache,
         proxy_logging_obj=proxy_logging_obj,
         model_type=UserAPIKeyAuth,
+        ttl=_key_object_cache_ttl(cached_key_obj, user_api_key_cache),
     )
 
 
@@ -2328,6 +2352,7 @@ class ExperimentalUIJWTToken:
             models=user_info.models,
             max_parallel_requests=None,
             user_role=LitellmUserRoles(user_info.user_role),
+            is_session_token=True,
         )
 
         return encrypt_value_helper(valid_token.model_dump_json(exclude_none=True))
@@ -2547,12 +2572,13 @@ async def get_key_object(
             )
 
     # save the key object to cache
-    await _cache_key_object(
-        hashed_token=hashed_token,
-        user_api_key_obj=_response,
-        user_api_key_cache=user_api_key_cache,
-        proxy_logging_obj=proxy_logging_obj,
-    )
+    if _response.token == hashed_token:
+        await _cache_key_object(
+            hashed_token=hashed_token,
+            user_api_key_obj=_response,
+            user_api_key_cache=user_api_key_cache,
+            proxy_logging_obj=proxy_logging_obj,
+        )
 
     return _response
 

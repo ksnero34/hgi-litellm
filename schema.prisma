@@ -507,6 +507,21 @@ model LiteLLM_DeprecatedVerificationToken {
     @@index([revoke_at])
 }
 
+model CorporatePersonalKeyRegistry {
+    user_id            String   @id
+    logical_key_id     String   @unique @default(uuid())
+    active_token_hash  String?
+    generation         Int      @default(0)
+    status             String
+    department_team_id String
+    organization_id    String
+    created_at         DateTime @default(now()) @map("created_at")
+    updated_at         DateTime @default(now()) @updatedAt @map("updated_at")
+
+    @@index([active_token_hash])
+    @@index([organization_id])
+}
+
 // Audit table for deleted keys - preserves spend and key information for historical tracking
 model LiteLLM_DeletedVerificationToken {
     id                      String   @id @default(uuid())

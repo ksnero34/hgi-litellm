@@ -14,13 +14,12 @@ import copy
 import inspect
 import json
 import math
-import os
 import re
 import secrets
 import traceback
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Protocol, Tuple, cast
 
 import fastapi
 import yaml
@@ -31,6 +30,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm._uuid import uuid
 from litellm.constants import (
     LENGTH_OF_LITELLM_GENERATED_KEY,
+    LITELLM_KEY_ROTATION_GRACE_PERIOD,
     LITELLM_PROXY_ADMIN_NAME,
     MINIMUM_CUSTOM_KEY_LENGTH,
     UI_SESSION_TOKEN_TEAM_ID,
@@ -63,6 +63,13 @@ from litellm.proxy.common_utils.callback_utils import (
 from litellm.proxy.common_utils.rbac_utils import check_org_admin_can_generate_keys
 from litellm.proxy.common_utils.timezone_utils import get_budget_reset_time
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.customizations.feature_policy import (
+    is_oss_virtual_key_metadata_field,
+)
+from litellm.proxy.customizations.personal_key_policy import (
+    PersonalKeyPurpose,
+    read_personal_key_metadata,
+)
 from litellm.proxy.hooks.key_management_event_hooks import KeyManagementEventHooks
 from litellm.proxy.hooks.model_max_budget_limiter import (
     VIRTUAL_KEY_SPEND_CACHE_KEY_PREFIX,
@@ -107,7 +114,6 @@ from litellm.repositories.credentials_repository import CredentialsRepository
 from litellm.repositories.model_repository import ModelRepository
 from litellm.repositories.table_repositories import (
     DeletedVerificationTokenRepository,
-    DeprecatedVerificationTokenRepository,
 )
 from litellm.repositories.team_repository import TeamRepository
 from litellm.repositories.user_repository import UserRepository
@@ -130,6 +136,36 @@ from litellm.types.utils import (
     PersonalUIKeyGenerationConfig,
     TeamUIKeyGenerationConfig,
 )
+
+
+def _set_virtual_key_metadata_field(object_data: Any, field_name: str, value: Any) -> None:
+    if not is_oss_virtual_key_metadata_field(field_name):
+        _set_object_metadata_field(object_data=object_data, field_name=field_name, value=value)
+        return
+
+    object_data.metadata = object_data.metadata or {}
+    object_data.metadata[field_name] = value
+
+
+def _caller_is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
+    return user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value
+
+
+def _reject_managed_personal_key_mutation(key_row: LiteLLM_VerificationToken) -> None:
+    metadata = read_personal_key_metadata(key_row.metadata)
+    if metadata is not None and metadata.key_purpose == PersonalKeyPurpose.PERSONAL_LLM:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Managed personal keys must be changed through /internal/personal-key."},
+        )
+
+
+def _reject_session_generic_key_read(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.is_session_token and not _caller_is_proxy_admin(user_api_key_dict):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Personal keys must be viewed through /internal/personal-key"},
+        )
 
 
 async def _check_custom_key_allowed(custom_key_value: Optional[str]) -> None:
@@ -902,7 +938,7 @@ async def _common_key_generation_helper(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -1567,6 +1603,16 @@ async def generate_key_fn(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"error": CommonProxyErrors.db_not_connected_error.value},
             )
+        if not _caller_is_proxy_admin(user_api_key_dict):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Personal keys must be created through /internal/personal-key."},
+            )
+        if data.user_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "User-owned keys must be created through /internal/personal-key."},
+            )
 
         verbose_proxy_logger.debug("entered /key/generate")
 
@@ -1764,6 +1810,11 @@ async def generate_service_account_key_fn(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": CommonProxyErrors.db_not_connected_error.value},
         )
+    if not _caller_is_proxy_admin(user_api_key_dict):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Only proxy administrators can create service account keys."},
+        )
 
     await check_org_admin_can_generate_keys(user_api_key_dict=user_api_key_dict)
 
@@ -1821,7 +1872,15 @@ async def generate_service_account_key_fn(
         route=KeyManagementRoutes.KEY_GENERATE_SERVICE_ACCOUNT,
     )
 
-    data.user_id = None  # do not allow user_id to be set for service account keys
+    data.user_id = None
+    data.key_type = LiteLLMKeyType.LLM_API
+    data.metadata = {
+        **(data.metadata or {}),
+        "personal_key": {
+            "owner_type": "service",
+            "key_purpose": "service_account",
+        },
+    }
 
     return await _common_key_generation_helper(
         data=data,
@@ -1842,7 +1901,8 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
 
     # Reserved metadata fields are immutable once set. Preserve the existing value
     # when omitted, reject any explicit attempt to change it (including null).
-    for reserved_field in LiteLLM_Reserved_Metadata_Fields:
+    reserved_metadata_fields = (*LiteLLM_Reserved_Metadata_Fields, "personal_key")
+    for reserved_field in reserved_metadata_fields:
         existing_value = existing_metadata.get(reserved_field)
         if existing_value is None:
             continue
@@ -1865,9 +1925,9 @@ def prepare_metadata_fields(data: BaseModel, non_default_values: dict, existing_
                 else:
                     casted_metadata[k] = v
             if k in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
-                from litellm.proxy.utils import _premium_user_check
+                if not is_oss_virtual_key_metadata_field(k) and v:
+                    from litellm.proxy.utils import _premium_user_check
 
-                if v:
                     _premium_user_check(k)
                 casted_metadata[k] = v
 
@@ -1902,7 +1962,7 @@ async def prepare_key_update_data(
     # Set Management Endpoint Metadata Fields
     for field in LiteLLM_ManagementEndpoint_MetadataFields_Premium:
         if getattr(data, field, None) is not None:
-            _set_object_metadata_field(
+            _set_virtual_key_metadata_field(
                 object_data=data,
                 field_name=field,
                 value=getattr(data, field),
@@ -2106,6 +2166,7 @@ async def _process_single_key_update(
             token=update_key_request.key,
             prisma_client=prisma_client,
         )
+    _reject_managed_personal_key_mutation(existing_key_row)
 
     # Check team member permissions
     if prisma_client is not None:
@@ -2600,6 +2661,7 @@ async def update_key_fn(
             token=data.key,
             prisma_client=prisma_client,
         )
+        _reject_managed_personal_key_mutation(existing_key_row)
 
         await _validate_update_key_data(
             data=data,
@@ -3358,6 +3420,7 @@ async def info_key_fn_v2(
             raise Exception(
                 "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
             )
+        _reject_session_generic_key_read(user_api_key_dict)
         if data is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -3446,6 +3509,7 @@ async def info_key_fn(
             raise Exception(
                 "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
             )
+        _reject_session_generic_key_read(user_api_key_dict)
 
         # default to using Auth token if no key is passed in
         key = key or user_api_key_dict.api_key
@@ -3963,7 +4027,7 @@ async def delete_verification_tokens(
                 - List of keys being deleted, this contains information about the key_alias, token, and user_id being deleted,
                 this is passed down to the KeyManagementEventHooks to delete the keys from the secret manager and handle audit logs
     """
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj
 
     failed_tokens: List = []
     try:
@@ -3978,6 +4042,8 @@ async def delete_verification_tokens(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail={"error": "No keys found"},
                 )
+            for key_row in _keys_being_deleted:
+                _reject_managed_personal_key_mutation(key_row)
 
             if user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value:
                 authorized_keys = _keys_being_deleted
@@ -4024,10 +4090,11 @@ async def delete_verification_tokens(
         raise e
 
     for key in tokens:
-        user_api_key_cache.delete_cache(key)
-        # remove hash token from cache
-        hashed_token = hash_token(cast(str, key))
-        user_api_key_cache.delete_cache(hashed_token)
+        await _delete_cache_key_object(
+            hashed_token=cast(str, key),
+            user_api_key_cache=user_api_key_cache,
+            proxy_logging_obj=proxy_logging_obj,
+        )
 
     return {
         "deleted_keys": deleted_tokens,
@@ -4395,26 +4462,43 @@ async def get_new_token(data: Optional[RegenerateKeyRequest]) -> str:
     return new_token
 
 
+class DeprecatedKeyRotationResult(NamedTuple):
+    revoke_at: datetime
+    token_hashes: list[str]
+
+
+class _DeprecatedTokenRow(Protocol):
+    token: str | None
+
+
+class _DeprecatedTokenTable(Protocol):
+    async def find_many(self, *, where: dict[str, Any]) -> list[_DeprecatedTokenRow]: ...
+
+    async def upsert(self, *, where: dict[str, Any], data: dict[str, Any]) -> object: ...
+
+    async def update_many(self, *, where: dict[str, Any], data: dict[str, Any]) -> object: ...
+
+
 async def _insert_deprecated_key(
-    prisma_client: "PrismaClient",
+    deprecated_table: _DeprecatedTokenTable,
     old_token_hash: str,
     new_token_hash: str,
     grace_period: Optional[str],
-) -> None:
+) -> DeprecatedKeyRotationResult | None:
     """
     Insert old key into deprecated table so it remains valid during grace period.
 
     Uses upsert to handle concurrent rotations gracefully.
 
     Parameters:
-        prisma_client: DB client
+        deprecated_table: Transaction-scoped deprecated token table
         old_token_hash: Hash of the old key being rotated out
         new_token_hash: Hash of the new replacement key
-        grace_period: Duration string (e.g. "24h", "2d") or None/empty for immediate revoke
+        grace_period: Duration string (e.g. "24h", "2d") or None/empty for the configured default
     """
-    grace_period_value = grace_period or os.getenv("LITELLM_KEY_ROTATION_GRACE_PERIOD", "")
+    grace_period_value = grace_period or LITELLM_KEY_ROTATION_GRACE_PERIOD
     if not grace_period_value:
-        return
+        return None
 
     try:
         grace_seconds = duration_in_seconds(grace_period_value)
@@ -4423,14 +4507,22 @@ async def _insert_deprecated_key(
             "Invalid grace_period format: %s. Expected format like '24h', '2d'.",
             grace_period_value,
         )
-        return
+        return None
 
     if grace_seconds <= 0:
-        return
+        return None
 
     try:
-        revoke_at = datetime.now(timezone.utc) + timedelta(seconds=grace_seconds)
-        await DeprecatedVerificationTokenRepository(prisma_client).table.upsert(
+        now = datetime.now(timezone.utc)
+        revoke_at = now + timedelta(seconds=grace_seconds)
+        ancestor_rows = await deprecated_table.find_many(
+            where={
+                "active_token_id": old_token_hash,
+                "revoke_at": {"gt": now},
+            }
+        )
+        ancestor_hashes = [row.token for row in ancestor_rows if row.token]
+        await deprecated_table.upsert(
             where={"token": old_token_hash},
             data={
                 "create": {
@@ -4444,16 +4536,26 @@ async def _insert_deprecated_key(
                 },
             },
         )
+        if ancestor_hashes:
+            await deprecated_table.update_many(
+                where={"token": {"in": ancestor_hashes}},
+                data={"active_token_id": new_token_hash},
+            )
         verbose_proxy_logger.debug(
             "Deprecated key retained for %s (revoke_at: %s)",
             grace_period_value,
             revoke_at,
+        )
+        return DeprecatedKeyRotationResult(
+            revoke_at=revoke_at,
+            token_hashes=[old_token_hash, *ancestor_hashes],
         )
     except Exception as deprecated_err:
         verbose_proxy_logger.warning(
             "Failed to insert deprecated key for grace period: %s",
             deprecated_err,
         )
+        raise
 
 
 async def _execute_virtual_key_regeneration(
@@ -4512,25 +4614,30 @@ async def _execute_virtual_key_regeneration(
     update_data.update(non_default_values)
     update_data = prisma_client.jsonify_object(data=update_data)
 
-    # If grace period set, insert deprecated key so old key remains valid
-    await _insert_deprecated_key(
-        prisma_client=prisma_client,
-        old_token_hash=hashed_api_key,
-        new_token_hash=new_token_hash,
-        grace_period=data.grace_period if data else None,
-    )
-
-    updated_token = await VerificationTokenRepository(prisma_client).table.update(
-        where={"token": hashed_api_key},
-        data=update_data,  # type: ignore
-    )
+    async with prisma_client.db.tx() as tx:
+        updated_token = await tx.litellm_verificationtoken.update(
+            where={"token": hashed_api_key},
+            data=update_data,  # type: ignore
+        )
+        deprecated_key_result = await _insert_deprecated_key(
+            deprecated_table=tx.litellm_deprecatedverificationtoken,
+            old_token_hash=hashed_api_key,
+            new_token_hash=new_token_hash,
+            grace_period=data.grace_period if data else None,
+        )
     updated_token_dict = dict(updated_token) if updated_token is not None else {}
     updated_token_dict["key"] = new_token
     updated_token_dict["token_id"] = updated_token_dict.pop("token")
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        updated_token_dict["previous_key_revoke_at"] = deprecated_key_result.revoke_at
 
-    if hashed_api_key or key:
+    cache_token_hashes = {hashed_api_key}
+    if isinstance(deprecated_key_result, DeprecatedKeyRotationResult):
+        cache_token_hashes.update(deprecated_key_result.token_hashes)
+    cache_token_hashes.discard("")
+    for cache_token_hash in cache_token_hashes:
         await _delete_cache_key_object(
-            hashed_token=_hash_token_if_needed(key),
+            hashed_token=cache_token_hash,
             user_api_key_cache=user_api_key_cache,
             proxy_logging_obj=proxy_logging_obj,
         )
@@ -4599,7 +4706,7 @@ async def regenerate_key_fn(
         - permissions: Optional[dict] - Key-specific permissions
         - guardrails: Optional[List[str]] - List of active guardrails for the key
         - blocked: Optional[bool] - Whether the key is blocked
-        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = immediate revoke. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
+        - grace_period: Optional[str] - Duration to keep old key valid after rotation (e.g. "24h", "2d"). Omitted = 72h by default. Env: LITELLM_KEY_ROTATION_GRACE_PERIOD
 
 
     Returns:
@@ -4617,13 +4724,11 @@ async def regenerate_key_fn(
     }'
     ```
 
-    Note: This is an Enterprise feature. It requires a premium license to use.
     """
     try:
         from litellm.proxy.proxy_server import (
             hash_token,
             master_key,
-            premium_user,
             prisma_client,
             proxy_logging_obj,
             user_api_key_cache,
@@ -4656,25 +4761,6 @@ async def regenerate_key_fn(
                 allowed_routes=handle_key_type(data, {}).get("allowed_routes"),
                 user_api_key_dict=user_api_key_dict,
                 allow_safe_presets=True,
-            )
-
-        # Premium-gate bypass for master-key rotation must verify the
-        # caller actually holds the master key, not just that the request
-        # body has a ``new_master_key`` field. A presence-only check let
-        # any non-premium caller skip the enterprise gate by sending any
-        # value in that field.
-        regenerate_target_key = data.key if data and data.key else key
-        is_master_key_regeneration = (
-            data is not None
-            and data.new_master_key is not None
-            and _is_master_key(api_key=regenerate_target_key, _master_key=master_key)
-        )
-
-        if (
-            premium_user is not True and not is_master_key_regeneration
-        ):  # allow master key regeneration for non-premium users
-            raise ValueError(
-                f"Regenerating Virtual Keys is an Enterprise feature, {CommonProxyErrors.not_premium_user.value}"
             )
 
         # Check if key exists, raise exception if key is not in the DB
@@ -4729,6 +4815,7 @@ async def regenerate_key_fn(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": f"Key {key} not found."},
             )
+        _reject_managed_personal_key_mutation(_key_in_db)
 
         # check if user has permission to regenerate key
         await TeamMemberPermissionChecks.can_team_member_execute_key_management_endpoint(
@@ -4934,6 +5021,7 @@ async def reset_key_spend_fn(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": f"Key {key} not found."},
             )
+        _reject_managed_personal_key_mutation(_key_in_db)
 
         current_spend = _key_in_db.spend or 0.0
         reset_to = _validate_reset_spend_value(data.reset_to, _key_in_db)
@@ -5248,6 +5336,12 @@ async def list_keys(
         if prisma_client is None:
             verbose_proxy_logger.error("Database not connected")
             raise Exception("Database not connected")
+        _reject_session_generic_key_read(user_api_key_dict)
+
+        is_proxy_admin = user_api_key_dict.user_role in [
+            LitellmUserRoles.PROXY_ADMIN.value,
+            LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY.value,
+        ]
 
         # Validate status parameter
         if status is not None and status != "deleted":
@@ -5260,6 +5354,13 @@ async def list_keys(
             raise HTTPException(
                 status_code=400,
                 detail={"error": "Invalid expires value. Supported: 'active', 'expired'."},
+            )
+        effective_active_only = status != "deleted" and not is_proxy_admin and team_id is not None
+        aggregate_team_active_only = status != "deleted" and not is_proxy_admin and include_team_keys
+        if (effective_active_only or aggregate_team_active_only) and expires == "expired":
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Non-admin team key lists only support active keys."},
             )
 
         complete_user_info = await validate_key_list_check(
@@ -5304,11 +5405,6 @@ async def list_keys(
         else:
             admin_team_ids = None
 
-        is_proxy_admin = user_api_key_dict.user_role in [
-            LitellmUserRoles.PROXY_ADMIN.value,
-            LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY.value,
-        ]
-
         # Substring matching is opt-in (admin-only). /key/list matched user_id and
         # key_alias exactly before substring search was added; auto-applying a
         # substring match to every admin call broke that contract and let a caller
@@ -5316,7 +5412,6 @@ async def list_keys(
         # admin key) receive other users' keys (user_id="alice" -> "alice2"). Exact
         # by default restores the prior behavior; the dashboard opts in explicitly.
         use_substring_matching = substring_matching and is_proxy_admin
-
         # Admins may omit user_id to list all keys; non-admins are scoped to self.
         if not user_id and not is_proxy_admin:
             user_id = user_api_key_dict.user_id
@@ -5343,6 +5438,8 @@ async def list_keys(
             agent_id=agent_id,
             use_substring_matching=use_substring_matching,
             expires_filter=expires if isinstance(expires, str) else None,
+            active_only=effective_active_only,
+            active_team_branches_only=aggregate_team_active_only,
         )
 
         verbose_proxy_logger.debug("Successfully prepared response")
@@ -5571,6 +5668,8 @@ def _build_key_filter_conditions(
     agent_id: Optional[str] = None,
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
+    active_only: bool = False,
+    active_team_branches_only: bool = False,
 ) -> Dict[str, Union[str, Dict[str, Any], List[Dict[str, Any]]]]:
     """Build filter conditions for key listing.
 
@@ -5588,6 +5687,14 @@ def _build_key_filter_conditions(
 
     # Build the OR conditions for user's keys and admin team keys
     or_conditions: List[Dict[str, Any]] = []
+    active_team_conditions: List[Dict[str, Any]] = (
+        [
+            {"OR": [{"blocked": False}, {"blocked": None}]},
+            _build_expires_where_clause("active", datetime.now(timezone.utc)),
+        ]
+        if active_team_branches_only
+        else []
+    )
 
     # Base conditions for user's own keys
     user_condition: Dict[str, Any] = {}
@@ -5646,7 +5753,10 @@ def _build_key_filter_conditions(
 
     # Add condition for admin team keys (admins see ALL team keys)
     if admin_team_ids:
-        or_conditions.append({"team_id": {"in": admin_team_ids}})
+        admin_team_condition: Dict[str, Any] = {"team_id": {"in": admin_team_ids}}
+        if active_team_conditions:
+            admin_team_condition = {"AND": [admin_team_condition, *active_team_conditions]}
+        or_conditions.append(admin_team_condition)
 
     # Add condition for member team service accounts (members only see keys with user_id=NULL)
     if member_team_ids:
@@ -5658,6 +5768,7 @@ def _build_key_filter_conditions(
                     "AND": [
                         {"team_id": {"in": member_only_team_ids}},
                         {"user_id": None},
+                        *active_team_conditions,
                     ]
                 }
             )
@@ -5680,6 +5791,14 @@ def _build_key_filter_conditions(
         where = {"AND": [where, {"agent_id": agent_id}]}
     if expires_filter is not None and expires_filter in VALID_EXPIRES_FILTER_VALUES:
         where = {"AND": [where, _build_expires_where_clause(expires_filter, datetime.now(timezone.utc))]}
+    if active_only:
+        where = {
+            "AND": [
+                where,
+                {"OR": [{"blocked": False}, {"blocked": None}]},
+                _build_expires_where_clause("active", datetime.now(timezone.utc)),
+            ]
+        }
 
     verbose_proxy_logger.debug(f"Filter conditions: {where}")
     return where
@@ -5710,6 +5829,8 @@ async def _list_key_helper(
     agent_id: Optional[str] = None,
     use_substring_matching: bool = False,
     expires_filter: str | None = None,
+    active_only: bool = False,
+    active_team_branches_only: bool = False,
 ) -> KeyListResponseObject:
     """
     Helper function to list keys
@@ -5748,6 +5869,8 @@ async def _list_key_helper(
         agent_id=agent_id,
         use_substring_matching=use_substring_matching,
         expires_filter=expires_filter,
+        active_only=active_only,
+        active_team_branches_only=active_team_branches_only,
     )
 
     # Calculate skip for pagination
@@ -6004,6 +6127,7 @@ async def block_key(
             param="key",
             code=status.HTTP_404_NOT_FOUND,
         )
+    _reject_managed_personal_key_mutation(existing_record)
 
     if litellm.store_audit_logs is True:
         asyncio.create_task(
@@ -6115,6 +6239,7 @@ async def unblock_key(
             param="key",
             code=status.HTTP_404_NOT_FOUND,
         )
+    _reject_managed_personal_key_mutation(existing_record)
 
     if litellm.store_audit_logs is True:
         asyncio.create_task(

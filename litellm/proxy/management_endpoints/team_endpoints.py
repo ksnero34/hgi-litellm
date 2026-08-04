@@ -78,6 +78,9 @@ from litellm.proxy.auth.auth_checks import (
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.callback_utils import encrypt_callback_vars
 from litellm.proxy.common_utils.json_merge_patch import apply_json_merge_patch
+from litellm.proxy.customizations.feature_policy import OSS_TEAM_METADATA_FIELDS
+from litellm.proxy.customizations.observability_scope import resolve_observability_scope
+from litellm.proxy.customizations.personal_key_policy import SSO_MANAGED_TEAM_IDS_METADATA_KEY
 from litellm.proxy.management_endpoints.common_utils import (
     _check_passthrough_routes_caller_permission,
     _is_user_org_admin_for_team,
@@ -139,6 +142,16 @@ from litellm.types.proxy.management_endpoints.team_endpoints import (
 )
 
 router = APIRouter()
+
+
+def _update_team_metadata_fields(updated_kv: dict) -> None:
+    policies = updated_kv.get("policies")
+    _update_metadata_fields(
+        updated_kv=updated_kv,
+        premium_exempt_fields=OSS_TEAM_METADATA_FIELDS,
+    )
+    if policies is not None:
+        updated_kv["policies"] = policies
 
 
 def _sanitize_for_log(value: Any) -> str:
@@ -1205,6 +1218,7 @@ async def new_team(
                     object_data=complete_team_data,
                     field_name=field,
                     value=getattr(data, field),
+                    premium_exempt_fields=OSS_TEAM_METADATA_FIELDS,
                 )
 
         for field in LiteLLM_ManagementEndpoint_MetadataFields:
@@ -1886,7 +1900,7 @@ async def update_team(
             )
 
         # update team metadata fields
-        _update_metadata_fields(updated_kv=updated_kv)
+        _update_team_metadata_fields(updated_kv=updated_kv)
 
         if updated_kv.get("metadata") is not None:
             updated_kv["metadata"] = encrypt_callback_vars(updated_kv["metadata"])
@@ -5149,6 +5163,7 @@ async def get_team_daily_activity(
     if exclude_team_ids:
         exclude_team_ids_list = exclude_team_ids.split(",") if exclude_team_ids else None
 
+    user_info = None
     if not _user_has_admin_view(user_api_key_dict):
         user_info = await get_user_object(
             user_id=user_api_key_dict.user_id,
@@ -5164,7 +5179,44 @@ async def get_team_daily_activity(
                 status_code=404,
                 detail={"error": "User= {} not found".format(user_api_key_dict.user_id)},
             )
-
+    user_metadata = user_info.metadata if user_info is not None and isinstance(user_info.metadata, dict) else {}
+    observability_scope = (
+        await resolve_observability_scope(
+            prisma_client=prisma_client,
+            user_api_key_dict=user_api_key_dict,
+            user=user_info,
+        )
+        if SSO_MANAGED_TEAM_IDS_METADATA_KEY in user_metadata
+        else None
+    )
+    oidc_key_hashes: tuple[str, ...] | None = None
+    if observability_scope is not None:
+        observable_team_ids = tuple(team_id for team_id, _ in observability_scope.team_key_hashes)
+        selected_team_ids = tuple(team_ids_list) if team_ids_list is not None else observable_team_ids
+        unauthorized_team_ids = tuple(team_id for team_id in selected_team_ids if team_id not in observable_team_ids)
+        if unauthorized_team_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Not authorized to view team activity for the requested team_ids"},
+            )
+        team_ids_list = list(selected_team_ids)
+        selected_key_hashes = tuple(
+            dict.fromkeys(
+                key_hash
+                for selected_team_id in selected_team_ids
+                for key_hash in observability_scope.key_hashes_for_team(selected_team_id)
+            )
+        )
+        requested_key_hash = (
+            prisma_client.hash_token(token=api_key) if api_key and api_key.startswith("sk-") else api_key
+        )
+        if requested_key_hash is not None and requested_key_hash not in selected_key_hashes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Not authorized to view team activity for the requested api_key"},
+            )
+        oidc_key_hashes = (requested_key_hash,) if requested_key_hash is not None else selected_key_hashes or ("",)
+    elif user_info is not None:
         if team_ids_list is None:
             team_ids_list = user_info.teams
         else:
@@ -5198,7 +5250,7 @@ async def get_team_daily_activity(
     # filtering the entire response by their own API keys (they can re-
     # request the admin-only teams separately to get the wider view).
     user_api_keys: Optional[List[str]] = None
-    if not _user_has_admin_view(user_api_key_dict) and team_ids_list and team_aliases:
+    if observability_scope is None and not _user_has_admin_view(user_api_key_dict) and team_ids_list and team_aliases:
         has_full_team_view = True
         for team_alias in team_aliases:
             team_obj = LiteLLM_TeamTable(**team_alias.model_dump())
@@ -5224,7 +5276,9 @@ async def get_team_daily_activity(
                 user_api_keys = [""]  # Use empty string to ensure no matches
 
     # If api_key parameter is provided, use it; otherwise use user_api_keys if set
-    final_api_key_filter: Optional[Union[str, List[str]]] = api_key
+    final_api_key_filter: Optional[Union[str, List[str]]] = (
+        list(oidc_key_hashes) if oidc_key_hashes is not None else api_key
+    )
     if final_api_key_filter is None and user_api_keys is not None:
         final_api_key_filter = user_api_keys
 

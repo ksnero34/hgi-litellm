@@ -2,6 +2,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../../tests/test-utils";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import { modelAvailableCall } from "../networking";
 import { KeyEditView } from "./key_edit_view";
@@ -211,6 +213,8 @@ describe("KeyEditView", () => {
   });
 
   beforeEach(() => {
+    window.localStorage.setItem(languageStorageKey, "en");
+    void i18n.changeLanguage("en");
     vi.clearAllMocks();
   });
 
@@ -917,11 +921,11 @@ describe("KeyEditView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Key Type")).toBeInTheDocument();
+      expect(screen.getByText("Select key type")).toBeInTheDocument();
     });
 
     // The selected key type label should show "AI APIs" (not "LLM API")
-    const keyTypeSection = screen.getByText("Key Type").closest(".ant-form-item")!;
+    const keyTypeSection = screen.getByText("Select key type").closest(".ant-form-item")!;
     expect(keyTypeSection).toBeInTheDocument();
 
     // Open the dropdown to see all options

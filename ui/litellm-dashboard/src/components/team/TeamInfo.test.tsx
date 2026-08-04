@@ -867,6 +867,30 @@ describe("TeamInfoView", () => {
         );
       });
     });
+
+    it("should send an empty policies list when saving a team without policies", async () => {
+      const user = userEvent.setup({ delay: null });
+      vi.mocked(networking.teamInfoCall).mockResolvedValue(createMockTeamData({ policies: [], models: ["gpt-4"] }));
+      vi.mocked(networking.teamUpdateCall).mockResolvedValue({ data: {}, team_id: "123" } as any);
+
+      renderWithProviders(<TeamInfoView {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.queryAllByText("Test Team").length).toBeGreaterThan(0);
+      });
+      await user.click(screen.getByRole("tab", { name: "Settings" }));
+      await user.click(await screen.findByRole("button", { name: /edit settings/i }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Team Name")).toBeInTheDocument();
+      });
+
+      await user.click(await screen.findByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(networking.teamUpdateCall).toHaveBeenCalledWith("test-token", expect.objectContaining({ policies: [] }));
+      });
+    });
   });
 
   describe("model aliases", () => {

@@ -238,9 +238,9 @@ class TestMCPRequestHandler:
             # Explicit key subset is still honored under the flag (intersected
             # with the team ceiling) — the flag only removes empty-key inheritance.
             (["team_server1"], [], ["team_server1"], "explicit_subset_survives"),
-            # An access-group grant is the escape hatch: it surfaces even though
-            # the key inherits nothing from the team.
-            ([], ["granted_server"], ["granted_server"], "access_group_grant_survives"),
+            # Access-group grants still provide explicit key scope when they are
+            # within the team ceiling.
+            ([], ["team_server1"], ["team_server1"], "access_group_grant_survives"),
         ],
     )
     async def test_require_key_mcp_access_defined_preserves_explicit_grants(
@@ -537,35 +537,28 @@ class TestMCPRequestHandler:
     @pytest.mark.parametrize(
         "key_servers,team_servers,grant_servers,expected,scenario",
         [
-            # Key has no own scope, restrictive team ceiling {test}, server
-            # granted only via key.access_group_ids → caller sees team's server
-            # AND the grant (grant is added on top of the ceiling).
             (
                 [],
                 ["test"],
                 ["context7"],
-                ["context7", "test"],
-                "grant_over_team_ceiling",
+                ["test"],
+                "grant_outside_team_ceiling_denied",
             ),
-            # key {a} ∩ team {b} = {} ; the grant still surfaces, proving grants
-            # are unioned with the ceiling, not intersected against it.
             (
                 ["a"],
                 ["b"],
                 ["context7"],
-                ["context7"],
-                "grant_survives_empty_intersection",
+                [],
+                "grant_cannot_restore_empty_intersection",
             ),
             # No grant → ceiling behavior is unchanged (no additive leakage).
             (["x", "y"], ["x"], [], ["x"], "no_grant_keeps_intersection"),
         ],
     )
-    async def test_access_group_grants_are_additive_over_ceiling(
+    async def test_access_group_grants_respect_team_ceiling(
         self, key_servers, team_servers, grant_servers, expected, scenario
     ):
-        """Regression: key.access_group_ids grants are unioned on top of the
-        key/team MCP ceiling, so a grant reaches the caller even when the team
-        ceiling does not include it (and even when key ∩ team is empty)."""
+        """Key access-group grants cannot widen an explicit team MCP ceiling."""
         mock_user_auth = UserAPIKeyAuth(
             api_key="test-key",
             user_id="test-user",
@@ -4268,7 +4261,7 @@ class TestOrgMCPPermissions:
 
 
 # ---------------------------------------------------------------------------
-# LIT-3189: key unified access_group_ids extend team MCP scope
+# LIT-3189: key unified access_group_ids grant MCP scope
 # ---------------------------------------------------------------------------
 
 
@@ -4424,11 +4417,8 @@ async def test_mcp_key_access_group_extras_when_group_has_no_servers():
 
 @pytest.mark.asyncio
 async def test_mcp_key_access_group_extras_granted_even_when_group_authorizes_neither():
-    """Grants are ungated: attaching the group to the key is itself the grant, so its
-    servers are contributed even when assigned_team_ids/assigned_key_ids exclude this
-    caller. (A team member self-assigning a foreign group to reach past the team
-    ceiling is a known, accepted-for-now tradeoff; restricting who may set
-    key.access_group_ids is a separate concern.)"""
+    """Attaching a group to a key resolves its servers without re-checking the
+    group's assignment fields; final authorization still applies the team ceiling."""
     valid_token = UserAPIKeyAuth(
         token="team-a-token",
         access_group_ids=["team-b-mcp-group"],
@@ -4480,11 +4470,8 @@ async def test_mcp_key_access_group_extras_when_get_access_object_raises():
 
 
 @pytest.mark.asyncio
-async def test_get_allowed_mcp_servers_unions_key_access_group_extras():
-    """End-to-end: team has [srv-team], key access group grants [srv-extra] → both in final list.
-
-    Without this fix [srv-extra] would be intersected away because the team doesn't list it.
-    """
+async def test_get_allowed_mcp_servers_caps_key_access_group_extras_to_team():
+    """A key access-group grant cannot widen an explicit team MCP ceiling."""
     auth = UserAPIKeyAuth(
         token="test-token",
         api_key="test-key",
@@ -4513,7 +4500,7 @@ async def test_get_allowed_mcp_servers_unions_key_access_group_extras():
         ),
     ):
         result = await MCPRequestHandler.get_allowed_mcp_servers(auth)
-        assert sorted(result) == ["srv-extra", "srv-team"]
+        assert result == ["srv-team"]
 
 
 @pytest.mark.asyncio

@@ -2373,8 +2373,13 @@ class MCPServerManager:
         3. Otherwise, use standard permission checks
         """
         from litellm.proxy.management_endpoints.common_utils import _user_has_admin_view
+        from litellm.proxy.customizations.personal_key_policy import read_personal_key_metadata
 
         allow_all_server_ids = self.get_allow_all_keys_server_ids()
+        managed_personal_key = (
+            user_api_key_auth is not None
+            and read_personal_key_metadata(getattr(user_api_key_auth, "metadata", None)) is not None
+        )
 
         # A keyless admitted subject is resolved per grant source, and channel decisions that are
         # absolute for a scoped KEY credential are not absolute for it: its own opt-out silences its
@@ -2406,7 +2411,7 @@ class MCPServerManager:
         # only keys without their own mcp_servers list get submitted servers unioned in.
         submitted_server_ids = (
             []
-            if has_explicit_object_permission
+            if has_explicit_object_permission or managed_personal_key
             else await self._get_active_submitted_mcp_server_ids_for_user(user_api_key_auth)
         )
 
@@ -2429,11 +2434,10 @@ class MCPServerManager:
             combined_servers.update(
                 await self.operator_open_server_ids(
                     user_api_key_auth,
-                    allow_all_server_ids=allow_all_server_ids,
+                    allow_all_server_ids=[] if managed_personal_key else allow_all_server_ids,
                     submitted_server_ids=submitted_server_ids,
                 )
             )
-
             # For anonymous callers (no user_id, no role), also surface any
             # servers the operator has opted into upstream-delegated auth.
             # These servers handle their own auth at the upstream level, so
@@ -2473,6 +2477,8 @@ class MCPServerManager:
                 "Failed to get allowed MCP servers; team-level object_permission "
                 "grants may be dropped. Falling back to global and submitted servers."
             )
+            if managed_personal_key:
+                return []
             return list(dict.fromkeys(allow_all_server_ids + submitted_server_ids))
 
     async def resolve_toolset_tool_permissions(

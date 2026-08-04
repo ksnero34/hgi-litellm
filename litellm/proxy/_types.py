@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Required, TypedDict
+from typing_extensions import NotRequired, Required, TypedDict
 
 from litellm._uuid import uuid
 from litellm.constants import MCP_STDIO_ALLOWED_COMMANDS
@@ -628,6 +628,7 @@ class LiteLLMRoutes(enum.Enum):
         "/spend/logs",
         "/spend/logs/v2",
         "/spend/logs/ui",
+        "/spend/logs/ui/{request_id}",
         "/spend/logs/session/ui",
         # Reads end users out of spend logs, scoped to the caller's own rows and
         # permitted teams exactly like /spend/logs/ui — it belongs to the same
@@ -745,6 +746,8 @@ class LiteLLMRoutes(enum.Enum):
     )
 
     self_managed_routes = [
+        "/internal/personal-key",
+        "/internal/personal-key/rotate",
         "/team/member_add",
         "/team/member_delete",
         "/team/member_update",
@@ -756,6 +759,7 @@ class LiteLLMRoutes(enum.Enum):
         "/model/update",
         "/model/delete",
         "/user/daily/activity",
+        "/user/daily/activity/aggregated",
         "/user/available_roles",  # read-only role metadata; any authenticated user may read
         "/user/list",  # org admins checked in endpoint; non-admins get 403
         "/model/{model_id}/update",
@@ -1129,6 +1133,7 @@ class GenerateKeyResponse(KeyRequestBase):
     key_name: Optional[str] = None
     key_type: str | None = None
     expires: Optional[datetime] = None
+    previous_key_revoke_at: datetime | None = None
     user_id: Optional[str] = None
     token_id: Optional[str] = None
     organization_id: Optional[str] = None
@@ -1195,7 +1200,7 @@ class RegenerateKeyRequest(GenerateKeyRequest):
     spend: Optional[float] = None
     metadata: Optional[dict] = None
     new_master_key: Optional[str] = None
-    grace_period: Optional[str] = None  # Duration to keep old key valid (e.g. "24h", "2d"); None = immediate revoke
+    grace_period: Optional[str] = None  # Duration to keep old key valid; None uses the configured 72h default
 
 
 class ResetSpendRequest(LiteLLMPydanticObjectBase):
@@ -3276,6 +3281,12 @@ class AllCallbacks(LiteLLMPydanticObjectBase):
     )
 
 
+class SpendLogsPolicyInformation(TypedDict):
+    policy_name: str
+    policy_id: NotRequired[str]
+    source: NotRequired[str]
+
+
 class SpendLogsMetadata(TypedDict):
     """
     Specific metadata k,v pairs logged to spendlogs for easier cost tracking
@@ -3294,6 +3305,9 @@ class SpendLogsMetadata(TypedDict):
     requester_ip_address: Optional[str]
     litellm_call_id: Optional[str]
     applied_guardrails: Optional[List[str]]
+    applied_policies: list[str] | None
+    policy_sources: dict[str, str] | None
+    policy_information: list[SpendLogsPolicyInformation] | None
     mcp_tool_call_metadata: Optional[StandardLoggingMCPToolCall]
     vector_store_request_metadata: Optional[List[StandardLoggingVectorStoreRequest]]
     guardrail_information: Optional[List[StandardLoggingGuardrailInformation]]
@@ -4548,6 +4562,10 @@ class BaseDailySpendTransaction(TypedDict):
     api_requests: int
     successful_requests: int
     failed_requests: int
+    response_time_ms_sum: NotRequired[float]
+    response_time_count: NotRequired[int]
+    ttft_ms_sum: NotRequired[float]
+    ttft_count: NotRequired[int]
 
 
 class DailyTeamSpendTransaction(BaseDailySpendTransaction):

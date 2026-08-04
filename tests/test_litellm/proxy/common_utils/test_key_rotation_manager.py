@@ -21,6 +21,11 @@ from litellm.proxy.common_utils.key_rotation_manager import KeyRotationManager
 class TestKeyRotationManager:
     """Test the KeyRotationManager class functionality."""
 
+    def test_default_grace_period_is_72_hours(self):
+        from litellm.constants import LITELLM_KEY_ROTATION_GRACE_PERIOD
+
+        assert LITELLM_KEY_ROTATION_GRACE_PERIOD == "72h"
+
     @pytest.mark.asyncio
     async def test_should_rotate_key_logic(self):
         """
@@ -198,11 +203,7 @@ class TestKeyRotationManager:
             "litellm.proxy.common_utils.key_rotation_manager.regenerate_key_fn",
             return_value=mock_response,
         ):
-            with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook"
-            ):
-                # Execute
-                await manager._rotate_key(key_to_rotate)
+            await manager._rotate_key(key_to_rotate)
 
         # Verify database update was called with correct data
         mock_prisma_client.db.litellm_verificationtoken.update.assert_called_once()
@@ -278,14 +279,10 @@ class TestKeyRotationManager:
         ) as mock_regenerate:
             mock_regenerate.return_value = mock_response
             with patch(
-                "litellm.proxy.common_utils.key_rotation_manager.KeyManagementEventHooks.async_key_rotated_hook",
-                new_callable=AsyncMock,
+                "litellm.proxy.common_utils.key_rotation_manager.LITELLM_KEY_ROTATION_GRACE_PERIOD",
+                "48h",
             ):
-                with patch(
-                    "litellm.proxy.common_utils.key_rotation_manager.LITELLM_KEY_ROTATION_GRACE_PERIOD",
-                    "48h",
-                ):
-                    await manager._rotate_key(key_to_rotate)
+                await manager._rotate_key(key_to_rotate)
 
             mock_regenerate.assert_called_once()
             call_args = mock_regenerate.call_args

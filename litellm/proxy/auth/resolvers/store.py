@@ -134,12 +134,13 @@ class IdentityStore:
                     f"Failed to load object_permission for key with object_permission_id={key.object_permission_id}: {e}"
                 )
 
-        await _cache_key_object(
-            hashed_token=hashed_token,
-            user_api_key_obj=key,
-            user_api_key_cache=self._cache,
-            proxy_logging_obj=self._proxy_logging_obj,
-        )
+        if key.token == hashed_token:
+            await _cache_key_object(
+                hashed_token=hashed_token,
+                user_api_key_obj=key,
+                user_api_key_cache=self._cache,
+                proxy_logging_obj=self._proxy_logging_obj,
+            )
         return key
 
     @staticmethod

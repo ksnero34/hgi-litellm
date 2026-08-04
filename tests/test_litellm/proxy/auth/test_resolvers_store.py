@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -68,3 +69,25 @@ async def test_resolve_raises_without_a_db_connection():
     store = IdentityStore(None, _FakeCache())
     with pytest.raises(NoDatabaseConnectionError):
         await store.resolve(hashed_token="missing")
+
+
+@pytest.mark.parametrize(
+    ("resolved_hash", "expected_cache_calls"),
+    (("presented-hash", 1), ("active-hash", 0)),
+)
+async def test_resolve_only_caches_the_presented_active_key(
+    resolved_hash: str,
+    expected_cache_calls: int,
+):
+    cache = MagicMock()
+    cache.async_get_cache = AsyncMock(return_value=None)
+    cache.async_set_cache = AsyncMock()
+    prisma = MagicMock()
+    prisma.get_data = AsyncMock(return_value=UserAPIKeyAuth(token=resolved_hash, user_id="u-1"))
+    store = IdentityStore(prisma, cache)
+
+    principal = await store.resolve(hashed_token="presented-hash")
+
+    assert principal.source_key is not None
+    assert principal.source_key.token == resolved_hash
+    assert cache.async_set_cache.await_count == expected_cache_calls

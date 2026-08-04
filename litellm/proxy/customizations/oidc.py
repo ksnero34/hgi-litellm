@@ -191,11 +191,11 @@ async def resolve_generic_oidc_endpoints(
             "Set GENERIC_DISCOVERY_URL or provide the missing endpoint variables: " + ", ".join(missing_fields)
         )
     if not isinstance(resolved_authorization_endpoint, str):
-        raise ValueError("GENERIC_AUTHORIZATION_ENDPOINT must be a string")
+        raise TypeError("GENERIC_AUTHORIZATION_ENDPOINT must be a string")
     if not isinstance(resolved_token_endpoint, str):
-        raise ValueError("GENERIC_TOKEN_ENDPOINT must be a string")
+        raise TypeError("GENERIC_TOKEN_ENDPOINT must be a string")
     if not isinstance(resolved_userinfo_endpoint, str):
-        raise ValueError("GENERIC_USERINFO_ENDPOINT must be a string")
+        raise TypeError("GENERIC_USERINFO_ENDPOINT must be a string")
     return GenericOIDCEndpoints(
         authorization_endpoint=_validate_http_url(
             resolved_authorization_endpoint,

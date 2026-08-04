@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from fastapi import Request
+from prisma import Prisma
+from prisma.models import LiteLLM_UserTable
 
 from litellm.proxy._types import (
     LitellmUserRoles,
@@ -218,6 +220,49 @@ def _updated_members_with_roles(
     return [*other_members, existing_member]
 
 
+async def _sync_department_team_rows(
+    tx: Prisma,
+    current_user: LiteLLM_UserTable,
+    user_id: str,
+    managed_team_ids: list[str],
+    target_set: set[str],
+) -> None:
+    for team_id in managed_team_ids:
+        await tx.query_raw(
+            'SELECT "team_id" FROM "LiteLLM_TeamTable" WHERE "team_id" = $1 FOR UPDATE',
+            team_id,
+        )
+    for team_id in managed_team_ids:
+        team = await tx.litellm_teamtable.find_unique(where={"team_id": team_id})
+        if team is None:
+            raise ValueError(f"SSO department team {team_id} no longer exists")
+        updated_members = _updated_members_with_roles(
+            members_with_roles=team.members_with_roles,
+            user_id=user_id,
+            user_email=getattr(current_user, "user_email", None),
+            include_user=team_id in target_set,
+        )
+        await tx.litellm_teamtable.update(
+            where={"team_id": team_id},
+            data={"members_with_roles": json.dumps(updated_members)},
+        )
+
+
+async def _sync_department_memberships(
+    tx: Prisma,
+    user_id: str,
+    previous_set: set[str],
+    target_set: set[str],
+) -> None:
+    for team_id in sorted(previous_set - target_set):
+        await tx.litellm_teammembership.delete_many(where={"user_id": user_id, "team_id": team_id})
+    for team_id in sorted(target_set):
+        await tx.litellm_teammembership.upsert(
+            where={"user_id_team_id": {"user_id": user_id, "team_id": team_id}},
+            data={"create": {"user_id": user_id, "team_id": team_id}, "update": {}},
+        )
+
+
 async def sync_sso_team_memberships(
     prisma_client: PrismaClient,
     user_info: Any,
@@ -243,33 +288,8 @@ async def sync_sso_team_memberships(
         previous_set = set(previous_team_ids)
         current_set = set(current_user.teams or [])
         managed_team_ids = sorted(previous_set | target_set)
-        for team_id in managed_team_ids:
-            await tx.query_raw(
-                'SELECT "team_id" FROM "LiteLLM_TeamTable" WHERE "team_id" = $1 FOR UPDATE',
-                team_id,
-            )
-        for team_id in managed_team_ids:
-            team = await tx.litellm_teamtable.find_unique(where={"team_id": team_id})
-            if team is None:
-                raise ValueError(f"SSO department team {team_id} no longer exists")
-            updated_members = _updated_members_with_roles(
-                members_with_roles=team.members_with_roles,
-                user_id=user_id,
-                user_email=getattr(current_user, "user_email", None),
-                include_user=team_id in target_set,
-            )
-            await tx.litellm_teamtable.update(
-                where={"team_id": team_id},
-                data={"members_with_roles": json.dumps(updated_members)},
-            )
-
-        for team_id in sorted(previous_set - target_set):
-            await tx.litellm_teammembership.delete_many(where={"user_id": user_id, "team_id": team_id})
-        for team_id in sorted(target_set):
-            await tx.litellm_teammembership.upsert(
-                where={"user_id_team_id": {"user_id": user_id, "team_id": team_id}},
-                data={"create": {"user_id": user_id, "team_id": team_id}, "update": {}},
-            )
+        await _sync_department_team_rows(tx, current_user, user_id, managed_team_ids, target_set)
+        await _sync_department_memberships(tx, user_id, previous_set, target_set)
 
         metadata[SSO_MANAGED_TEAM_IDS_METADATA_KEY] = sorted(target_set)
         updated_user_teams = sorted((current_set - previous_set) | target_set)

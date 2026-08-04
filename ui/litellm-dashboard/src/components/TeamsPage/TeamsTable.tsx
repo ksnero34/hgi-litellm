@@ -14,6 +14,7 @@ import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
 import { useDebouncedValue } from "@tanstack/react-pacer/debouncer";
 import { ColumnFiltersState, OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
 import React, { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Team } from "../key_team_helpers/key_list";
 import { getTeamTableColumns, TEAM_TABLE_HIDDEN_COLUMNS } from "./teamTableColumns";
@@ -34,15 +35,18 @@ const toSortOrder = (sorting: SortingState): "asc" | "desc" | undefined => {
   return active.desc ? "desc" : "asc";
 };
 
-const FILTER_LABELS: Record<string, string> = {
-  org_id: "Organization",
-  alias: "Team alias",
-  team_id: "Team ID",
-};
-
 export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDeleteTeam }: TeamsTableProps) {
+  const { t } = useTranslation();
   const { data: fetchedOrganizations } = useOrganizations();
   const organizations = useMemo(() => fetchedOrganizations ?? [], [fetchedOrganizations]);
+  const filterLabels = useMemo(
+    () => ({
+      org_id: t("access.teams.columns.organization", { defaultValue: "Organization" }),
+      alias: t("access.teams.filters.alias", { defaultValue: "Team alias" }),
+      team_id: t("access.teams.columns.teamId", { defaultValue: "Team ID" }),
+    }),
+    [t],
+  );
 
   const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORTING);
   const [tablePagination, setTablePagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
@@ -97,9 +101,9 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
   }, []);
 
   const columns = useMemo(() => {
-    const columnDeps = { organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam };
+    const columnDeps = { organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam, t };
     return getTeamTableColumns(columnDeps);
-  }, [organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam]);
+  }, [organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam, t]);
 
   const orgOptions = useMemo(
     () =>
@@ -142,8 +146,8 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
       enableColumnResizing
       columnResizeMode="onChange"
       isLoading={isLoading}
-      loadingMessage="Loading teams..."
-      noDataMessage="No teams found"
+      loadingMessage={t("access.teams.table.loading", { defaultValue: "Loading teams..." })}
+      noDataMessage={t("access.teams.table.empty", { defaultValue: "No teams found" })}
       maxBodyHeight="calc(75vh - 210px)"
       size="compact"
       toolbar={(table) => (
@@ -152,43 +156,49 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
             table={table}
             searchValue={searchInput}
             onSearchChange={handleSearchChange}
-            searchPlaceholder="Search teams by name or ID…"
+            searchPlaceholder={t("access.teams.search.placeholder", {
+              defaultValue: "Search teams by name, ID, organization, or model...",
+            })}
             onRefresh={() => refetch?.()}
             isRefreshing={isFetching}
             onOpenFilters={() => setFiltersOpen(true)}
-            filterLabels={FILTER_LABELS}
+            filterLabels={filterLabels}
             formatFilterValue={formatFilterValue}
           />
           <DataTableFilterDrawer
             table={table}
             open={filtersOpen}
             onOpenChange={setFiltersOpen}
-            title="Filters"
-            description="Narrow down your teams"
+            title={t("access.teams.filters.title", { defaultValue: "Filters" })}
+            description={t("access.teams.filters.description", {
+              defaultValue: "Filter teams by organization, alias, or team ID",
+            })}
           >
             {({ get, set }) => (
               <>
-                <DataTableFilterField label="Organization">
+                <DataTableFilterField label={t("access.teams.columns.organization", { defaultValue: "Organization" })}>
                   <SearchSelect
                     options={orgOptions}
                     value={(get("org_id") as string) || undefined}
                     onValueChange={(value) => set("org_id", value)}
-                    placeholder="Select an organization…"
-                    emptyText="No organizations found"
+                    placeholder={t("access.teams.filters.organizationPlaceholder", {
+                      defaultValue: "Select an organization",
+                    })}
+                    emptyText={t("access.teams.filters.noOrganizations", { defaultValue: "No organizations found" })}
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label="Team alias">
+                <DataTableFilterField label={t("access.teams.filters.alias", { defaultValue: "Team alias" })}>
                   <Input
                     value={(get("alias") as string) ?? ""}
                     onChange={(event) => set("alias", event.target.value)}
-                    placeholder="Enter team alias…"
+                    placeholder={t("access.teams.filters.aliasPlaceholder", { defaultValue: "Enter team alias" })}
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label="Team ID">
+                <DataTableFilterField label={t("access.teams.columns.teamId", { defaultValue: "Team ID" })}>
                   <Input
                     value={(get("team_id") as string) ?? ""}
                     onChange={(event) => set("team_id", event.target.value)}
-                    placeholder="Enter team ID…"
+                    placeholder={t("access.teams.filters.teamIdPlaceholder", { defaultValue: "Enter team ID" })}
                   />
                 </DataTableFilterField>
               </>

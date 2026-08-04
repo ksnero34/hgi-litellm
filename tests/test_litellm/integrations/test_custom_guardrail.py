@@ -197,6 +197,31 @@ class TestCustomGuardrailDeploymentHook:
 
 class TestCustomGuardrailShouldRunGuardrail:
 
+    @pytest.mark.parametrize(
+        ("requested_guardrails", "default_on", "expected"),
+        [
+            ([], False, False),
+            (["other_guardrail"], False, False),
+            (["audit_guardrail"], False, True),
+            ([], True, True),
+        ],
+    )
+    def test_logging_only_respects_requested_guardrails(self, requested_guardrails, default_on, expected):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        guardrail = CustomGuardrail(
+            guardrail_name="audit_guardrail",
+            default_on=default_on,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+
+        result = guardrail.should_run_guardrail(
+            data={"metadata": {"guardrails": requested_guardrails}},
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is expected
+
     def test_should_run_guardrail_with_litellm_metadata(self):
         """Test that should_run_guardrail works with litellm_metadata pattern"""
         from litellm.types.guardrails import GuardrailEventHooks
@@ -240,6 +265,54 @@ class TestCustomGuardrailShouldRunGuardrail:
         )
 
         assert result is True
+
+    def test_logging_only_reads_guardrails_from_logging_model_call_details(self):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        custom_guardrail = CustomGuardrail(
+            guardrail_name="virtual-key-guardrail",
+            default_on=False,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+        data = {
+            "litellm_params": {
+                "metadata": {
+                    "guardrails": ["virtual-key-guardrail"],
+                },
+            },
+        }
+
+        result = custom_guardrail.should_run_guardrail(
+            data=data,
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is True
+
+    def test_logging_only_reads_global_disable_from_logging_model_call_details(self):
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        custom_guardrail = CustomGuardrail(
+            guardrail_name="global-guardrail",
+            default_on=True,
+            event_hook=GuardrailEventHooks.logging_only,
+        )
+        data = {
+            "litellm_params": {
+                "metadata": {
+                    "user_api_key_metadata": {
+                        "disable_global_guardrails": True,
+                    },
+                },
+            },
+        }
+
+        result = custom_guardrail.should_run_guardrail(
+            data=data,
+            event_type=GuardrailEventHooks.logging_only,
+        )
+
+        assert result is False
 
     def test_should_run_guardrail_with_root_level_guardrails(self):
         """Test that should_run_guardrail works with root level guardrails"""
@@ -1302,6 +1375,35 @@ class TestEventTypeLogging:
         assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
 
     @pytest.mark.asyncio
+    async def test_log_guardrail_information_infers_event_type_from_apply_guardrail(self):
+        from litellm.integrations.custom_guardrail import log_guardrail_information
+        from litellm.types.guardrails import GuardrailEventHooks
+
+        class TestGuardrail(CustomGuardrail):
+            def __init__(self):
+                super().__init__(
+                    guardrail_name="test_apply_guardrail_event",
+                    event_hook=[GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call],
+                )
+
+            @log_guardrail_information
+            async def apply_guardrail(self, inputs, request_data, input_type):
+                return inputs
+
+        guardrail = TestGuardrail()
+        request_data = {"metadata": {}}
+
+        await guardrail.apply_guardrail(
+            inputs={"texts": ["response"]},
+            request_data=request_data,
+            input_type="response",
+        )
+
+        logged_info = request_data["metadata"]["standard_logging_guardrail_information"]
+        assert logged_info[0]["guardrail_mode"] == GuardrailEventHooks.post_call
+        assert logged_info[0]["guardrail_event"] == GuardrailEventHooks.post_call
+
+    @pytest.mark.asyncio
     async def test_log_guardrail_information_returns_none_for_unknown_function_name(
         self,
     ):
@@ -1738,8 +1840,6 @@ class TestGuardrailInterventionClassification:
 
         slg = request_data["metadata"]["standard_logging_guardrail_information"][0]
         assert slg["guardrail_status"] == "guardrail_intervened"
-
-
 class _ApplyStyleGuardrail(CustomGuardrail):
     """Overrides only apply_guardrail, like openai_moderation; async_pre_call_hook stays the CustomLogger no-op."""
 
@@ -2090,3 +2190,35 @@ class TestRecordsOwnGuardrailInformation:
         )
 
         assert _guardrail_entries(request_data) == []
+
+
+def test_standard_guardrail_information_includes_policy_owners_and_usage_semantics():
+    guardrail = CustomGuardrail(guardrail_name="shared")
+    request_data = {
+        "metadata": {
+            "_guardrail_policy_map": {
+                "shared": [
+                    {"policy_name": "one", "policy_id": "id-one"},
+                    {"policy_name": "two", "policy_id": "id-two"},
+                    {"policy_name": "one", "policy_id": "id-one"},
+                ]
+            }
+        }
+    }
+
+    guardrail.add_standard_logging_guardrail_information_to_request_data(
+        guardrail_json_response="observed",
+        request_data=request_data,
+        guardrail_status="guardrail_intervened",
+        usage_action="flagged",
+        enforcement_mode="observe",
+    )
+
+    information = request_data["metadata"]["standard_logging_guardrail_information"][0]
+    assert information["policy_names"] == ["one", "two"]
+    assert information["policy_ids"] == ["id-one", "id-two"]
+    assert information["policy_name"] == "one"
+    assert information["policy_id"] == "id-one"
+    assert information["guardrail_status"] == "guardrail_intervened"
+    assert information["usage_action"] == "flagged"
+    assert information["enforcement_mode"] == "observe"
