@@ -28,6 +28,7 @@ import litellm
 from litellm.caching.caching import DualCache
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
 from litellm.proxy.utils import ProxyLogging
@@ -261,6 +262,45 @@ async def test_deferred_flag_stores_and_executes_closure():
                 pass
 
 
+@pytest.mark.asyncio
+async def test_deferred_logging_uses_registered_response_snapshot():
+    mock_logging_obj = MagicMock()
+    mock_logging_obj._defer_async_logging = True
+    mock_logging_obj._enqueue_deferred_logging = None
+    masked_response = {"choices": [{"message": {"content": "<PERSON_1>"}}]}
+
+    with patch(
+        "litellm.utils._client_async_logging_helper", new_callable=AsyncMock
+    ) as logging_helper:
+        client_response = await litellm.acompletion(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "hi"}],
+            mock_response="Hello!",
+            litellm_logging_obj=mock_logging_obj,
+        )
+        mock_logging_obj.__dict__["_deferred_logging_result"] = masked_response
+        mock_logging_obj._enqueue_deferred_logging()
+        await asyncio.sleep(0)
+
+    assert client_response.choices[0].message.content == "Hello!"
+    assert logging_helper.await_args.kwargs["result"] is masked_response
+    assert "_deferred_logging_result" not in mock_logging_obj.__dict__
+
+
+def test_deferred_logging_keeps_first_registered_response_snapshot():
+    logging_obj = MagicMock()
+    logging_obj._deferred_logging_result = None
+    masked_response = {"choices": [{"message": {"content": "<PERSON_1>"}}]}
+
+    Logging.set_deferred_logging_result(logging_obj, masked_response)
+    Logging.set_deferred_logging_result(
+        logging_obj,
+        {"choices": [{"message": {"content": "raw pii"}}]},
+    )
+
+    assert logging_obj._deferred_logging_result is masked_response
+
+
 # ---------------------------------------------------------------------------
 # 3. Non-streaming regression: without flag, create_task fires normally
 # ---------------------------------------------------------------------------
@@ -346,6 +386,7 @@ def test_flush_deferred_async_logging_suppressed_on_exception():
 
     logging_obj = MagicMock()
     logging_obj._enqueue_deferred_logging = mock_enqueue
+    logging_obj.__dict__["_deferred_logging_result"] = {"sensitive": "response"}
 
     ProxyBaseLLMRequestProcessing._flush_deferred_async_logging(
         logging_obj=logging_obj,
@@ -358,6 +399,7 @@ def test_flush_deferred_async_logging_suppressed_on_exception():
     )
     # Slot is still cleared so a follow-up flush does not double-fire.
     assert logging_obj._enqueue_deferred_logging is None
+    assert "_deferred_logging_result" not in logging_obj.__dict__
 
 
 def test_flush_deferred_async_logging_noop_when_no_closure_stored():

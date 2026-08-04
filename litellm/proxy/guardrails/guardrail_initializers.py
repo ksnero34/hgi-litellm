@@ -82,8 +82,23 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
     )
 
     filter_scope = getattr(litellm_params, "presidio_filter_scope", None) or "both"
-    run_input = filter_scope in ("input", "both")
-    run_output = filter_scope in ("output", "both")
+    configured_modes = litellm_params.mode
+    if isinstance(configured_modes, str):
+        modes = {configured_modes}
+    elif isinstance(configured_modes, list):
+        modes = set(configured_modes)
+    else:
+        default_modes = configured_modes.default
+        modes = {default_modes} if isinstance(default_modes, str) else set(default_modes or [])
+    has_composite_audit_mode = GuardrailEventHooks.logging_only.value in modes and len(modes) > 1
+    run_input = filter_scope in ("input", "both") and (
+        not has_composite_audit_mode or GuardrailEventHooks.pre_call.value in modes
+    )
+    run_output = filter_scope in ("output", "both") and (
+        not has_composite_audit_mode or GuardrailEventHooks.post_call.value in modes
+    )
+    explicit_fallback = "unreachable_fallback" in litellm_params.model_fields_set
+    unreachable_fallback = litellm_params.unreachable_fallback if explicit_fallback else "fail_open"
 
     def _make_presidio_callback(**overrides):
         params = dict(
@@ -99,7 +114,9 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
             presidio_anonymizer_api_base=litellm_params.presidio_anonymizer_api_base,
             presidio_language=litellm_params.presidio_language,
             presidio_entities_deny_list=litellm_params.presidio_entities_deny_list,
+            presidio_filter_scope=filter_scope,
             apply_to_output=False,
+            unreachable_fallback=unreachable_fallback,
         )
         params.update(overrides)
         callback = _OPTIONAL_PresidioPIIMasking(**params)
@@ -108,14 +125,17 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
 
     primary_callback = None
 
-    if run_input:
-        primary_callback = _make_presidio_callback()
+    if modes == {GuardrailEventHooks.logging_only.value}:
+        return _make_presidio_callback(
+            event_hook=GuardrailEventHooks.logging_only.value,
+            logging_only=True,
+        )
 
-        if litellm_params.output_parse_pii:
-            _make_presidio_callback(
-                output_parse_pii=True,
-                event_hook=GuardrailEventHooks.post_call.value,
-            )
+    if run_input:
+        primary_callback = _make_presidio_callback(
+            event_hook=GuardrailEventHooks.pre_call.value,
+            expand_event_hook_for_output_processing=False,
+        )
 
     if run_output:
         output_callback = _make_presidio_callback(
@@ -125,6 +145,21 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
         )
         if primary_callback is None:
             primary_callback = output_callback
+
+    if run_input and litellm_params.output_parse_pii:
+        _make_presidio_callback(
+            output_parse_pii=True,
+            event_hook=GuardrailEventHooks.post_call.value,
+        )
+
+    if GuardrailEventHooks.logging_only.value in modes:
+        audit_callback = _make_presidio_callback(
+            event_hook=GuardrailEventHooks.logging_only.value,
+            logging_only=True,
+            output_parse_pii=False,
+        )
+        if primary_callback is None:
+            primary_callback = audit_callback
 
     return primary_callback
 

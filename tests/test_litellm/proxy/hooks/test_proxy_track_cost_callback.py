@@ -11,12 +11,41 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.db.db_spend_update_writer import LOGGING_ONLY_GUARDRAILS_PENDING_KWARG
 from litellm.proxy.hooks.proxy_track_cost_callback import (
     _ProxyDBLogger,
     _get_budget_reservation_from_metadata,
     _should_track_cost_callback,
     _update_database_and_spend_counters,
 )
+
+
+@pytest.mark.asyncio
+async def test_proxy_db_logger_writes_once_then_updates_guardrail_results():
+    logger = _ProxyDBLogger()
+    kwargs = {}
+    response = MagicMock()
+    start_time = datetime.now()
+    end_time = datetime.now()
+
+    with (
+        patch.object(logger, "_PROXY_track_cost_callback", new_callable=AsyncMock) as track_cost,
+        patch(
+            "litellm.proxy.proxy_server.proxy_logging_obj.db_spend_update_writer.update_guardrail_results",
+            new_callable=AsyncMock,
+        ) as update_guardrail_results,
+    ):
+        await logger.async_log_pending_guardrail_event(kwargs, response, start_time, end_time)
+        await logger.async_log_success_event(kwargs, response, start_time, end_time)
+
+    assert kwargs[LOGGING_ONLY_GUARDRAILS_PENDING_KWARG] is True
+    track_cost.assert_awaited_once_with(kwargs, response, start_time, end_time)
+    update_guardrail_results.assert_awaited_once_with(
+        kwargs=kwargs,
+        completion_response=response,
+        start_time=start_time,
+        end_time=end_time,
+    )
 
 
 @pytest.mark.asyncio

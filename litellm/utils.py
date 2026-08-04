@@ -1745,10 +1745,11 @@ def client(original_function):
                 if getattr(logging_obj, "_defer_async_logging", False):
 
                     def _enqueue_deferred_logging() -> None:
+                        deferred_result = logging_obj.__dict__.pop("_deferred_logging_result", None)
                         asyncio.create_task(
                             _client_async_logging_helper(
                                 logging_obj=logging_obj,
-                                result=result,
+                                result=result if deferred_result is None else deferred_result,
                                 start_time=start_time,
                                 end_time=end_time,
                                 is_completion_with_fallbacks=is_completion_with_fallbacks,

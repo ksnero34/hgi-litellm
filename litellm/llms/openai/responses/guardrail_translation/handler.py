@@ -28,7 +28,7 @@ Output: response.output is List[GenericResponseOutputItem] where each has:
     - text: str
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic import BaseModel
@@ -38,6 +38,8 @@ from litellm.completion_extras.litellm_responses_transformation.transformation i
     OpenAiResponsesToChatCompletionStreamIterator,
 )
 from litellm.llms.base_llm.guardrail_translation.base_translation import BaseTranslation
+from litellm.llms.base_llm.guardrail_translation.utils import effective_skip_system_message_for_guardrail
+from litellm.llms.openai.chat.guardrail_translation.handler import get_guardrail_input_scope
 from litellm.responses.litellm_completion_transformation.transformation import (
     LiteLLMCompletionResponsesConfig,
 )
@@ -52,12 +54,14 @@ from litellm.types.responses.main import (
     OutputFunctionToolCall,
     OutputText,
 )
-from litellm.types.utils import GenericGuardrailAPIInputs
+from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
     from litellm.types.llms.openai import ResponseInputParam
     from litellm.types.utils import ResponsesAPIResponse
+
+InputTextMapping = Tuple[int, Literal["content", "output", "arguments"], Optional[int]]
 
 
 class OpenAIResponsesHandler(BaseTranslation):
@@ -103,11 +107,23 @@ class OpenAIResponsesHandler(BaseTranslation):
         if input_data is None:
             return data
 
+        await self._process_instructions(data, guardrail_to_apply, litellm_logging_obj)
+
         structured_messages = self.get_structured_messages(data)
 
         # Handle simple string input
         if isinstance(input_data, str):
-            inputs = GenericGuardrailAPIInputs(texts=[input_data])
+            inputs = GenericGuardrailAPIInputs(
+                texts=[input_data],
+                text_sources=[
+                    GuardrailInputSource(
+                        type="input",
+                        role="user",
+                        path="input",
+                        scope="current_user_prompt",
+                    )
+                ],
+            )
             original_tools: List[Dict[str, Any]] = []
 
             # Extract and transform tools if present
@@ -141,7 +157,7 @@ class OpenAIResponsesHandler(BaseTranslation):
 
         texts_to_check: List[str] = []
         images_to_check: List[str] = []
-        task_mappings: List[Tuple[int, Optional[int]]] = []
+        task_mappings: List[InputTextMapping] = []
         original_tools_list: List[Dict[str, Any]] = list(data.get("tools") or [])
 
         # Step 1: Extract all text content, images, and tools
@@ -161,6 +177,23 @@ class OpenAIResponsesHandler(BaseTranslation):
         # Step 2: Apply guardrail to all texts in batch
         if texts_to_check:
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            latest_user_message_index = next(
+                (
+                    message_index
+                    for message_index in range(len(input_data) - 1, -1, -1)
+                    if isinstance(input_data[message_index], dict) and input_data[message_index].get("role") == "user"
+                ),
+                None,
+            )
+            inputs["text_sources"] = [
+                self._input_source(
+                    input_data=input_data,
+                    mapping=mapping,
+                    text=texts_to_check[text_index],
+                    latest_user_message_index=latest_user_message_index,
+                )
+                for text_index, mapping in enumerate(task_mappings)
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tools_to_check:
@@ -195,6 +228,70 @@ class OpenAIResponsesHandler(BaseTranslation):
         verbose_proxy_logger.debug("OpenAI Responses API: Processed input messages: %s", input_data)
 
         return data
+
+    async def _process_instructions(
+        self,
+        data: dict,
+        guardrail_to_apply: "CustomGuardrail",
+        litellm_logging_obj: Optional[Any],
+    ) -> None:
+        instructions = data.get("instructions")
+        if not isinstance(instructions, str) or effective_skip_system_message_for_guardrail(guardrail_to_apply):
+            return
+        instruction_inputs = GenericGuardrailAPIInputs(
+            texts=[instructions],
+            text_sources=[
+                GuardrailInputSource(
+                    type="instruction",
+                    role="developer",
+                    path="instructions",
+                    scope="system_prompt",
+                )
+            ],
+        )
+        guardrailed_instruction = await guardrail_to_apply.apply_guardrail(
+            inputs=instruction_inputs,
+            request_data=data,
+            input_type="request",
+            logging_obj=litellm_logging_obj,
+        )
+        instruction_texts = guardrailed_instruction.get("texts", [])
+        if instruction_texts:
+            data["instructions"] = instruction_texts[0]
+
+    def _input_source(
+        self,
+        input_data: List[Any],
+        mapping: InputTextMapping,
+        text: str,
+        latest_user_message_index: Optional[int],
+    ) -> GuardrailInputSource:
+        message_index, field, content_index = mapping
+        message = input_data[message_index]
+        role = str(message.get("role") or "unknown") if isinstance(message, dict) else "unknown"
+        item_type = message.get("type") if isinstance(message, dict) else None
+        scope = (
+            "tool_result"
+            if item_type == "function_call_output"
+            else get_guardrail_input_scope(
+                role=role,
+                message_index=message_index,
+                content_index=content_index,
+                text=text,
+                latest_user_message_index=latest_user_message_index,
+            )
+        )
+        path = f"input[{message_index}].{field}"
+        if content_index is not None:
+            path = f"{path}[{content_index}].text"
+        return GuardrailInputSource(
+            type=str(item_type or "message"),
+            message_index=message_index,
+            role=role,
+            content_index=content_index,
+            path=path,
+            scope=scope,
+        )
 
     def extract_request_tool_names(self, data: dict) -> List[str]:
         """Extract tool names from Responses API request (tools[].name for function
@@ -285,34 +382,68 @@ class OpenAIResponsesHandler(BaseTranslation):
         msg_idx: int,
         texts_to_check: List[str],
         images_to_check: List[str],
-        task_mappings: List[Tuple[int, Optional[int]]],
+        task_mappings: List[InputTextMapping],
     ) -> None:
         """
         Extract text content and images from an input message.
 
         Override this method to customize text/image extraction logic.
         """
+        if not isinstance(message, dict):
+            return
+
+        if message.get("type") == "function_call_output":
+            self._extract_input_text_field(
+                message=message,
+                msg_idx=msg_idx,
+                field="output",
+                texts_to_check=texts_to_check,
+                task_mappings=task_mappings,
+            )
+            return
+
+        if message.get("type") == "function_call":
+            arguments = message.get("arguments")
+            if isinstance(arguments, str):
+                texts_to_check.append(arguments)
+                task_mappings.append((msg_idx, "arguments", None))
+            return
+
         content = message.get("content", None)
         if content is None:
             return
+        self._extract_input_text_field(
+            message=message,
+            msg_idx=msg_idx,
+            field="content",
+            texts_to_check=texts_to_check,
+            task_mappings=task_mappings,
+            images_to_check=images_to_check,
+        )
 
+    def _extract_input_text_field(
+        self,
+        message: Dict[str, Any],
+        msg_idx: int,
+        field: Literal["content", "output"],
+        texts_to_check: List[str],
+        task_mappings: List[InputTextMapping],
+        images_to_check: Optional[List[str]] = None,
+    ) -> None:
+        content = message.get(field)
         if isinstance(content, str):
-            # Simple string content
             texts_to_check.append(content)
-            task_mappings.append((msg_idx, None))
+            task_mappings.append((msg_idx, field, None))
 
         elif isinstance(content, list):
-            # List content (e.g., multimodal with text and images)
             for content_idx, content_item in enumerate(content):
                 if isinstance(content_item, dict):
-                    # Extract text
                     text_str = content_item.get("text", None)
                     if text_str is not None:
                         texts_to_check.append(text_str)
-                        task_mappings.append((msg_idx, int(content_idx)))
+                        task_mappings.append((msg_idx, field, int(content_idx)))
 
-                    # Extract images
-                    if content_item.get("type") == "image_url":
+                    if images_to_check is not None and content_item.get("type") == "image_url":
                         image_url = content_item.get("image_url", {})
                         if isinstance(image_url, dict):
                             url = image_url.get("url")
@@ -323,7 +454,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         self,
         messages: Any,  # Can be List[Dict[str, Any]] or ResponseInputParam
         responses: List[str],
-        task_mappings: List[Tuple[int, Optional[int]]],
+        task_mappings: List[InputTextMapping],
     ) -> None:
         """
         Apply guardrail responses back to input messages.
@@ -333,20 +464,19 @@ class OpenAIResponsesHandler(BaseTranslation):
         for task_idx, guardrail_response in enumerate(responses):
             mapping = task_mappings[task_idx]
             msg_idx = cast(int, mapping[0])
-            content_idx_optional = cast(Optional[int], mapping[1])
+            field = mapping[1]
+            content_idx_optional = cast(Optional[int], mapping[2])
 
-            content = messages[msg_idx].get("content", None)
+            content = messages[msg_idx].get(field, None)
             if content is None:
                 continue
 
             if isinstance(content, str) and content_idx_optional is None:
-                # Replace string content with guardrail response
-                messages[msg_idx]["content"] = guardrail_response
+                messages[msg_idx][field] = guardrail_response
 
             elif isinstance(content, list) and content_idx_optional is not None:
-                # Replace specific text item in list content
-                if isinstance(messages[msg_idx]["content"][content_idx_optional], dict):
-                    messages[msg_idx]["content"][content_idx_optional]["text"] = guardrail_response
+                if isinstance(messages[msg_idx][field][content_idx_optional], dict):
+                    messages[msg_idx][field][content_idx_optional]["text"] = guardrail_response
 
     async def process_output_response(
         self,
@@ -423,6 +553,16 @@ class OpenAIResponsesHandler(BaseTranslation):
                     request_data["litellm_metadata"] = user_metadata
 
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            inputs["text_sources"] = [
+                GuardrailInputSource(
+                    type="response",
+                    message_index=output_index,
+                    content_index=content_index,
+                    path=f"output[{output_index}].content[{content_index}].text",
+                    scope="other",
+                )
+                for output_index, content_index in task_mappings
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:

@@ -174,6 +174,9 @@ class CustomLogger:  # https://docs.litellm.ai/docs/observability/custom_callbac
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         pass
 
+    async def async_log_pending_guardrail_event(self, kwargs, response_obj, start_time, end_time):
+        pass
+
     async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
         pass
 

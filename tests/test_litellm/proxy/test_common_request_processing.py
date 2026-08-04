@@ -312,6 +312,94 @@ class TestProxyBaseLLMRequestProcessing:
             pytest.fail("litellm_call_id is not a valid UUID")
         assert data_passed["litellm_call_id"] == returned_data["litellm_call_id"]
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("route_type", "request_field", "original_value", "guardrailed_value"),
+        (
+            (
+                "acompletion",
+                "messages",
+                [{"role": "user", "content": "My name is Hong Gil Dong"}],
+                [{"role": "user", "content": "My name is <KOR_NAME_1>"}],
+            ),
+            (
+                "aresponses",
+                "input",
+                "My registration number is 900101-1234567",
+                "My registration number is <RSNO_1>",
+            ),
+        ),
+    )
+    async def test_common_processing_logs_final_guardrailed_request_without_pii_tokens(
+        self,
+        monkeypatch,
+        route_type,
+        request_field,
+        original_value,
+        guardrailed_value,
+    ):
+        processing_obj = ProxyBaseLLMRequestProcessing(data={})
+        mock_request = MagicMock(spec=Request)
+        mock_request.headers = {}
+        original_metadata = {"request_id": "request-1"}
+        request_body = {
+            "model": "test-model",
+            request_field: original_value,
+            "metadata": original_metadata,
+        }
+        initial_data = {
+            **request_body,
+            "proxy_server_request": {
+                "url": "http://localhost/v1/test",
+                "method": "POST",
+                "headers": {},
+                "body": request_body.copy(),
+            },
+            "secret_fields": {"raw_headers": {"authorization": "Bearer secret"}},
+        }
+
+        async def mock_add_litellm_data_to_request(*args, **kwargs):
+            return initial_data
+
+        async def mock_pre_call_hook(user_api_key_dict, data, call_type):
+            guardrailed_data = copy.deepcopy(data)
+            guardrailed_data[request_field] = guardrailed_value
+            guardrailed_data["metadata"]["pii_tokens"] = {
+                "<KOR_NAME_1>": "Hong Gil Dong",
+                "<RSNO_1>": "900101-1234567",
+            }
+            return guardrailed_data
+
+        mock_proxy_logging_obj = MagicMock(spec=ProxyLogging)
+        mock_proxy_logging_obj.pre_call_hook = AsyncMock(side_effect=mock_pre_call_hook)
+        mock_user_api_key_dict = MagicMock()
+        mock_user_api_key_dict.aliases = None
+        monkeypatch.setattr(
+            litellm.proxy.common_request_processing,
+            "add_litellm_data_to_request",
+            mock_add_litellm_data_to_request,
+        )
+
+        returned_data, logging_obj = await processing_obj.common_processing_pre_call_logic(
+            request=mock_request,
+            general_settings={},
+            user_api_key_dict=mock_user_api_key_dict,
+            proxy_logging_obj=mock_proxy_logging_obj,
+            proxy_config=MagicMock(spec=ProxyConfig),
+            route_type=route_type,
+            model="test-model",
+        )
+
+        persisted_body = returned_data["proxy_server_request"]["body"]
+        logging_body = logging_obj.litellm_params["proxy_server_request"]["body"]
+        assert persisted_body[request_field] == guardrailed_value
+        assert logging_body[request_field] == guardrailed_value
+        assert original_value != persisted_body[request_field]
+        assert "pii_tokens" in returned_data["metadata"]
+        assert "pii_tokens" not in persisted_body["metadata"]
+        assert "secret_fields" not in persisted_body
+        assert "litellm_logging_obj" not in persisted_body
+
     def test_add_dd_apm_tags_for_litellm_call_id_uses_dd_tracing_helper(self, monkeypatch):
         mock_set_active_span_tag = MagicMock(return_value=True)
         import litellm.proxy.dd_span_tagger

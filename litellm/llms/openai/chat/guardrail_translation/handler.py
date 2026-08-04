@@ -14,7 +14,7 @@ Pattern Overview:
 This pattern can be replicated for other message formats (e.g., Anthropic).
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 import litellm
 from litellm._logging import verbose_proxy_logger
@@ -36,6 +36,8 @@ from litellm.types.proxy.guardrails.guardrail_hooks.generic_guardrail_api import
 from litellm.types.utils import (
     Choices,
     GenericGuardrailAPIInputs,
+    GuardrailInputScope,
+    GuardrailInputSource,
     ModelResponse,
     ModelResponseStream,
     StreamingChoices,
@@ -43,6 +45,35 @@ from litellm.types.utils import (
 
 if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
+
+
+def _get_message_role(message: Mapping[str, object]) -> str:
+    role = message.get("role")
+    return role if isinstance(role, str) else "unknown"
+
+
+def get_guardrail_input_scope(
+    role: str,
+    message_index: int,
+    content_index: Optional[int],
+    text: str,
+    latest_user_message_index: Optional[int],
+) -> GuardrailInputScope:
+    if role in {"system", "developer"}:
+        return "system_prompt"
+    if role in {"tool", "function"}:
+        return "tool_result"
+    if role == "user" and message_index == latest_user_message_index:
+        if "<environment_details>" in text.lower():
+            return "environment_context"
+        if content_index is None or content_index == 0:
+            return "current_user_prompt"
+        return "current_user_context"
+    if latest_user_message_index is not None and message_index < latest_user_message_index:
+        return "conversation_history"
+    if role == "assistant":
+        return "conversation_history"
+    return "other"
 
 
 class OpenAIChatCompletionsHandler(BaseTranslation):
@@ -105,7 +136,37 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
 
         # Step 2: Apply guardrail to all texts and tool calls in batch
         if texts_to_check or tool_calls_to_check:
+            latest_user_message_index = next(
+                (
+                    message_index
+                    for message_index in range(len(messages) - 1, -1, -1)
+                    if _get_message_role(messages[message_index]) == "user"
+                ),
+                None,
+            )
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            text_sources: List[GuardrailInputSource] = [
+                {
+                    "type": "message",
+                    "message_index": message_index,
+                    "role": _get_message_role(messages[message_index]),
+                    "content_index": content_index,
+                    "path": (
+                        f"messages[{message_index}].content"
+                        if content_index is None
+                        else f"messages[{message_index}].content[{content_index}].text"
+                    ),
+                    "scope": get_guardrail_input_scope(
+                        role=_get_message_role(messages[message_index]),
+                        message_index=message_index,
+                        content_index=content_index,
+                        text=texts_to_check[text_index],
+                        latest_user_message_index=latest_user_message_index,
+                    ),
+                }
+                for text_index, (message_index, content_index) in enumerate(text_task_mappings)
+            ]
+            inputs["text_sources"] = text_sources
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:
@@ -361,6 +422,20 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
                     request_data["litellm_metadata"] = user_metadata
 
             inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            inputs["text_sources"] = [
+                GuardrailInputSource(
+                    type="response",
+                    message_index=choice_index,
+                    content_index=content_index,
+                    path=(
+                        f"choices[{choice_index}].message.content"
+                        if content_index is None
+                        else f"choices[{choice_index}].message.content[{content_index}].text"
+                    ),
+                    scope="other",
+                )
+                for choice_index, content_index in text_task_mappings
+            ]
             if images_to_check:
                 inputs["images"] = images_to_check
             if tool_calls_to_check:

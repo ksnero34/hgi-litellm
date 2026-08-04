@@ -26,9 +26,20 @@ export interface GuardrailInformation {
   guardrail_mode: string | string[] | Record<string, unknown> | null;
   guardrail_name: string;
   guardrail_status: string;
+  usage_action?: "passed" | "flagged" | "blocked";
   guardrail_response: GuardrailEntity[] | BedrockGuardrailResponse;
   masked_entity_count: Record<string, number>;
   guardrail_provider?: string;
+  guardrail_run_id?: string;
+  guardrail_event?: string;
+  input_source?: {
+    type?: string;
+    message_index?: number;
+    role?: string;
+    content_index?: number | null;
+    path?: string;
+    scope?: string;
+  };
 }
 
 // ===== Builders =====

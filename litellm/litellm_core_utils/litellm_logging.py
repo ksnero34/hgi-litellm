@@ -81,6 +81,7 @@ from litellm.llms.base_llm.search.transformation import SearchResponse
 from litellm.responses.utils import ResponseAPILoggingUtils
 from litellm.types.agents import LiteLLMSendMessageResponse
 from litellm.types.containers.main import ContainerObject
+from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.llms.openai import (
     AllMessageValues,
     Batch,
@@ -409,6 +410,11 @@ class Logging(LiteLLMLoggingBaseClass):
         # enqueue closure here instead of firing it immediately.
         self._defer_async_logging: bool = False
         self._enqueue_deferred_logging: Optional[Callable[[], None]] = None
+        self._deferred_logging_result: Optional[Any] = None
+
+    def set_deferred_logging_result(self, result: Any) -> None:
+        if getattr(self, "_deferred_logging_result", None) is None:
+            self._deferred_logging_result = result
 
     def process_dynamic_callbacks(self):
         """
@@ -2053,8 +2059,6 @@ class Logging(LiteLLMLoggingBaseClass):
             ## LOGGING HOOK ##
             for callback in callbacks:
                 if isinstance(callback, CustomGuardrail):
-                    from litellm.types.guardrails import GuardrailEventHooks
-
                     if (
                         callback.should_run_guardrail(
                             data=self.model_call_details,
@@ -2546,17 +2550,29 @@ class Logging(LiteLLMLoggingBaseClass):
 
         ## LOGGING HOOK ##
 
+        logging_only_guardrails = tuple(
+            callback
+            for callback in callbacks
+            if isinstance(callback, CustomGuardrail)
+            and callback.should_run_guardrail(
+                data=self.model_call_details,
+                event_type=GuardrailEventHooks.logging_only,
+            )
+            is True
+        )
+        if logging_only_guardrails:
+            for callback in callbacks:
+                if isinstance(callback, CustomLogger) and not isinstance(callback, CustomGuardrail):
+                    await callback.async_log_pending_guardrail_event(
+                        kwargs=self.model_call_details,
+                        response_obj=result,
+                        start_time=start_time,
+                        end_time=end_time,
+                    )
+
         for callback in callbacks:
             if isinstance(callback, CustomGuardrail):
-                from litellm.types.guardrails import GuardrailEventHooks
-
-                if (
-                    callback.should_run_guardrail(
-                        data=self.model_call_details,
-                        event_type=GuardrailEventHooks.logging_only,
-                    )
-                    is not True
-                ):
+                if callback not in logging_only_guardrails:
                     continue
 
                 self.model_call_details, result = await callback.async_logging_hook(
