@@ -11,6 +11,10 @@ export interface SpendMetrics {
   compression_saved_tokens?: number;
   compression_savings_spend?: number;
   prompt_caching_savings_spend?: number;
+  average_response_time_ms?: number | null;
+  response_time_count?: number;
+  average_ttft_ms?: number | null;
+  ttft_count?: number;
 }
 
 export type DailyData = {
@@ -75,6 +79,10 @@ export interface ModelActivityData {
   prompt_tokens: number;
   completion_tokens: number;
   total_spend: number;
+  average_response_time_ms?: number | null;
+  response_time_count?: number;
+  average_ttft_ms?: number | null;
+  ttft_count?: number;
   top_api_keys: TopApiKeyData[];
   top_models: TopModelData[];
   daily_data: {
@@ -89,6 +97,10 @@ export interface ModelActivityData {
       failed_requests: number;
       cache_read_input_tokens: number;
       cache_creation_input_tokens: number;
+      average_response_time_ms?: number | null;
+      response_time_count?: number;
+      average_ttft_ms?: number | null;
+      ttft_count?: number;
     };
   }[];
 }

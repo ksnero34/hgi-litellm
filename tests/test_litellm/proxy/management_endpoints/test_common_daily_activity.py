@@ -22,6 +22,36 @@ from litellm.proxy.management_endpoints.common_daily_activity import (
 from litellm.types.proxy.management_endpoints.common_daily_activity import SpendMetrics
 
 
+def test_update_metrics_uses_weighted_performance_averages():
+    metrics = SpendMetrics(
+        average_response_time_ms=1000,
+        response_time_count=2,
+        average_ttft_ms=200,
+        ttft_count=1,
+    )
+    record = SimpleNamespace(
+        spend=0,
+        prompt_tokens=0,
+        completion_tokens=0,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=0,
+        api_requests=3,
+        successful_requests=3,
+        failed_requests=0,
+        response_time_ms_sum=6000,
+        response_time_count=3,
+        ttft_ms_sum=800,
+        ttft_count=2,
+    )
+
+    result = update_metrics(metrics, record)
+
+    assert result.average_response_time_ms == 1600
+    assert result.response_time_count == 5
+    assert result.average_ttft_ms == pytest.approx(1000 / 3)
+    assert result.ttft_count == 3
+
+
 @pytest.mark.asyncio
 async def test_get_daily_activity_empty_entity_id_list():
     # Mock PrismaClient

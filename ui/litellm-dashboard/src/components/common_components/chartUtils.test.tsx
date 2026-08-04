@@ -170,6 +170,29 @@ describe("CustomTooltip", () => {
     expect(screen.getByText("N/A")).toBeInTheDocument();
   });
 
+  it("should display N/A when value is null", () => {
+    const payloadWithNull = [
+      {
+        dataKey: "metrics.average_response_time_ms",
+        value: null,
+        color: "blue",
+        payload: {
+          date: "2024-01-15",
+          metrics: {
+            average_response_time_ms: null,
+          } as SpendMetrics,
+        },
+      },
+    ];
+    const props: CustomTooltipProps = {
+      active: true,
+      payload: payloadWithNull,
+      label: "2024-01-15",
+    };
+    render(<CustomTooltip {...props} />);
+    expect(screen.getByText("N/A")).toBeInTheDocument();
+  });
+
   it("should handle multiple payload items", () => {
     const multiplePayload = [
       {

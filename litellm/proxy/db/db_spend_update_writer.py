@@ -29,8 +29,8 @@ import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.caching import RedisCache
 from litellm.constants import (
-    DB_SPEND_UPDATE_JOB_NAME,
     DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME,
+    DB_SPEND_UPDATE_JOB_NAME,
 )
 from litellm.litellm_core_utils.safe_json_loads import safe_json_loads
 from litellm.proxy._types import (
@@ -72,6 +72,10 @@ else:
     ProxyLogging = Any
 
 
+LOGGING_ONLY_GUARDRAILS_PENDING = "logging_only_guardrails_pending"
+LOGGING_ONLY_GUARDRAILS_PENDING_KWARG = "_logging_only_guardrails_pending"
+
+
 def _extract_cache_read_tokens(usage_obj: dict) -> int:
     """
     Anthropic: top-level cache_read_input_tokens field.
@@ -95,6 +99,56 @@ def _extract_cache_creation_tokens(usage_obj: dict) -> int:
         return int(explicit)
     details = usage_obj.get("prompt_tokens_details") or {}
     return int(details.get("cache_write_tokens", 0) or details.get("cache_creation_tokens", 0) or 0)
+
+
+def _parse_spend_log_timestamp(value: datetime | str | None) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _performance_metrics(payload: dict | SpendLogsPayload, request_succeeded: bool) -> dict[str, float | int]:
+    if not request_succeeded or str(payload.get("cache_hit", "")).lower() == "true":
+        return {
+            "response_time_ms_sum": 0.0,
+            "response_time_count": 0,
+            "ttft_ms_sum": 0.0,
+            "ttft_count": 0,
+        }
+
+    start_time = _parse_spend_log_timestamp(payload.get("startTime"))
+    end_time = _parse_spend_log_timestamp(payload.get("endTime"))
+    completion_start_time = _parse_spend_log_timestamp(payload.get("completionStartTime"))
+    request_duration_ms = payload.get("request_duration_ms")
+    response_time_ms = (
+        float(request_duration_ms)
+        if isinstance(request_duration_ms, (int, float)) and request_duration_ms >= 0
+        else (
+            max(0.0, (end_time - start_time).total_seconds() * 1000)
+            if start_time is not None and end_time is not None
+            else None
+        )
+    )
+    ttft_ms = (
+        max(0.0, (completion_start_time - start_time).total_seconds() * 1000)
+        if start_time is not None
+        and completion_start_time is not None
+        and end_time is not None
+        and completion_start_time != end_time
+        else None
+    )
+    return {
+        "response_time_ms_sum": response_time_ms or 0.0,
+        "response_time_count": 1 if response_time_ms is not None else 0,
+        "ttft_ms_sum": ttft_ms or 0.0,
+        "ttft_count": 1 if ttft_ms is not None else 0,
+    }
 
 
 class DBSpendUpdateWriter:
@@ -131,7 +185,7 @@ class DBSpendUpdateWriter:
         org_id: Optional[str],
         # Completion object fields
         kwargs: Optional[dict],
-        completion_response: Optional[Union[litellm.ModelResponse, Any, Exception]],
+        completion_response: litellm.ModelResponse | Any | Exception | None,
         start_time: Optional[datetime],
         end_time: Optional[datetime],
         response_cost: Optional[float],
@@ -166,6 +220,11 @@ class DBSpendUpdateWriter:
                 end_time=end_time,
             )
             payload["spend"] = response_cost or 0.0
+            if kwargs is not None and kwargs.get(LOGGING_ONLY_GUARDRAILS_PENDING_KWARG) is True:
+                payload_metadata = safe_json_loads(payload.get("metadata"), default={})
+                if isinstance(payload_metadata, dict):
+                    payload_metadata[LOGGING_ONLY_GUARDRAILS_PENDING] = True
+                    payload["metadata"] = json.dumps(payload_metadata)
             if isinstance(payload["startTime"], datetime):
                 payload["startTime"] = payload["startTime"].isoformat()
             if isinstance(payload["endTime"], datetime):
@@ -228,6 +287,55 @@ class DBSpendUpdateWriter:
                 org_id,
                 end_user_id,
             )
+
+    async def update_guardrail_results(
+        self,
+        kwargs: dict,
+        completion_response: Optional[Union[litellm.ModelResponse, Any, Exception]],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> bool:
+        from litellm.proxy.proxy_server import prisma_client
+        from litellm.proxy.spend_tracking.spend_tracking_utils import get_logging_payload
+
+        if prisma_client is None:
+            return False
+
+        payload = get_logging_payload(
+            kwargs=kwargs,
+            response_obj=completion_response,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if isinstance(payload["startTime"], datetime):
+            payload["startTime"] = payload["startTime"].isoformat()
+        if isinstance(payload["endTime"], datetime):
+            payload["endTime"] = payload["endTime"].isoformat()
+
+        request_id = payload["request_id"]
+        async with prisma_client._spend_log_transactions_lock:
+            queued_request_ids = tuple(entry.get("request_id") for entry in prisma_client.spend_log_transactions)
+            if request_id in queued_request_ids:
+                prisma_client.spend_log_transactions = [
+                    {**entry, "metadata": payload["metadata"]} if entry.get("request_id") == request_id else entry
+                    for entry in prisma_client.spend_log_transactions
+                ]
+                return True
+
+        from litellm.repositories.table_repositories import SpendLogsRepository
+
+        db_payload = prisma_client.jsonify_object({**payload})
+        await SpendLogsRepository(prisma_client).table.upsert(
+            where={"request_id": request_id},
+            data={"create": db_payload, "update": {"metadata": db_payload["metadata"]}},
+        )
+        from litellm.proxy.guardrails.usage_tracking import process_spend_logs_guardrail_usage
+
+        await process_spend_logs_guardrail_usage(
+            prisma_client=prisma_client,
+            logs_to_process=[payload],
+        )
+        return True
 
     async def _enqueue_tool_usage_transaction(
         self,
@@ -1535,7 +1643,10 @@ class DBSpendUpdateWriter:
                             return
 
                         try:
-                            async with prisma_client.db.batch_() as batcher:
+                            async with (
+                                prisma_client.db.tx(timeout=timedelta(seconds=60)) as db_transaction,
+                                db_transaction.batch_() as batcher,
+                            ):
                                 for _, transaction in transactions_to_process.items():
                                     entity_id = transaction.get(entity_id_field)
 
@@ -1573,6 +1684,12 @@ class DBSpendUpdateWriter:
                                         "successful_requests": transaction["successful_requests"],
                                         "failed_requests": transaction["failed_requests"],
                                     }
+                                    if "response_time_ms_sum" in transaction:
+                                        common_data["response_time_ms_sum"] = transaction["response_time_ms_sum"]
+                                        common_data["response_time_count"] = transaction.get("response_time_count", 0)
+                                    if "ttft_ms_sum" in transaction:
+                                        common_data["ttft_ms_sum"] = transaction["ttft_ms_sum"]
+                                        common_data["ttft_count"] = transaction.get("ttft_count", 0)
 
                                     # Add cache-related fields if they exist
                                     if "cache_read_input_tokens" in transaction:
@@ -1608,6 +1725,16 @@ class DBSpendUpdateWriter:
                                         "successful_requests": {"increment": transaction["successful_requests"]},
                                         "failed_requests": {"increment": transaction["failed_requests"]},
                                     }
+                                    if "response_time_ms_sum" in transaction:
+                                        update_data["response_time_ms_sum"] = {
+                                            "increment": transaction["response_time_ms_sum"]
+                                        }
+                                        update_data["response_time_count"] = {
+                                            "increment": transaction.get("response_time_count", 0)
+                                        }
+                                    if "ttft_ms_sum" in transaction:
+                                        update_data["ttft_ms_sum"] = {"increment": transaction["ttft_ms_sum"]}
+                                        update_data["ttft_count"] = {"increment": transaction.get("ttft_count", 0)}
 
                                     # Add cache-related fields to update if they exist
                                     if "cache_read_input_tokens" in transaction:
@@ -1907,6 +2034,7 @@ class DBSpendUpdateWriter:
                 compression_saved_tokens=compression_saved_tokens,
                 compression_savings_spend=savings_spend.compression,
                 prompt_caching_savings_spend=savings_spend.prompt_caching,
+                **_performance_metrics(payload, request_status == "success"),
             )
             return daily_transaction
         except Exception as e:

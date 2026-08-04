@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Literal, Union, overload
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, TypedDict
 
 from litellm.proxy._types import UserAPIKeyAuth
@@ -20,6 +20,7 @@ from litellm.repositories.table_repositories import (
     GuardrailsRepository,
     PolicyRepository,
     SpendLogGuardrailIndexRepository,
+    SpendLogPolicyIndexRepository,
     SpendLogsRepository,
 )
 
@@ -55,6 +56,12 @@ def _policies_table(
     return policies_table
 
 
+def _string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
+
+
 # --- Response models ---
 
 
@@ -62,6 +69,7 @@ class UsageChartPoint(TypedDict):
     date: str
     passed: int
     blocked: int
+    flagged: NotRequired[int]
     score: NotRequired[float | None]
 
 
@@ -80,6 +88,7 @@ class _PrevPeriodCounts(TypedDict):
 class _DailyPassBlocked(TypedDict):
     passed: int
     blocked: int
+    flagged: NotRequired[int]
 
 
 class UsageOverviewRow(BaseModel):
@@ -109,6 +118,7 @@ class UsageDetailResponse(BaseModel):
     type: str
     provider: str
     requestsEvaluated: int
+    flaggedCount: int
     failRate: float
     avgScore: float | None
     avgLatency: float | None
@@ -128,6 +138,11 @@ class UsageLogEntry(BaseModel):
     input_snippet: str | None
     output_snippet: str | None
     reason: str | None
+    api_key: str | None = None
+    key_alias: str | None = None
+    team_id: str | None = None
+    team_alias: str | None = None
+    guardrail_information: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class UsageLogsResponse(BaseModel):
@@ -301,8 +316,10 @@ def _policy_overview_rows(
     prev_agg: Mapping[str, float],
 ) -> list[UsageOverviewRow]:
     rows: list[UsageOverviewRow] = []
+    covered_ids: set[str] = set()
     for p in policies:
         pid = p.policy_id
+        covered_ids.add(pid)
         a = agg.get(pid, {"requests": 0, "passed": 0, "blocked": 0, "flagged": 0})
         req, blocked = a["requests"], a["blocked"]
         fail_rate = (100.0 * blocked / req) if req else 0.0
@@ -313,6 +330,26 @@ def _policy_overview_rows(
                 name=p.policy_name or pid,
                 type="Policy",
                 provider="LiteLLM",
+                requestsEvaluated=req,
+                failRate=round(fail_rate, 1),
+                avgScore=None,
+                avgLatency=None,
+                status=_status_from_fail_rate(fail_rate),
+                trend=trend,
+            )
+        )
+    for policy_id, a in agg.items():
+        if policy_id in covered_ids or a["requests"] == 0:
+            continue
+        req, blocked = a["requests"], a["blocked"]
+        fail_rate = (100.0 * blocked / req) if req else 0.0
+        trend = _trend_from_comparison(fail_rate, prev_agg.get(policy_id, 0.0))
+        rows.append(
+            UsageOverviewRow(
+                id=policy_id,
+                name=policy_id,
+                type="Policy",
+                provider="Config",
                 requestsEvaluated=req,
                 failRate=round(fail_rate, 1),
                 avgScore=None,
@@ -443,6 +480,7 @@ async def guardrails_usage_detail(
 
     requests = sum(int(m.requests_evaluated or 0) for m in metrics)
     blocked = sum(int(m.blocked_count or 0) for m in metrics)
+    flagged = sum(int(m.flagged_count or 0) for m in metrics)
     fail_rate = (100.0 * blocked / requests) if requests else 0.0
 
     prev_blocked = sum(int(m.blocked_count or 0) for m in metrics_prev)
@@ -455,11 +493,18 @@ async def guardrails_usage_detail(
     for m in metrics:
         d = m.date
         if d not in ts_by_date:
-            ts_by_date[d] = {"passed": 0, "blocked": 0}
+            ts_by_date[d] = {"passed": 0, "blocked": 0, "flagged": 0}
         ts_by_date[d]["passed"] += int(m.passed_count or 0)
         ts_by_date[d]["blocked"] += int(m.blocked_count or 0)
+        ts_by_date[d]["flagged"] += int(m.flagged_count or 0)
     time_series: list[UsageChartPoint] = [
-        {"date": d, "passed": v["passed"], "blocked": v["blocked"], "score": None}
+        {
+            "date": d,
+            "passed": v["passed"],
+            "blocked": v["blocked"],
+            "flagged": v["flagged"],
+            "score": None,
+        }
         for d, v in sorted(ts_by_date.items())
     ]
     litellm_params = _to_dict(_get_guardrail_field(guardrail, "litellm_params"))
@@ -472,6 +517,7 @@ async def guardrails_usage_detail(
         type=str(guardrail_info.get("type", "Guardrail")),
         provider=str(litellm_params.get("guardrail", "Unknown")),
         requestsEvaluated=requests,
+        flaggedCount=flagged,
         failRate=round(fail_rate, 1),
         avgScore=None,
         avgLatency=None,
@@ -480,6 +526,32 @@ async def guardrails_usage_detail(
         description=guardrail_info.get("description"),
         time_series=time_series,
     )
+
+
+def _build_policy_usage_logs_where(policy_id: str, start_date: str | None, end_date: str | None) -> dict[str, Any]:
+    where: dict[str, Any] = {"policy_id": policy_id}
+    if start_date or end_date:
+        start_time_filter: dict[str, Any] = {}
+        if start_date:
+            value = start_date.replace("Z", "+00:00").strip()
+            start_time_filter["gte"] = datetime.fromisoformat(value if "T" in value else value + "T00:00:00+00:00")
+        if end_date:
+            value = end_date.replace("Z", "+00:00").strip()
+            start_time_filter["lte"] = datetime.fromisoformat(value if "T" in value else value + "T23:59:59+00:00")
+        where["start_time"] = start_time_filter
+    return where
+
+
+def _entry_action(entry: dict[str, Any]) -> str:
+    explicit_action = entry.get("usage_action")
+    if isinstance(explicit_action, str) and explicit_action.lower() in {"passed", "blocked", "flagged"}:
+        return explicit_action.lower()
+    status = str(entry.get("guardrail_status") or "").lower()
+    if "intervened" in status or "block" in status:
+        return "blocked"
+    if "fail" in status or "error" in status:
+        return "flagged"
+    return "passed"
 
 
 def _build_usage_logs_where(
@@ -519,21 +591,23 @@ def _usage_log_entry_from_row(
         except Exception:
             meta = {}
     guardrail_info_list = (meta or {}).get("guardrail_information") or []
-    entry_for_guardrail = None
-    for gi in guardrail_info_list:
-        if (gi.get("guardrail_id") or gi.get("guardrail_name")) == r.guardrail_id:
-            entry_for_guardrail = gi
-            break
+    matching_entries = [
+        gi
+        for gi in guardrail_info_list
+        if isinstance(gi, dict) and (gi.get("guardrail_id") or gi.get("guardrail_name")) == r.guardrail_id
+    ]
+    precedence = {"passed": 0, "flagged": 1, "blocked": 2}
+    entry_for_guardrail = max(
+        matching_entries,
+        key=lambda entry: precedence[_entry_action(entry)],
+        default=None,
+    )
     action_val = "passed"
     score_val = None
     latency_val = None
     reason_val = None
     if entry_for_guardrail:
-        st = (entry_for_guardrail.get("guardrail_status") or "").lower()
-        if "intervened" in st or "block" in st:
-            action_val = "blocked"
-        elif "fail" in st or "error" in st:
-            action_val = "flagged"
+        action_val = _entry_action(entry_for_guardrail)
         duration = entry_for_guardrail.get("duration")
         if duration is not None:
             latency_val = round(float(duration) * 1000, 0)
@@ -558,6 +632,70 @@ def _usage_log_entry_from_row(
         input_snippet=_input_snippet_for_log(sl),
         output_snippet=_snippet(sl.response),
         reason=reason_val,
+        api_key=(meta or {}).get("user_api_key") or getattr(sl, "api_key", None),
+        key_alias=(meta or {}).get("user_api_key_alias"),
+        team_id=getattr(sl, "team_id", None),
+        team_alias=(meta or {}).get("user_api_key_team_alias"),
+        guardrail_information=matching_entries,
+    )
+
+
+def _policy_usage_log_entry_from_row(
+    row: Any, spend_log: Any, action_filter: str | None
+) -> UsageLogEntry | None:
+    metadata = spend_log.metadata
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (json.JSONDecodeError, TypeError):
+            metadata = {}
+    information = metadata.get("guardrail_information", []) if isinstance(metadata, dict) else []
+    precedence = {"passed": 0, "flagged": 1, "blocked": 2}
+    matching_entries = [
+        entry
+        for entry in information
+        if isinstance(entry, dict)
+        and row.policy_id
+        in (
+            {
+                reference
+                for reference in (
+                    *_string_items(entry.get("policy_ids")),
+                    *_string_items(entry.get("policy_names")),
+                )
+            }
+            | {
+                reference
+                for reference in (entry.get("policy_id"), entry.get("policy_name"))
+                if isinstance(reference, str)
+            }
+        )
+    ]
+    selected_entry = max(matching_entries, key=lambda entry: precedence[_entry_action(entry)], default=None)
+    action_value = _entry_action(selected_entry) if selected_entry is not None else "passed"
+    if action_filter and action_value != action_filter:
+        return None
+    duration = selected_entry.get("duration") if selected_entry is not None else None
+    score = (selected_entry.get("confidence_score") or selected_entry.get("risk_score")) if selected_entry else None
+    response = selected_entry.get("guardrail_response") if selected_entry else None
+    timestamp = (
+        spend_log.startTime.isoformat() if hasattr(spend_log.startTime, "isoformat") else str(spend_log.startTime)
+    )
+    return UsageLogEntry(
+        id=row.request_id,
+        timestamp=timestamp,
+        action=action_value,
+        score=round(float(score), 2) if score is not None else None,
+        latency_ms=round(float(duration) * 1000, 0) if duration is not None else None,
+        model=spend_log.model,
+        input_snippet=_input_snippet_for_log(spend_log),
+        output_snippet=_snippet(spend_log.response),
+        reason=str(response)[:500] if response is not None else None,
+        api_key=metadata.get("user_api_key") or getattr(spend_log, "api_key", None),
+        key_alias=metadata.get("user_api_key_alias"),
+        team_id=getattr(spend_log, "team_id", None),
+        team_alias=metadata.get("user_api_key_team_alias"),
+        guardrail_information=matching_entries,
     )
 
 
@@ -647,32 +785,56 @@ async def guardrails_usage_logs(
                 if logical_name and logical_name not in effective_guardrail_ids:
                     effective_guardrail_ids.append(logical_name)
 
-        where = _build_usage_logs_where(effective_guardrail_ids or None, policy_id, start_date, end_date)
-        index_rows: Sequence[prisma_models.LiteLLM_SpendLogGuardrailIndex] = await SpendLogGuardrailIndexRepository(
-            prisma_client
-        ).table.find_many(
-            where=where,
-            order={"start_time": "desc"},
-            skip=(page - 1) * page_size,
-            take=page_size + 1,
-        )
-        total: int = await SpendLogGuardrailIndexRepository(prisma_client).table.count(where=where)
-        request_ids = [r.request_id for r in index_rows[:page_size]]
+        if policy_id:
+            where = _build_policy_usage_logs_where(policy_id, start_date, end_date)
+            try:
+                index_rows = await SpendLogPolicyIndexRepository(prisma_client).table.find_many(
+                    where=where,
+                    order={"start_time": "desc"},
+                    skip=(page - 1) * page_size,
+                    take=page_size,
+                )
+                total = await SpendLogPolicyIndexRepository(prisma_client).table.count(where=where)
+            except Exception:  # noqa: BLE001  # The policy index may be unavailable during rolling migrations.
+                index_rows = []
+                total = 0
+            if not index_rows:
+                legacy_where = _build_usage_logs_where(None, policy_id, start_date, end_date)
+                index_rows = await SpendLogGuardrailIndexRepository(prisma_client).table.find_many(
+                    where=legacy_where,
+                    order={"start_time": "desc"},
+                    skip=(page - 1) * page_size,
+                    take=page_size,
+                )
+                total = await SpendLogGuardrailIndexRepository(prisma_client).table.count(where=legacy_where)
+        else:
+            where = _build_usage_logs_where(effective_guardrail_ids or None, None, start_date, end_date)
+            index_rows = await SpendLogGuardrailIndexRepository(prisma_client).table.find_many(
+                where=where,
+                order={"start_time": "desc"},
+                skip=(page - 1) * page_size,
+                take=page_size,
+            )
+            total = await SpendLogGuardrailIndexRepository(prisma_client).table.count(where=where)
+
+        request_ids = list(dict.fromkeys(row.request_id for row in index_rows))
         if not request_ids:
             return UsageLogsResponse(logs=[], total=total, page=page, page_size=page_size)
-        spend_logs: Sequence[prisma_models.LiteLLM_SpendLogs] = await SpendLogsRepository(
-            prisma_client
-        ).table.find_many(where={"request_id": {"in": request_ids}})
-        log_by_id = {s.request_id: s for s in spend_logs}
-        logs_out: list[UsageLogEntry] = []
-        for r in index_rows[:page_size]:
-            sl = log_by_id.get(r.request_id)
-            if not sl:
-                continue
-            entry = _usage_log_entry_from_row(r, sl, action)
-            if entry is not None:
-                logs_out.append(entry)
-        return UsageLogsResponse(logs=logs_out, total=total, page=page, page_size=page_size)
+        spend_logs = await SpendLogsRepository(prisma_client).table.find_many(where={"request_id": {"in": request_ids}})
+        log_by_id = {spend_log.request_id: spend_log for spend_log in spend_logs}
+        entries = (
+            _policy_usage_log_entry_from_row(row, log_by_id[row.request_id], action)
+            if policy_id
+            else _usage_log_entry_from_row(row, log_by_id[row.request_id], action)
+            for row in index_rows
+            if row.request_id in log_by_id
+        )
+        return UsageLogsResponse(
+            logs=[entry for entry in entries if entry is not None],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
     except Exception as e:
         from litellm.proxy.utils import handle_exception_on_proxy
 

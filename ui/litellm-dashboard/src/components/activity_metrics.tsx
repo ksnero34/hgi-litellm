@@ -4,6 +4,7 @@ import { resolveTeamAliasFromTeamID } from "@/utils/teamUtils";
 import { Card, Grid, Text, Title } from "@tremor/react";
 import { Collapse } from "antd";
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Team } from "./key_team_helpers/key_list";
 import KeyModelUsageView from "./UsagePage/components/KeyModelUsageView";
 import { DailyData, KeyMetricWithMetadata, ModelActivityData, TopApiKeyData, TopModelData } from "./UsagePage/types";
@@ -14,6 +15,28 @@ interface ActivityMetricsProps {
   hidePromptCachingMetrics?: boolean;
 }
 
+const formatDuration = (milliseconds: number | null | undefined): string => {
+  if (milliseconds === null || milliseconds === undefined) return "N/A";
+  if (milliseconds < 1000) return `${Math.round(milliseconds).toLocaleString()} ms`;
+  return `${formatNumberWithCommas(milliseconds / 1000, 2)} s`;
+};
+
+const combineAverage = (
+  currentAverage: number | null | undefined,
+  currentCount: number | undefined,
+  nextAverage: number | null | undefined,
+  nextCount: number | undefined,
+): { average: number | null; count: number } => {
+  const existingCount = currentCount || 0;
+  const incomingCount = nextCount || 0;
+  const combinedCount = existingCount + incomingCount;
+  if (combinedCount === 0) return { average: null, count: 0 };
+  return {
+    average: ((currentAverage || 0) * existingCount + (nextAverage || 0) * incomingCount) / combinedCount,
+    count: combinedCount,
+  };
+};
+
 const ModelSection = ({
   modelName,
   metrics,
@@ -23,47 +46,79 @@ const ModelSection = ({
   metrics: ModelActivityData;
   hidePromptCachingMetrics?: boolean;
 }) => {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       {/* Summary Cards */}
-      <Grid numItems={4} className="gap-4">
+      <Grid numItems={3} className="gap-4">
         <Card>
-          <Text>Total Requests</Text>
+          <Text>{t("observability.activity_metrics.total_requests")}</Text>
           <Title>{metrics.total_requests.toLocaleString()}</Title>
         </Card>
         <Card>
-          <Text>Total Successful Requests</Text>
+          <Text>{t("observability.activity_metrics.total_successful_requests")}</Text>
           <Title>{metrics.total_successful_requests.toLocaleString()}</Title>
         </Card>
         <Card>
-          <Text>Total Tokens</Text>
+          <Text>{t("observability.activity_metrics.total_tokens")}</Text>
           <Title>{metrics.total_tokens.toLocaleString()}</Title>
-          <Text>{Math.round(metrics.total_tokens / metrics.total_successful_requests)} avg per successful request</Text>
+          <Text>
+            {t("observability.activity_metrics.avg_per_successful_request", {
+              count: Math.round(metrics.total_tokens / metrics.total_successful_requests),
+            })}
+          </Text>
         </Card>
         <Card>
-          <Text>Total Spend</Text>
+          <Text>{t("observability.activity_metrics.total_spend")}</Text>
           <Title>${formatNumberWithCommas(metrics.total_spend, 2)}</Title>
           <Text>
-            ${formatNumberWithCommas(metrics.total_spend / metrics.total_successful_requests, 3)} per successful request
+            {t("observability.activity_metrics.per_successful_request", {
+              amount: `$${formatNumberWithCommas(metrics.total_spend / metrics.total_successful_requests, 3)}`,
+            })}
+          </Text>
+        </Card>
+        <Card>
+          <Text>{t("observability.activity_metrics.average_response_time")}</Text>
+          <Title>{formatDuration(metrics.average_response_time_ms)}</Title>
+          <Text>
+            {t("observability.activity_metrics.measured_requests", {
+              count: (metrics.response_time_count || 0).toLocaleString(),
+            })}
+          </Text>
+        </Card>
+        <Card>
+          <Text>{t("observability.activity_metrics.average_ttft")}</Text>
+          <Title>{formatDuration(metrics.average_ttft_ms)}</Title>
+          <Text>
+            {t("observability.activity_metrics.streaming_requests", {
+              count: (metrics.ttft_count || 0).toLocaleString(),
+            })}
           </Text>
         </Card>
       </Grid>
 
       {metrics.top_api_keys && metrics.top_api_keys.length > 0 && (
         <Card className="mt-4">
-          <Title>Top Virtual Keys by Spend</Title>
+          <Title>{t("observability.activity_metrics.top_virtual_keys_by_spend")}</Title>
           <div className="mt-3">
             <div className="grid grid-cols-1 gap-2">
               {metrics.top_api_keys.map((keyData, index) => (
                 <div key={keyData.api_key} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <div>
                     <Text className="font-medium">{keyData.key_alias || `${keyData.api_key.substring(0, 10)}...`}</Text>
-                    {keyData.team_id && <Text className="text-xs text-gray-500">Team: {keyData.team_id}</Text>}
+                    {keyData.team_id && (
+                      <Text className="text-xs text-gray-500">
+                        {t("observability.activity_metrics.team", { teamId: keyData.team_id })}
+                      </Text>
+                    )}
                   </div>
                   <div className="text-right">
                     <Text className="font-medium">${formatNumberWithCommas(keyData.spend, 2)}</Text>
                     <Text className="text-xs text-gray-500">
-                      {keyData.requests.toLocaleString()} requests | {keyData.tokens.toLocaleString()} tokens
+                      {t("observability.activity_metrics.requests_and_tokens", {
+                        requests: keyData.requests.toLocaleString(),
+                        tokens: keyData.tokens.toLocaleString(),
+                      })}
                     </Text>
                   </div>
                 </div>
@@ -78,7 +133,7 @@ const ModelSection = ({
       {/* Spend per day - Full width card */}
       <Card className="mt-4">
         <div className="flex justify-between items-center">
-          <Title>Spend per day</Title>
+          <Title>{t("observability.activity_metrics.spend_per_day")}</Title>
           <CustomLegend categories={["metrics.spend"]} colors={["green"]} />
         </div>
         <BarChart
@@ -96,7 +151,7 @@ const ModelSection = ({
       <Grid numItems={2} className="gap-4 mt-4">
         <Card>
           <div className="flex justify-between items-center">
-            <Title>Total Tokens</Title>
+            <Title>{t("observability.activity_metrics.total_tokens_chart")}</Title>
             <CustomLegend
               categories={["metrics.prompt_tokens", "metrics.completion_tokens", "metrics.total_tokens"]}
               colors={["blue", "cyan", "indigo"]}
@@ -116,7 +171,7 @@ const ModelSection = ({
 
         <Card>
           <div className="flex justify-between items-center">
-            <Title>Requests per day</Title>
+            <Title>{t("observability.activity_metrics.requests_per_day")}</Title>
             <CustomLegend categories={["metrics.api_requests"]} colors={["blue"]} />
           </div>
           <BarChart
@@ -133,7 +188,7 @@ const ModelSection = ({
 
         <Card>
           <div className="flex justify-between items-center">
-            <Title>Success vs Failed Requests</Title>
+            <Title>{t("observability.activity_metrics.success_vs_failed_requests")}</Title>
             <CustomLegend
               categories={["metrics.successful_requests", "metrics.failed_requests"]}
               colors={["green", "red"]}
@@ -154,15 +209,23 @@ const ModelSection = ({
         {!hidePromptCachingMetrics && (
           <Card>
             <div className="flex justify-between items-center">
-              <Title>Prompt Caching Metrics</Title>
+              <Title>{t("observability.activity_metrics.prompt_caching_metrics")}</Title>
               <CustomLegend
                 categories={["metrics.cache_read_input_tokens", "metrics.cache_creation_input_tokens"]}
                 colors={["cyan", "purple"]}
               />
             </div>
             <div className="mb-2">
-              <Text>Cache Read: {metrics.total_cache_read_input_tokens?.toLocaleString() || 0} tokens</Text>
-              <Text>Cache Creation: {metrics.total_cache_creation_input_tokens?.toLocaleString() || 0} tokens</Text>
+              <Text>
+                {t("observability.activity_metrics.cache_read", {
+                  count: metrics.total_cache_read_input_tokens?.toLocaleString() || 0,
+                })}
+              </Text>
+              <Text>
+                {t("observability.activity_metrics.cache_creation", {
+                  count: metrics.total_cache_creation_input_tokens?.toLocaleString() || 0,
+                })}
+              </Text>
             </div>
             <AreaChart
               className="mt-4"
@@ -182,6 +245,7 @@ const ModelSection = ({
 };
 
 export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, hidePromptCachingMetrics = false }) => {
+  const { t } = useTranslation();
   const modelNames = Object.keys(modelMetrics).sort((a, b) => {
     if (a === "") return 1;
     if (b === "") return -1;
@@ -196,6 +260,10 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
     total_spend: 0,
     total_cache_read_input_tokens: 0,
     total_cache_creation_input_tokens: 0,
+    average_response_time_ms: null as number | null,
+    response_time_count: 0,
+    average_ttft_ms: null as number | null,
+    ttft_count: 0,
     daily_data: {} as Record<
       string,
       {
@@ -220,6 +288,22 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
     totalMetrics.total_spend += model.total_spend;
     totalMetrics.total_cache_read_input_tokens += model.total_cache_read_input_tokens || 0;
     totalMetrics.total_cache_creation_input_tokens += model.total_cache_creation_input_tokens || 0;
+    const responseTime = combineAverage(
+      totalMetrics.average_response_time_ms,
+      totalMetrics.response_time_count,
+      model.average_response_time_ms,
+      model.response_time_count,
+    );
+    totalMetrics.average_response_time_ms = responseTime.average;
+    totalMetrics.response_time_count = responseTime.count;
+    const ttft = combineAverage(
+      totalMetrics.average_ttft_ms,
+      totalMetrics.ttft_count,
+      model.average_ttft_ms,
+      model.ttft_count,
+    );
+    totalMetrics.average_ttft_ms = ttft.average;
+    totalMetrics.ttft_count = ttft.count;
 
     // Aggregate daily data
     model.daily_data.forEach((day) => {
@@ -257,30 +341,48 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
     <div className="space-y-8">
       {/* Global Summary */}
       <div className="border rounded-lg p-4">
-        <Title>Overall Usage</Title>
-        <Grid numItems={4} className="gap-4 mb-4">
+        <Title>{t("observability.activity_metrics.overall_usage")}</Title>
+        <Grid numItems={3} className="gap-4 mb-4">
           <Card>
-            <Text>Total Requests</Text>
+            <Text>{t("observability.activity_metrics.total_requests")}</Text>
             <Title>{totalMetrics.total_requests.toLocaleString()}</Title>
           </Card>
           <Card>
-            <Text>Total Successful Requests</Text>
+            <Text>{t("observability.activity_metrics.total_successful_requests")}</Text>
             <Title>{totalMetrics.total_successful_requests.toLocaleString()}</Title>
           </Card>
           <Card>
-            <Text>Total Tokens</Text>
+            <Text>{t("observability.activity_metrics.total_tokens")}</Text>
             <Title>{totalMetrics.total_tokens.toLocaleString()}</Title>
           </Card>
           <Card>
-            <Text>Total Spend</Text>
+            <Text>{t("observability.activity_metrics.total_spend")}</Text>
             <Title>${formatNumberWithCommas(totalMetrics.total_spend, 2)}</Title>
+          </Card>
+          <Card>
+            <Text>{t("observability.activity_metrics.average_response_time")}</Text>
+            <Title>{formatDuration(totalMetrics.average_response_time_ms)}</Title>
+            <Text>
+              {t("observability.activity_metrics.measured_requests", {
+                count: totalMetrics.response_time_count.toLocaleString(),
+              })}
+            </Text>
+          </Card>
+          <Card>
+            <Text>{t("observability.activity_metrics.average_ttft")}</Text>
+            <Title>{formatDuration(totalMetrics.average_ttft_ms)}</Title>
+            <Text>
+              {t("observability.activity_metrics.streaming_requests", {
+                count: totalMetrics.ttft_count.toLocaleString(),
+              })}
+            </Text>
           </Card>
         </Grid>
 
         <Grid numItems={2} className="gap-4">
           <Card>
             <div className="flex justify-between items-center">
-              <Title>Total Tokens Over Time</Title>
+              <Title>{t("observability.activity_metrics.total_tokens_over_time")}</Title>
               <CustomLegend
                 categories={["metrics.prompt_tokens", "metrics.completion_tokens", "metrics.total_tokens"]}
                 colors={["blue", "cyan", "indigo"]}
@@ -300,7 +402,7 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
           </Card>
           <Card>
             <div className="flex justify-between items-center">
-              <Title>Total Requests Over Time</Title>
+              <Title>{t("observability.activity_metrics.total_requests_over_time")}</Title>
               <CustomLegend
                 categories={["metrics.successful_requests", "metrics.failed_requests"]}
                 colors={["emerald", "red"]}
@@ -328,16 +430,20 @@ export const ActivityMetrics: React.FC<ActivityMetricsProps> = ({ modelMetrics, 
             key={modelName}
             header={
               <div className="flex justify-between items-center w-full">
-                <Title>{modelMetrics[modelName].label || "Unknown Item"}</Title>
+                <Title>{modelMetrics[modelName].label || t("observability.activity_metrics.unknown_item")}</Title>
                 <div className="flex space-x-4 text-sm text-gray-500">
                   <span>${formatNumberWithCommas(modelMetrics[modelName].total_spend, 2)}</span>
-                  <span>{modelMetrics[modelName].total_requests.toLocaleString()} requests</span>
+                  <span>
+                    {t("observability.activity_metrics.requests_short", {
+                      count: modelMetrics[modelName].total_requests.toLocaleString(),
+                    })}
+                  </span>
                 </div>
               </div>
             }
           >
             <ModelSection
-              modelName={modelName || "Unknown Model"}
+              modelName={modelName || t("observability.activity_metrics.unknown_model")}
               metrics={modelMetrics[modelName]}
               hidePromptCachingMetrics={hidePromptCachingMetrics}
             />
@@ -386,6 +492,10 @@ export const processActivityData = (
           total_spend: 0,
           total_cache_read_input_tokens: 0,
           total_cache_creation_input_tokens: 0,
+          average_response_time_ms: null,
+          response_time_count: 0,
+          average_ttft_ms: null,
+          ttft_count: 0,
           top_api_keys: [],
           top_models: [],
           daily_data: [],
@@ -401,6 +511,22 @@ export const processActivityData = (
       modelMetrics[model].total_failed_requests += modelData.metrics.failed_requests;
       modelMetrics[model].total_cache_read_input_tokens += modelData.metrics.cache_read_input_tokens || 0;
       modelMetrics[model].total_cache_creation_input_tokens += modelData.metrics.cache_creation_input_tokens || 0;
+      const responseTime = combineAverage(
+        modelMetrics[model].average_response_time_ms,
+        modelMetrics[model].response_time_count,
+        modelData.metrics.average_response_time_ms,
+        modelData.metrics.response_time_count,
+      );
+      modelMetrics[model].average_response_time_ms = responseTime.average;
+      modelMetrics[model].response_time_count = responseTime.count;
+      const ttft = combineAverage(
+        modelMetrics[model].average_ttft_ms,
+        modelMetrics[model].ttft_count,
+        modelData.metrics.average_ttft_ms,
+        modelData.metrics.ttft_count,
+      );
+      modelMetrics[model].average_ttft_ms = ttft.average;
+      modelMetrics[model].ttft_count = ttft.count;
 
       // Add daily data
       modelMetrics[model].daily_data.push({
@@ -415,6 +541,10 @@ export const processActivityData = (
           failed_requests: modelData.metrics.failed_requests,
           cache_read_input_tokens: modelData.metrics.cache_read_input_tokens || 0,
           cache_creation_input_tokens: modelData.metrics.cache_creation_input_tokens || 0,
+          average_response_time_ms: modelData.metrics.average_response_time_ms,
+          response_time_count: modelData.metrics.response_time_count,
+          average_ttft_ms: modelData.metrics.average_ttft_ms,
+          ttft_count: modelData.metrics.ttft_count,
         },
       });
     });

@@ -767,6 +767,10 @@ model LiteLLM_DailyUserSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -801,6 +805,10 @@ model LiteLLM_DailyOrganizationSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -835,6 +843,10 @@ model LiteLLM_DailyEndUserSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
   @@unique([end_user_id, date, api_key, model, custom_llm_provider, mcp_namespaced_tool_name, endpoint])
@@ -868,6 +880,10 @@ model LiteLLM_DailyAgentSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
   @@unique([agent_id, date, api_key, model, custom_llm_provider, mcp_namespaced_tool_name, endpoint])
@@ -901,6 +917,10 @@ model LiteLLM_DailyTeamSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -936,6 +956,10 @@ model LiteLLM_DailyTagSpend {
   api_requests        BigInt      @default(0)
   successful_requests BigInt      @default(0)
   failed_requests     BigInt      @default(0)
+  response_time_ms_sum Float       @default(0.0)
+  response_time_count  BigInt      @default(0)
+  ttft_ms_sum          Float       @default(0.0)
+  ttft_count           BigInt      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -1098,6 +1122,15 @@ model LiteLLM_SpendLogGuardrailIndex {
 
   @@id([request_id, guardrail_id])
   @@index([guardrail_id, start_time])
+  @@index([policy_id, start_time])
+}
+
+model LiteLLM_SpendLogPolicyIndex {
+  request_id String
+  policy_id  String
+  start_time DateTime
+
+  @@id([request_id, policy_id])
   @@index([policy_id, start_time])
 }
 

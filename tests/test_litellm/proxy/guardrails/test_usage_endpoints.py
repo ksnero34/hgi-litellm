@@ -8,9 +8,11 @@ detail 404'd, overview omitted them (or rendered them as Custom/Guardrail
 orphans), and logs missed their logical-name alias.
 """
 
+import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,6 +25,10 @@ from fastapi import HTTPException
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_registry import InMemoryGuardrailHandler
 from litellm.proxy.guardrails.usage_endpoints import (
+    _build_policy_usage_logs_where,
+    _policy_overview_rows,
+    _policy_usage_log_entry_from_row,
+    _usage_log_entry_from_row,
     guardrails_usage_detail,
     guardrails_usage_logs,
     guardrails_usage_overview,
@@ -237,3 +243,119 @@ async def test_logs_resolves_config_guardrail_logical_name():
         )
     where = prisma.db.litellm_spendlogguardrailindex.find_many.call_args.kwargs["where"]
     assert where["guardrail_id"] == {"in": ["yaml-uuid", "yaml-pii"]}
+
+
+def test_policy_log_entry_selects_requested_policy_from_shared_request():
+    spend_log = SimpleNamespace(
+        request_id="request-1",
+        startTime=datetime(2026, 7, 23, tzinfo=timezone.utc),
+        metadata=json.dumps(
+            {
+                "policy_information": [
+                    {"policy_name": "alpha", "policy_id": "policy-a"},
+                    {"policy_name": "beta", "policy_id": "policy-b"},
+                ],
+                "guardrail_information": [
+                    {
+                        "guardrail_name": "guard-a",
+                        "policy_ids": ["policy-a"],
+                        "guardrail_status": "guardrail_intervened",
+                    },
+                    {
+                        "guardrail_name": "guard-b",
+                        "policy_ids": ["policy-b"],
+                        "guardrail_status": "guardrail_intervened",
+                        "usage_action": "passed",
+                    },
+                ],
+            }
+        ),
+        model="model",
+        messages={},
+        response={},
+        proxy_server_request=None,
+    )
+
+    alpha = _policy_usage_log_entry_from_row(
+        SimpleNamespace(request_id="request-1", policy_id="policy-a"), spend_log, None
+    )
+    beta = _policy_usage_log_entry_from_row(
+        SimpleNamespace(request_id="request-1", policy_id="policy-b"), spend_log, None
+    )
+
+    assert alpha is not None and alpha.action == "blocked"
+    assert beta is not None and beta.action == "passed"
+
+
+def test_guardrail_log_entry_uses_highest_action_and_includes_trace_and_key_details():
+    guardrail_entries = [
+        {
+            "guardrail_name": "presidio-pii",
+            "guardrail_event": "pre_call",
+            "guardrail_status": "success",
+            "usage_action": "passed",
+        },
+        {
+            "guardrail_name": "presidio-pii",
+            "guardrail_event": "logging_only",
+            "guardrail_status": "success",
+            "usage_action": "flagged",
+            "input_source": {"scope": "current_user_prompt", "message_index": 1},
+            "guardrail_response": [
+                {"entity_type": "EMAIL_ADDRESS", "start": 6, "end": 24, "score": 0.99}
+            ],
+            "masked_entity_count": {"EMAIL_ADDRESS": 1},
+        },
+    ]
+    spend_log = SimpleNamespace(
+        request_id="request-1",
+        startTime=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        metadata={
+            "guardrail_information": guardrail_entries,
+            "user_api_key": "hashed-key",
+            "user_api_key_alias": "customer-key",
+            "user_api_key_team_alias": "customer-team",
+        },
+        api_key="fallback-key",
+        team_id="team-1",
+        model="model",
+        messages=[{"role": "user", "content": "Email person@example.com"}],
+        response={},
+        proxy_server_request=None,
+    )
+
+    entry = _usage_log_entry_from_row(
+        SimpleNamespace(request_id="request-1", guardrail_id="presidio-pii"),
+        spend_log,
+        None,
+    )
+
+    assert entry is not None
+    assert entry.action == "flagged"
+    assert entry.api_key == "hashed-key"
+    assert entry.key_alias == "customer-key"
+    assert entry.team_id == "team-1"
+    assert entry.team_alias == "customer-team"
+    assert entry.guardrail_information == guardrail_entries
+
+
+def test_build_policy_usage_logs_where_targets_policy_index():
+    where = _build_policy_usage_logs_where("policy-a", "2026-07-01", "2026-07-31")
+
+    assert where["policy_id"] == "policy-a"
+    assert where["start_time"]["gte"].isoformat() == "2026-07-01T00:00:00+00:00"
+    assert where["start_time"]["lte"].isoformat() == "2026-07-31T23:59:59+00:00"
+
+
+def test_policy_overview_includes_config_policy_metrics_without_db_row():
+    rows = _policy_overview_rows(
+        policies=[],
+        agg={"config-policy": {"requests": 2, "passed": 1, "blocked": 1, "flagged": 0}},
+        prev_agg={},
+    )
+
+    assert len(rows) == 1
+    assert rows[0].id == "config-policy"
+    assert rows[0].provider == "Config"
+    assert rows[0].requestsEvaluated == 2
+    assert rows[0].failRate == 50.0

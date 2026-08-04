@@ -9,15 +9,223 @@ sys.path.insert(
 )  # Adds the parent directory to the system path
 
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import httpx
 import pytest
 from redis.exceptions import DataError
 
 import litellm
 from litellm.proxy._types import Litellm_EntityType
-from litellm.proxy.db.db_spend_update_writer import DBSpendUpdateWriter
+from litellm.proxy.db.db_spend_update_writer import (
+    DBSpendUpdateWriter,
+    LOGGING_ONLY_GUARDRAILS_PENDING,
+    LOGGING_ONLY_GUARDRAILS_PENDING_KWARG,
+    _performance_metrics,
+)
+
+
+def _wire_daily_spend_tx(mock_prisma_client, mock_batcher, batch_exit_side_effect=None):
+    batch_context = MagicMock()
+    batch_context.__aenter__ = AsyncMock(return_value=mock_batcher)
+    batch_context.__aexit__ = (
+        AsyncMock(return_value=False)
+        if batch_exit_side_effect is None
+        else AsyncMock(side_effect=batch_exit_side_effect)
+    )
+    mock_transaction = MagicMock()
+    mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
+    mock_transaction.__aexit__ = AsyncMock(return_value=False)
+    mock_transaction.batch_.return_value = batch_context
+    mock_prisma_client.db.tx.return_value = mock_transaction
+    return mock_transaction
+
+
+def test_performance_metrics_tracks_response_time_and_streaming_ttft():
+    metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:00.250Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": None,
+            "cache_hit": "False",
+        },
+        request_succeeded=True,
+    )
+
+    assert metrics == {
+        "response_time_ms_sum": 1000.0,
+        "response_time_count": 1,
+        "ttft_ms_sum": 250.0,
+        "ttft_count": 1,
+    }
+
+
+def test_performance_metrics_excludes_cache_hits_and_non_streaming_ttft():
+    cached_metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:00.100Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": 1000,
+            "cache_hit": "True",
+        },
+        request_succeeded=True,
+    )
+    non_streaming_metrics = _performance_metrics(
+        {
+            "startTime": "2026-07-23T00:00:00Z",
+            "completionStartTime": "2026-07-23T00:00:01Z",
+            "endTime": "2026-07-23T00:00:01Z",
+            "request_duration_ms": 1000,
+            "cache_hit": "False",
+        },
+        request_succeeded=True,
+    )
+
+    assert cached_metrics["response_time_count"] == 0
+    assert cached_metrics["ttft_count"] == 0
+    assert non_streaming_metrics["response_time_count"] == 1
+    assert non_streaming_metrics["ttft_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_database_marks_pending_logging_only_guardrails():
+    writer = DBSpendUpdateWriter()
+    writer._insert_spend_log_to_db = AsyncMock()
+    writer._enqueue_tool_usage_transaction = AsyncMock()
+    writer._batch_database_updates = AsyncMock()
+    payload = {
+        "request_id": "request-pending",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": "{}",
+        "spend": 0.1,
+        "messages": '[{"role":"user","content":"홍길동"}]',
+        "response": '{"content":"안녕하세요 홍길동님"}',
+        "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}',
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.disable_spend_logs", False),
+        patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
+        patch("litellm.proxy.proxy_server.litellm_proxy_budget_name", "budget"),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=payload),
+    ):
+        await writer.update_database(
+            token="token",
+            user_id="user",
+            end_user_id=None,
+            team_id="team",
+            org_id=None,
+            kwargs={LOGGING_ONLY_GUARDRAILS_PENDING_KWARG: True},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+            response_cost=0.1,
+        )
+
+    stored_payload = writer._insert_spend_log_to_db.await_args.kwargs["payload"]
+    assert json.loads(stored_payload["metadata"])[LOGGING_ONLY_GUARDRAILS_PENDING] is True
+    assert stored_payload["messages"] == payload["messages"]
+    assert stored_payload["response"] == payload["response"]
+    assert stored_payload["proxy_server_request"] == payload["proxy_server_request"]
+
+
+@pytest.mark.asyncio
+async def test_update_guardrail_results_updates_queued_metadata_without_replacing_content():
+    writer = DBSpendUpdateWriter()
+    prisma_client = MagicMock()
+    prisma_client._spend_log_transactions_lock = asyncio.Lock()
+    prisma_client.spend_log_transactions = [
+        {
+            "request_id": "request-1",
+            "metadata": json.dumps({LOGGING_ONLY_GUARDRAILS_PENDING: True}),
+            "messages": '[{"role":"user","content":"홍길동"}]',
+            "response": '{"content":"안녕하세요 홍길동님"}',
+            "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}',
+        },
+        {"request_id": "request-2", "metadata": "{}"},
+    ]
+    final_payload = {
+        "request_id": "request-1",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": json.dumps({"guardrail_information": [{"guardrail_name": "presidio"}]}),
+        "messages": '[{"role":"user","content":"<PERSON>"}]',
+        "response": '{"content":"안녕하세요 <PERSON>님"}',
+        "proxy_server_request": '{"body":{"messages":[{"role":"user","content":"<PERSON>"}]}}',
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", prisma_client),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=final_payload),
+    ):
+        updated = await writer.update_guardrail_results(
+            kwargs={},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+        )
+
+    assert updated is True
+    assert prisma_client.spend_log_transactions[0]["request_id"] == "request-1"
+    assert LOGGING_ONLY_GUARDRAILS_PENDING not in json.loads(prisma_client.spend_log_transactions[0]["metadata"])
+    assert prisma_client.spend_log_transactions[0]["messages"] == '[{"role":"user","content":"홍길동"}]'
+    assert prisma_client.spend_log_transactions[0]["response"] == '{"content":"안녕하세요 홍길동님"}'
+    assert (
+        prisma_client.spend_log_transactions[0]["proxy_server_request"]
+        == '{"body":{"messages":[{"role":"user","content":"홍길동"}]}}'
+    )
+    assert prisma_client.spend_log_transactions[1]["request_id"] == "request-2"
+
+
+@pytest.mark.asyncio
+async def test_update_guardrail_results_updates_only_flushed_metadata_and_monitoring():
+    writer = DBSpendUpdateWriter()
+    prisma_client = MagicMock()
+    prisma_client._spend_log_transactions_lock = asyncio.Lock()
+    prisma_client.spend_log_transactions = []
+    prisma_client.jsonify_object = lambda payload: payload
+    prisma_client.db.litellm_spendlogs.upsert = AsyncMock()
+    final_payload = {
+        "request_id": "request-flushed",
+        "startTime": datetime.now(timezone.utc),
+        "endTime": datetime.now(timezone.utc),
+        "metadata": json.dumps({"guardrail_information": [{"guardrail_name": "presidio"}]}),
+        "messages": '[{"role":"user","content":"<PERSON>"}]',
+        "response": '{"content":"<PERSON>"}',
+        "proxy_server_request": "{}",
+    }
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client", prisma_client),
+        patch("litellm.proxy.spend_tracking.spend_tracking_utils.get_logging_payload", return_value=final_payload),
+        patch(
+            "litellm.proxy.guardrails.usage_tracking.process_spend_logs_guardrail_usage",
+            new_callable=AsyncMock,
+        ) as process_guardrail_usage,
+    ):
+        updated = await writer.update_guardrail_results(
+            kwargs={},
+            completion_response={},
+            start_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc),
+        )
+
+    assert updated is True
+    prisma_client.db.litellm_spendlogs.upsert.assert_awaited_once_with(
+        where={"request_id": "request-flushed"},
+        data={
+            "create": final_payload,
+            "update": {"metadata": final_payload["metadata"]},
+        },
+    )
+    process_guardrail_usage.assert_awaited_once_with(
+        prisma_client=prisma_client,
+        logs_to_process=[final_payload],
+    )
 
 
 @pytest.mark.asyncio
@@ -243,8 +451,8 @@ async def test_update_daily_spend_with_null_entity_id():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
     mock_batcher.litellm_dailyuserspend = mock_table
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
 
     # Create a transaction with null entity_id
     daily_spend_transactions = {
@@ -331,10 +539,14 @@ async def test_update_daily_spend_does_not_retry_post_send_ambiguous_errors():
     # on the pooled connection, so retrying stacks a second set of increments
     # into it and one commit applies both. Post-send failures must drop the
     # batch (loudly), never retry it.
-    import httpx
-
     mock_prisma_client = MagicMock()
-    mock_prisma_client.db.batch_ = MagicMock(side_effect=httpx.ReadTimeout("ambiguous"))
+    mock_batcher = MagicMock()
+    mock_batcher.litellm_dailyuserspend = MagicMock()
+    _wire_daily_spend_tx(
+        mock_prisma_client,
+        mock_batcher,
+        batch_exit_side_effect=httpx.ReadTimeout("ambiguous"),
+    )
     proxy_logging = MagicMock()
     proxy_logging.failure_handler = AsyncMock()
 
@@ -350,21 +562,27 @@ async def test_update_daily_spend_does_not_retry_post_send_ambiguous_errors():
             unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
-    mock_prisma_client.db.batch_.assert_called_once()
+    mock_prisma_client.db.tx.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_update_daily_spend_retries_connect_errors(monkeypatch):
     # ConnectError proves the statements never reached the database, so it is
     # the one failure the writer may retry.
-    import httpx
-
     mock_batcher = MagicMock()
-    good_ctx = MagicMock()
-    good_ctx.__aenter__ = AsyncMock(return_value=mock_batcher)
-    good_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_batcher.litellm_dailyuserspend = MagicMock()
+    bad_transaction = MagicMock()
+    bad_transaction.__aenter__ = AsyncMock(side_effect=httpx.ConnectError("down"))
+    bad_transaction.__aexit__ = AsyncMock(return_value=False)
+    good_transaction = MagicMock()
+    good_transaction.__aenter__ = AsyncMock(return_value=good_transaction)
+    good_transaction.__aexit__ = AsyncMock(return_value=False)
+    batch_context = MagicMock()
+    batch_context.__aenter__ = AsyncMock(return_value=mock_batcher)
+    batch_context.__aexit__ = AsyncMock(return_value=False)
+    good_transaction.batch_.return_value = batch_context
     mock_prisma_client = MagicMock()
-    mock_prisma_client.db.batch_ = MagicMock(side_effect=[httpx.ConnectError("down"), good_ctx])
+    mock_prisma_client.db.tx = MagicMock(side_effect=[bad_transaction, good_transaction])
     proxy_logging = MagicMock()
     proxy_logging.failure_handler = AsyncMock()
 
@@ -383,7 +601,7 @@ async def test_update_daily_spend_retries_connect_errors(monkeypatch):
         unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
     )
 
-    assert mock_prisma_client.db.batch_.call_count == 2
+    assert mock_prisma_client.db.tx.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -397,8 +615,8 @@ async def test_update_daily_spend_sorting():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
     mock_batcher.litellm_dailyuserspend = mock_table
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
 
     # Create a 50 transactions with out-of-order entity_ids
     # In reality we sort using multiple fields, but entity_id is sufficient to test sorting
@@ -488,8 +706,8 @@ async def test_update_daily_spend_drains_all_batches_over_batch_size():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
     mock_batcher.litellm_dailyuserspend = mock_table
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
 
     num_entities = 250
     daily_spend_transactions = {
@@ -521,7 +739,7 @@ async def test_update_daily_spend_drains_all_batches_over_batch_size():
     )
 
     assert mock_table.upsert.call_count == num_entities
-    assert mock_prisma_client.db.batch_.call_count == 3
+    assert mock_prisma_client.db.tx.call_count == 3
     assert daily_spend_transactions == {}
 
 
@@ -534,8 +752,8 @@ async def test_update_daily_spend_tag_with_request_id():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
     mock_batcher.litellm_dailytagspend = mock_table
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
 
     # Create a transaction with request_id
     daily_spend_transactions = {
@@ -591,8 +809,8 @@ async def test_update_daily_spend_with_none_values_in_sorting_fields():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
     mock_batcher.litellm_dailyuserspend = mock_table
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
 
     # Create transactions with None values in various sorting fields
     daily_spend_transactions = {
@@ -1388,15 +1606,12 @@ async def test_update_daily_spend_logs_detailed_error_on_batch_upsert_failure():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_batch_context = MagicMock()
-    mock_batch_context.__aenter__ = AsyncMock(return_value=mock_batcher)
     mock_batcher.litellm_dailyuserspend = mock_table
 
     # Make the batch context manager's exit raise an exception
     # This simulates a batch commit failure (e.g., unique constraint violation)
     test_exception = Exception("Unique constraint violation")
-    mock_batch_context.__aexit__ = AsyncMock(side_effect=test_exception)
-    mock_prisma_client.db.batch_.return_value = mock_batch_context
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher, batch_exit_side_effect=test_exception)
 
     # Create a transaction
     daily_spend_transactions = {
@@ -1462,8 +1677,6 @@ async def test_update_daily_spend_re_raises_exception_after_logging():
     mock_prisma_client = MagicMock()
     mock_batcher = MagicMock()
     mock_table = MagicMock()
-    mock_batch_context = MagicMock()
-    mock_batch_context.__aenter__ = AsyncMock(return_value=mock_batcher)
     mock_batcher.litellm_dailyuserspend = mock_table
 
     # Create a transaction
@@ -1485,8 +1698,7 @@ async def test_update_daily_spend_re_raises_exception_after_logging():
 
     # Create a custom exception to verify it's re-raised
     custom_exception = ValueError("Database connection lost")
-    mock_batch_context.__aexit__ = AsyncMock(side_effect=custom_exception)
-    mock_prisma_client.db.batch_.return_value = mock_batch_context
+    _wire_daily_spend_tx(mock_prisma_client, mock_batcher, batch_exit_side_effect=custom_exception)
 
     # Create a mock proxy_logging_obj with failure_handler as AsyncMock
     mock_proxy_logging = MagicMock()
@@ -1504,6 +1716,78 @@ async def test_update_daily_spend_re_raises_exception_after_logging():
             table_name="litellm_dailyuserspend",
             unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
+
+
+def _single_daily_user_transaction():
+    return {
+        "test_key": {
+            "user_id": "test-user",
+            "date": "2024-01-01",
+            "api_key": "test-api-key",
+            "model": "gpt-4",
+            "custom_llm_provider": "openai",
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "spend": 0.1,
+            "api_requests": 1,
+            "successful_requests": 1,
+            "failed_requests": 0,
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_update_daily_spend_uses_bounded_transaction():
+    mock_prisma_client = MagicMock()
+    mock_batcher = MagicMock()
+    mock_batcher.litellm_dailyuserspend = MagicMock()
+    mock_transaction = _wire_daily_spend_tx(mock_prisma_client, mock_batcher)
+
+    await DBSpendUpdateWriter._update_daily_spend(
+        n_retry_times=1,
+        prisma_client=mock_prisma_client,
+        proxy_logging_obj=MagicMock(),
+        daily_spend_transactions=_single_daily_user_transaction(),
+        entity_type="user",
+        entity_id_field="user_id",
+        table_name="litellm_dailyuserspend",
+        unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
+    )
+
+    timeout = mock_prisma_client.db.tx.call_args.kwargs["timeout"]
+    assert timeout == timedelta(seconds=60)
+    mock_transaction.batch_.assert_called_once()
+    assert not mock_prisma_client.db.batch_.called
+
+
+@pytest.mark.asyncio
+async def test_update_daily_spend_does_not_retry_read_timeout():
+    mock_prisma_client = MagicMock()
+    mock_batcher = MagicMock()
+    mock_batcher.litellm_dailyuserspend = MagicMock()
+    _wire_daily_spend_tx(
+        mock_prisma_client,
+        mock_batcher,
+        batch_exit_side_effect=httpx.ReadTimeout("query engine read timed out"),
+    )
+    daily_spend_transactions = _single_daily_user_transaction()
+    mock_proxy_logging = MagicMock()
+    mock_proxy_logging.failure_handler = AsyncMock()
+
+    with pytest.raises(httpx.ReadTimeout):
+        await DBSpendUpdateWriter._update_daily_spend(
+            n_retry_times=3,
+            prisma_client=mock_prisma_client,
+            proxy_logging_obj=mock_proxy_logging,
+            daily_spend_transactions=daily_spend_transactions,
+            entity_type="user",
+            entity_id_field="user_id",
+            table_name="litellm_dailyuserspend",
+            unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
+        )
+
+    assert mock_prisma_client.db.tx.call_count == 1
+    assert daily_spend_transactions == {}
 
 
 @pytest.mark.asyncio

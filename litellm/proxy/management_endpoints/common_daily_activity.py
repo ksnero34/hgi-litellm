@@ -140,6 +140,11 @@ class _GroupingSetsRow(SimpleNamespace):
     failed_requests: int | None
 
 
+def _numeric_metric(record: object, field: str) -> Union[int, float]:
+    value = getattr(record, field, 0)
+    return value if isinstance(value, (int, float)) else 0
+
+
 def update_metrics(existing_metrics: SpendMetrics, record: DailySpendRecord) -> SpendMetrics:
     """Update metrics with new record data.
 
@@ -147,20 +152,38 @@ def update_metrics(existing_metrics: SpendMetrics, record: DailySpendRecord) -> 
     (e.g. a key with no spend), so coalesce to 0 before accumulating to avoid
     a TypeError. Mirrors the handling in ``_record_to_spend_metrics``.
     """
-    prompt_tokens = record.prompt_tokens or 0
-    completion_tokens = record.completion_tokens or 0
-    existing_metrics.spend += record.spend or 0.0
+    prompt_tokens = int(_numeric_metric(record, "prompt_tokens"))
+    completion_tokens = int(_numeric_metric(record, "completion_tokens"))
+    existing_metrics.spend += float(_numeric_metric(record, "spend"))
     existing_metrics.prompt_tokens += prompt_tokens
     existing_metrics.completion_tokens += completion_tokens
     existing_metrics.total_tokens += prompt_tokens + completion_tokens
-    existing_metrics.cache_read_input_tokens += record.cache_read_input_tokens or 0
-    existing_metrics.cache_creation_input_tokens += record.cache_creation_input_tokens or 0
-    existing_metrics.compression_saved_tokens += record.compression_saved_tokens or 0
-    existing_metrics.compression_savings_spend += record.compression_savings_spend or 0
-    existing_metrics.prompt_caching_savings_spend += record.prompt_caching_savings_spend or 0
-    existing_metrics.api_requests += record.api_requests or 0
-    existing_metrics.successful_requests += record.successful_requests or 0
-    existing_metrics.failed_requests += record.failed_requests or 0
+    existing_metrics.cache_read_input_tokens += int(_numeric_metric(record, "cache_read_input_tokens"))
+    existing_metrics.cache_creation_input_tokens += int(_numeric_metric(record, "cache_creation_input_tokens"))
+    existing_metrics.compression_saved_tokens += int(_numeric_metric(record, "compression_saved_tokens"))
+    existing_metrics.compression_savings_spend += float(_numeric_metric(record, "compression_savings_spend"))
+    existing_metrics.prompt_caching_savings_spend += float(_numeric_metric(record, "prompt_caching_savings_spend"))
+    existing_metrics.api_requests += int(_numeric_metric(record, "api_requests"))
+    existing_metrics.successful_requests += int(_numeric_metric(record, "successful_requests"))
+    existing_metrics.failed_requests += int(_numeric_metric(record, "failed_requests"))
+    response_time_count = int(_numeric_metric(record, "response_time_count"))
+    combined_response_time_count = existing_metrics.response_time_count + response_time_count
+    if combined_response_time_count > 0:
+        existing_response_time_sum = (
+            existing_metrics.average_response_time_ms or 0.0
+        ) * existing_metrics.response_time_count
+        existing_metrics.average_response_time_ms = (
+            existing_response_time_sum + _numeric_metric(record, "response_time_ms_sum")
+        ) / combined_response_time_count
+    existing_metrics.response_time_count = combined_response_time_count
+    ttft_count = int(_numeric_metric(record, "ttft_count"))
+    combined_ttft_count = existing_metrics.ttft_count + ttft_count
+    if combined_ttft_count > 0:
+        existing_ttft_sum = (existing_metrics.average_ttft_ms or 0.0) * existing_metrics.ttft_count
+        existing_metrics.average_ttft_ms = (
+            existing_ttft_sum + _numeric_metric(record, "ttft_ms_sum")
+        ) / combined_ttft_count
+    existing_metrics.ttft_count = combined_ttft_count
     return existing_metrics
 
 
@@ -591,7 +614,11 @@ def _build_aggregated_sql_query(
             SUM(prompt_caching_savings_spend)::float AS prompt_caching_savings_spend,
             SUM(api_requests)::bigint AS api_requests,
             SUM(successful_requests)::bigint AS successful_requests,
-            SUM(failed_requests)::bigint AS failed_requests
+            SUM(failed_requests)::bigint AS failed_requests,
+            SUM(response_time_ms_sum)::float AS response_time_ms_sum,
+            SUM(response_time_count)::bigint AS response_time_count,
+            SUM(ttft_ms_sum)::float AS ttft_ms_sum,
+            SUM(ttft_count)::bigint AS ttft_count
         FROM "{pg_table}"
         WHERE {where_clause}
         GROUP BY GROUPING SETS (
@@ -721,6 +748,8 @@ def _record_to_spend_metrics(record: _GroupingSetsRow) -> SpendMetrics:
     """
     prompt_tokens = record.prompt_tokens or 0
     completion_tokens = record.completion_tokens or 0
+    response_time_count = int(_numeric_metric(record, "response_time_count"))
+    ttft_count = int(_numeric_metric(record, "ttft_count"))
     return SpendMetrics(
         spend=record.spend or 0.0,
         prompt_tokens=prompt_tokens,
@@ -734,6 +763,12 @@ def _record_to_spend_metrics(record: _GroupingSetsRow) -> SpendMetrics:
         api_requests=record.api_requests or 0,
         successful_requests=record.successful_requests or 0,
         failed_requests=record.failed_requests or 0,
+        average_response_time_ms=(
+            _numeric_metric(record, "response_time_ms_sum") / response_time_count if response_time_count > 0 else None
+        ),
+        response_time_count=response_time_count,
+        average_ttft_ms=(_numeric_metric(record, "ttft_ms_sum") / ttft_count if ttft_count > 0 else None),
+        ttft_count=ttft_count,
     )
 
 
