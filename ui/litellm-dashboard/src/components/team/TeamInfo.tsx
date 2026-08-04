@@ -33,6 +33,7 @@ import { Button, Form, Input, InputNumber, Select, Space, Switch, Tabs, Tag, Too
 import MessageManager from "@/components/molecules/message_manager";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { copyToClipboard as utilCopyToClipboard } from "../../utils/dataUtils";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import ModelAliasManager from "../common_components/ModelAliasManager";
@@ -179,6 +180,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
   premiumUser = false,
   onUpdate,
 }) => {
+  const { t } = useTranslation();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAddMemberModalVisible, setIsAddMemberModalVisible] = useState(false);
@@ -358,7 +360,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
       let errMsg = "Failed to add team member";
 
       if (error?.raw?.detail?.error?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = t("access.teams.restrictions.teamAdmins");
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -400,7 +402,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
     } catch (error: any) {
       let errMsg = "Failed to update team member";
       if (error?.raw?.detail?.includes("Assigning team admins is a premium feature")) {
-        errMsg = "Assigning admins is an enterprise-only feature. Please upgrade your LiteLLM plan to enable this.";
+        errMsg = t("access.teams.restrictions.teamAdmins");
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -533,7 +535,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
               : values.soft_budget_alerting_emails || [],
           ...(secretManagerSettings !== undefined ? { secret_manager_settings: secretManagerSettings } : {}),
         },
-        ...(values.policies?.length > 0 ? { policies: values.policies } : {}),
+        policies: values.policies || [],
         ...(values.organization_id !== info.organization_id ? { organization_id: values.organization_id ?? null } : {}),
       };
 
@@ -650,11 +652,11 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
   };
 
   if (loading) {
-    return <div className="p-4">Loading...</div>;
+    return <div className="p-4">{t("identityAdmin.team.loading", { defaultValue: "Loading..." })}</div>;
   }
 
   if (!teamData?.team_info) {
-    return <div className="p-4">Team not found</div>;
+    return <div className="p-4">{t("identityAdmin.team.notFound", { defaultValue: "Team not found" })}</div>;
   }
 
   const { team_info: info } = teamData;
@@ -716,7 +718,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
       <div className="flex justify-between items-center mb-6">
         <div>
           <Button type="text" icon={<ArrowLeftIcon className="h-4 w-4" />} onClick={onClose} className="mb-4">
-            Back to Teams
+            {t("identityAdmin.team.backToTeams", { defaultValue: "Back to Teams" })}
           </Button>
           <Title>{info.team_alias}</Title>
           <div className="flex items-center">
@@ -746,11 +748,14 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
             children: (
               <Grid numItems={1} numItemsSm={2} numItemsLg={3} className="gap-6">
                 <Card>
-                  <Text>Budget Status</Text>
+                  <Text>{t("identityAdmin.team.details.budgetStatus")}</Text>
                   <div className="mt-2">
                     <Title>${formatNumberWithCommas(info.spend, 4)}</Title>
                     <Text>
-                      of {info.max_budget === null ? "Unlimited" : `$${formatNumberWithCommas(info.max_budget, 4)}`}
+                      of{" "}
+                      {info.max_budget === null
+                        ? t("access.common.unlimited")
+                        : `$${formatNumberWithCommas(info.max_budget, 4)}`}
                     </Text>
                     {info.budget_duration && <Text className="text-gray-500">Reset: {info.budget_duration}</Text>}
                     <br />
@@ -763,10 +768,10 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text>Rate Limits</Text>
+                  <Text>{t("identityAdmin.team.details.rateLimits")}</Text>
                   <div className="mt-2">
-                    <Text>TPM: {info.tpm_limit || "Unlimited"}</Text>
-                    <Text>RPM: {info.rpm_limit || "Unlimited"}</Text>
+                    <Text>TPM: {info.tpm_limit || t("access.common.unlimited")}</Text>
+                    <Text>RPM: {info.rpm_limit || t("access.common.unlimited")}</Text>
                     {info.max_parallel_requests && <Text>Max Parallel Requests: {info.max_parallel_requests}</Text>}
                     {(() => {
                       const modelTpm = (info.metadata?.model_tpm_limit ?? {}) as Record<string, number>;
@@ -775,7 +780,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       if (models.length === 0) return null;
                       return (
                         <div className="mt-3">
-                          <Text className="text-gray-500">Per-model limits:</Text>
+                          <Text className="text-gray-500">{t("identityAdmin.team.details.perModelLimits")}</Text>
                           {models.map((m) => (
                             <Text key={m} className="text-xs">
                               {m}: TPM {modelTpm[m] ?? "—"}, RPM {modelRpm[m] ?? "—"}
@@ -788,10 +793,10 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text>Models</Text>
+                  <Text>{t("identityAdmin.team.details.models")}</Text>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {info.models.length === 0 || info.models.includes("all-proxy-models") ? (
-                      <Badge color="red">All proxy models</Badge>
+                      <Badge color="red">{t("identityAdmin.team.details.allProxyModels")}</Badge>
                     ) : (
                       <>
                         {info.models.map((model: string, index: number) => (
@@ -800,7 +805,11 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                           </Badge>
                         ))}
                         {(info.access_group_models || []).map((model: string, index: number) => (
-                          <Badge key={`ag-${index}`} color="green" title="From access group">
+                          <Badge
+                            key={`ag-${index}`}
+                            color="green"
+                            title={t("identityAdmin.team.details.fromAccessGroup")}
+                          >
                             {model}
                           </Badge>
                         ))}
@@ -810,9 +819,13 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text className="font-semibold text-gray-900">Virtual Keys</Text>
+                  <Text className="font-semibold text-gray-900">{t("identityAdmin.team.details.virtualKeys")}</Text>
                   <div className="mt-2">
-                    <Text>User Keys: {teamData.keys.filter((key) => key.user_id).length}</Text>
+                    <Text>
+                      {t("identityAdmin.team.details.userKeys", {
+                        count: teamData.keys.filter((key) => key.user_id).length,
+                      })}
+                    </Text>
                     <Text>Service Account Keys: {teamData.keys.filter((key) => !key.user_id).length}</Text>
                     <Text className="text-gray-500">Total: {teamData.keys.length}</Text>
                   </div>
@@ -839,18 +852,24 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                 </Card>
 
                 <Card>
-                  <Text className="font-semibold text-gray-900 mb-3">Policies</Text>
+                  <Text className="font-semibold text-gray-900 mb-3">{t("identityAdmin.team.details.policies")}</Text>
                   {info.policies && info.policies.length > 0 ? (
                     <div className="space-y-4">
                       {info.policies.map((policy: string, index: number) => (
                         <div key={index} className="space-y-2">
                           <div className="flex items-center gap-2">
                             <Badge color="purple">{policy}</Badge>
-                            {loadingPolicies && <Text className="text-xs text-gray-400">Loading guardrails...</Text>}
+                            {loadingPolicies && (
+                              <Text className="text-xs text-gray-400">
+                                {t("identityAdmin.team.details.loadingGuardrails")}
+                              </Text>
+                            )}
                           </div>
                           {!loadingPolicies && policyGuardrails[policy] && policyGuardrails[policy].length > 0 && (
                             <div className="ml-4 pl-3 border-l-2 border-gray-200">
-                              <Text className="text-xs text-gray-500 mb-1">Resolved Guardrails:</Text>
+                              <Text className="text-xs text-gray-500 mb-1">
+                                {t("identityAdmin.team.details.resolvedGuardrails")}
+                              </Text>
                               <div className="flex flex-wrap gap-1">
                                 {policyGuardrails[policy].map((guardrail: string, gIndex: number) => (
                                   <Badge key={gIndex} color="blue" size="xs">
@@ -864,7 +883,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       ))}
                     </div>
                   ) : (
-                    <Text className="text-gray-500">No policies configured</Text>
+                    <Text className="text-gray-500">{t("identityAdmin.team.details.noPolicies")}</Text>
                   )}
                 </Card>
 
@@ -911,7 +930,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
             children: (
               <Card className="overflow-y-auto max-h-[65vh]">
                 <div className="flex justify-between items-center mb-4">
-                  <Title>Team Settings</Title>
+                  <Title>{t("identityAdmin.team.settings.title", { defaultValue: "Team Settings" })}</Title>
                   {canEditTeam && !isEditing && (
                     <Button
                       icon={<EditOutlined className="h-4 w-4" />}
@@ -920,13 +939,13 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                         setIsEditing(true);
                       }}
                     >
-                      Edit Settings
+                      {t("identityAdmin.team.settings.edit", { defaultValue: "Edit Settings" })}
                     </Button>
                   )}
                 </div>
 
                 {isEditing && isGuardrailsLoading ? (
-                  <div className="p-4">Loading...</div>
+                  <div className="p-4">{t("identityAdmin.team.loading", { defaultValue: "Loading..." })}</div>
                 ) : isEditing ? (
                   <Form
                     form={form}
@@ -1020,7 +1039,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     </Form.Item>
 
                     <Form.Item
-                      label="Models"
+                      label={t("identityAdmin.team.details.models")}
                       name="models"
                       rules={[{ required: true, message: "Please select at least one model" }]}
                     >
@@ -1076,7 +1095,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
 
                     <Accordion className="mt-4 mb-4">
                       <AccordionHeader>
-                        <b>Team Member Settings</b>
+                        <b>{t("identityAdmin.team.details.memberSettings")}</b>
                       </AccordionHeader>
                       <AccordionBody>
                         <Text className="text-xs text-gray-500 mb-4">
@@ -1146,11 +1165,11 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       </AccordionBody>
                     </Accordion>
 
-                    <Form.Item label="Reset Budget" name="budget_duration">
+                    <Form.Item label={t("access.teams.form.resetBudget")} name="budget_duration">
                       <Select placeholder="n/a">
-                        <Select.Option value="24h">daily</Select.Option>
-                        <Select.Option value="7d">weekly</Select.Option>
-                        <Select.Option value="30d">monthly</Select.Option>
+                        <Select.Option value="24h">{t("access.teams.form.daily")}</Select.Option>
+                        <Select.Option value="7d">{t("access.teams.form.weekly")}</Select.Option>
+                        <Select.Option value="30d">{t("access.teams.form.monthly")}</Select.Option>
                       </Select>
                     </Form.Item>
 
@@ -1233,7 +1252,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       </Form.List>
                     </Form.Item>
 
-                    <Form.Item label="Router Settings">
+                    <Form.Item label={t("access.teams.form.routerSettings")}>
                       <RouterSettingsAccordion
                         ref={routerSettingsRef}
                         accessToken={accessToken || ""}
@@ -1357,7 +1376,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       <Tooltip
                         title={
                           !premiumUser
-                            ? "Premium feature - Upgrade to set allowed pass through routes"
+                            ? t("access.teams.restrictions.passThroughRoutes")
                             : !is_proxy_admin
                               ? "Only proxy admins can set allowed pass through routes"
                               : ""
@@ -1419,7 +1438,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
 
                     <Accordion className="mt-4 mb-4">
                       <AccordionHeader>
-                        <b>Search Tool Settings</b>
+                        <b>{t("access.teams.form.searchToolSettings")}</b>
                       </AccordionHeader>
                       <AccordionBody>
                         <Form.Item
@@ -1458,12 +1477,12 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     </Form.Item>
 
                     <Form.Item
-                      label="Secret Manager Settings"
+                      label={t("access.teams.form.secretManager")}
                       name="secret_manager_settings"
                       help={
                         premiumUser
                           ? "Enter secret manager configuration as a JSON object."
-                          : "Premium feature - Upgrade to manage secret manager settings."
+                          : t("access.teams.restrictions.secretManager")
                       }
                       rules={[
                         {
@@ -1495,7 +1514,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     <div className="sticky z-10 bg-white p-4 pr-0 border-t border-gray-200 -bottom-6 -inset-x-6">
                       <div className="flex justify-end items-center gap-2">
                         <Button onClick={() => setIsEditing(false)} disabled={isTeamSaving}>
-                          Cancel
+                          {t("identityAdmin.team.cancel", { defaultValue: "Cancel" })}
                         </Button>
                         <Button
                           icon={<SaveOutlined className="h-4 w-4" />}
@@ -1503,7 +1522,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                           htmlType="submit"
                           loading={isTeamSaving}
                         >
-                          Save Changes
+                          {t("identityAdmin.team.saveChanges", { defaultValue: "Save Changes" })}
                         </Button>
                       </div>
                     </div>
@@ -1511,19 +1530,27 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                 ) : (
                   <div className="space-y-4">
                     <div>
-                      <Text className="font-medium">Team Name</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.teamName", { defaultValue: "Team Name" })}
+                      </Text>
                       <div>{info.team_alias}</div>
                     </div>
                     <div>
-                      <Text className="font-medium">Team ID</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.teamId", { defaultValue: "Team ID" })}
+                      </Text>
                       <div className="font-mono">{info.team_id}</div>
                     </div>
                     <div>
-                      <Text className="font-medium">Created At</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.createdAt", { defaultValue: "Created At" })}
+                      </Text>
                       <div>{new Date(info.created_at).toLocaleString()}</div>
                     </div>
                     <div>
-                      <Text className="font-medium">Models</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.models", { defaultValue: "Models" })}
+                      </Text>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {info.models.map((model, index) => (
                           <Badge key={index} color="red">
@@ -1534,7 +1561,11 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     </div>
                     {info.default_team_member_models && info.default_team_member_models.length > 0 && (
                       <div>
-                        <Text className="font-medium">Default Member Models</Text>
+                        <Text className="font-medium">
+                          {t("identityAdmin.team.details.defaultMemberModels", {
+                            defaultValue: "Default Member Models",
+                          })}
+                        </Text>
                         <div className="flex flex-wrap gap-2 mt-1">
                           {info.default_team_member_models.map((model, index) => (
                             <Badge key={index} color="blue">
@@ -1545,11 +1576,19 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       </div>
                     )}
                     <div>
-                      <Text className="font-medium">Model Aliases</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.modelAliases", { defaultValue: "Model Aliases" })}
+                      </Text>
                       {(() => {
                         const aliasEntries = Object.entries(info.litellm_model_table?.model_aliases ?? {});
                         if (aliasEntries.length === 0) {
-                          return <div className="text-gray-400">No model aliases configured</div>;
+                          return (
+                            <div className="text-gray-400">
+                              {t("identityAdmin.team.details.noModelAliases", {
+                                defaultValue: "No model aliases configured",
+                              })}
+                            </div>
+                          );
                         }
                         return (
                           <div className="mt-1 space-y-1">
@@ -1565,9 +1604,11 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       })()}
                     </div>
                     <div>
-                      <Text className="font-medium">Rate Limits</Text>
-                      <div>TPM: {info.tpm_limit || "Unlimited"}</div>
-                      <div>RPM: {info.rpm_limit || "Unlimited"}</div>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.rateLimits", { defaultValue: "Rate Limits" })}
+                      </Text>
+                      <div>TPM: {info.tpm_limit || t("access.common.unlimited")}</div>
+                      <div>RPM: {info.rpm_limit || t("access.common.unlimited")}</div>
                       {(() => {
                         const modelTpm = (info.metadata?.model_tpm_limit ?? {}) as Record<string, number>;
                         const modelRpm = (info.metadata?.model_rpm_limit ?? {}) as Record<string, number>;
@@ -1575,7 +1616,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                         if (models.length === 0) return null;
                         return (
                           <div className="mt-2">
-                            <Text className="text-gray-500">Per-model limits:</Text>
+                            <Text className="text-gray-500">{t("identityAdmin.team.details.perModelLimits")}</Text>
                             {models.map((m) => (
                               <div key={m} className="text-xs ml-2">
                                 {m}: TPM {modelTpm[m] ?? "—"}, RPM {modelRpm[m] ?? "—"}
@@ -1586,16 +1627,18 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       })()}
                     </div>
                     <div>
-                      <Text className="font-medium">Team Budget</Text>
+                      <Text className="font-medium">{t("identityAdmin.team.details.teamBudget")}</Text>
                       <div>
                         Max Budget:{" "}
-                        {info.max_budget !== null ? `$${formatNumberWithCommas(info.max_budget, 4)}` : "No Limit"}
+                        {info.max_budget !== null
+                          ? `$${formatNumberWithCommas(info.max_budget, 4)}`
+                          : t("access.common.unlimited")}
                       </div>
                       <div>
                         Soft Budget:{" "}
                         {info.soft_budget !== null && info.soft_budget !== undefined
                           ? `$${formatNumberWithCommas(info.soft_budget, 4)}`
-                          : "No Limit"}
+                          : t("access.common.unlimited")}
                       </div>
                       <div>Budget Reset: {info.budget_duration || "Never"}</div>
                       {info.metadata?.soft_budget_alerting_emails &&
@@ -1611,14 +1654,29 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                           <InfoCircleOutlined style={{ marginLeft: "4px" }} />
                         </Tooltip>
                       </Text>
-                      <div>Max Budget: {info.team_member_budget_table?.max_budget || "No Limit"}</div>
-                      <div>Budget Duration: {info.team_member_budget_table?.budget_duration || "No Limit"}</div>
-                      <div>Key Duration: {info.metadata?.team_member_key_duration || "No Limit"}</div>
-                      <div>TPM Limit: {info.team_member_budget_table?.tpm_limit || "No Limit"}</div>
-                      <div>RPM Limit: {info.team_member_budget_table?.rpm_limit || "No Limit"}</div>
+                      <div>
+                        {t("identityAdmin.team.details.maxBudget")}:{" "}
+                        {info.team_member_budget_table?.max_budget || t("access.common.unlimited")}
+                      </div>
+                      <div>
+                        {t("identityAdmin.team.details.budgetDuration")}:{" "}
+                        {info.team_member_budget_table?.budget_duration || t("access.common.unlimited")}
+                      </div>
+                      <div>
+                        {t("identityAdmin.team.details.keyDuration")}:{" "}
+                        {info.metadata?.team_member_key_duration || t("access.common.unlimited")}
+                      </div>
+                      <div>
+                        {t("identityAdmin.team.details.tpmLimit")}:{" "}
+                        {info.team_member_budget_table?.tpm_limit || t("access.common.unlimited")}
+                      </div>
+                      <div>
+                        {t("identityAdmin.team.details.rpmLimit")}:{" "}
+                        {info.team_member_budget_table?.rpm_limit || t("access.common.unlimited")}
+                      </div>
                     </div>
                     <div>
-                      <Text className="font-medium">Router Settings</Text>
+                      <Text className="font-medium">{t("access.teams.form.routerSettings")}</Text>
                       {info.router_settings &&
                       Object.values(info.router_settings).some(
                         (v) => v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0),
@@ -1647,19 +1705,29 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                             info.router_settings.fallbacks.length > 0 && (
                               <div>Fallbacks: {info.router_settings.fallbacks.length} configured</div>
                             )}
-                          {info.router_settings.enable_tag_filtering && <div>Tag Filtering: Enabled</div>}
+                          {info.router_settings.enable_tag_filtering && (
+                            <div>{t("identityAdmin.team.details.tagFilteringEnabled")}</div>
+                          )}
                         </div>
                       ) : (
-                        <div className="text-gray-400">No router settings configured</div>
+                        <div className="text-gray-400">{t("identityAdmin.team.details.noRouterSettings")}</div>
                       )}
                     </div>
                     <div>
-                      <Text className="font-medium">Organization ID</Text>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.organizationId", { defaultValue: "Organization ID" })}
+                      </Text>
                       <div>{info.organization_id}</div>
                     </div>
                     <div>
-                      <Text className="font-medium">Status</Text>
-                      <Badge color={info.blocked ? "red" : "green"}>{info.blocked ? "Blocked" : "Active"}</Badge>
+                      <Text className="font-medium">
+                        {t("identityAdmin.team.details.status", { defaultValue: "Status" })}
+                      </Text>
+                      <Badge color={info.blocked ? "red" : "green"}>
+                        {info.blocked
+                          ? t("identityAdmin.team.details.blocked", { defaultValue: "Blocked" })
+                          : t("identityAdmin.team.details.active", { defaultValue: "Active" })}
+                      </Badge>
                     </div>
 
                     <ObjectPermissionsView
@@ -1691,7 +1759,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
 
                     {info.metadata?.secret_manager_settings && (
                       <div className="pt-4 border-t border-gray-200">
-                        <Text className="font-medium">Secret Manager Settings</Text>
+                        <Text className="font-medium">{t("access.teams.form.secretManager")}</Text>
                         <pre className="mt-2 bg-gray-50 p-3 rounded-sm text-xs overflow-x-auto">
                           {JSON.stringify(info.metadata.secret_manager_settings, null, 2)}
                         </pre>

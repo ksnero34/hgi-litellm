@@ -1,28 +1,20 @@
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
-import { useDisableBlogPosts } from "@/app/(dashboard)/hooks/useDisableBlogPosts";
-import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
+import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn } from "@/lib/cva.config";
 import {
   emitLocalStorageChange,
   getLocalStorageItem,
   removeLocalStorageItem,
   setLocalStorageItem,
 } from "@/utils/localStorageUtils";
-import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
-import {
-  CrownOutlined,
-  DownOutlined,
-  LogoutOutlined,
-  MailOutlined,
-  SafetyOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { DownOutlined, LogoutOutlined, MailOutlined, SafetyOutlined, UserOutlined } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { Button, Divider, Dropdown, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { Button, Divider, Dropdown, Space, Switch, Tag, Typography } from "antd";
 import { ChevronsUpDown } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { cn } from "@/lib/cva.config";
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const { Text } = Typography;
 
@@ -46,8 +38,8 @@ function initialsFromIdentity(email: string | null, userId: string | null): stri
       return `${parts[0]!.charAt(0)}${parts[1]!.charAt(0)}`.toUpperCase();
     }
     if (parts.length === 1) {
-      const p = parts[0]!;
-      return p.length >= 2 ? p.slice(0, 2).toUpperCase() : `${p.charAt(0)}`.toUpperCase();
+      const part = parts[0]!;
+      return part.length >= 2 ? part.slice(0, 2).toUpperCase() : `${part.charAt(0)}`.toUpperCase();
     }
   }
   if (userId && userId.length >= 2) {
@@ -61,18 +53,14 @@ function initialsFromIdentity(email: string | null, userId: string | null): stri
 
 interface UserDropdownProps {
   onLogout: () => void;
-  // "navbar" (default): compact top-right trigger. "sidebar": full-width footer
-  // trigger whose menu opens upward, for the redesigned sidebar dock.
   variant?: "navbar" | "sidebar";
-  // Sidebar rail mode: render the avatar only (no name/role).
   collapsed?: boolean;
 }
 
 const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
-  const { userId, userEmail, userRole, premiumUser } = useAuthorized();
+  const { t } = useTranslation();
+  const { userId, userEmail, userRole } = useAuthorized();
   const disableShowPrompts = useDisableShowPrompts();
-  const disableBlogPosts = useDisableBlogPosts();
-  const disableBouncingIcon = useDisableBouncingIcon();
   const [disableShowNewBadge, setDisableShowNewBadge] = useState(false);
 
   useEffect(() => {
@@ -86,50 +74,46 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
       label: (
         <Space>
           <LogoutOutlined />
-          Logout
+          {t("auth.account.logout")}
         </Space>
       ),
       onClick: onLogout,
     },
   ];
 
+  const emptyValue = t("auth.account.emptyValue");
+  const unknownRole = t("auth.account.unknownRole");
+  const unknownIdentity = t("auth.account.unknownIdentity");
+
   const renderUserInfoSection = () => (
     <Space direction="vertical" size="small" style={{ width: "100%", padding: "12px" }}>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Space>
           <MailOutlined />
-          <Text type="secondary">{userEmail || "-"}</Text>
+          <Text type="secondary">{userEmail || emptyValue}</Text>
         </Space>
-        {premiumUser ? (
-          <Tag icon={<CrownOutlined />} color="gold">
-            Premium
-          </Tag>
-        ) : (
-          <Tooltip title="Upgrade to Premium for advanced features" placement="left">
-            <Tag icon={<CrownOutlined />}>Standard</Tag>
-          </Tooltip>
-        )}
+        <Tag>{t("auth.account.tag")}</Tag>
       </Space>
       <Divider style={{ margin: "8px 0" }} />
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Space>
           <UserOutlined />
-          <Text type="secondary">User ID</Text>
+          <Text type="secondary">{t("auth.account.userId")}</Text>
         </Space>
-        <Text copyable ellipsis style={{ maxWidth: "150px" }} title={userId || "-"}>
-          {userId || "-"}
+        <Text copyable={{ text: userId || "" }} ellipsis style={{ maxWidth: "150px" }} title={userId || emptyValue}>
+          {userId || emptyValue}
         </Text>
       </Space>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Space>
           <SafetyOutlined />
-          <Text type="secondary">Role</Text>
+          <Text type="secondary">{t("auth.account.role")}</Text>
         </Space>
         <Text>{userRole}</Text>
       </Space>
       <Divider style={{ margin: "8px 0" }} />
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide New Feature Indicators</Text>
+        <Text type="secondary">{t("auth.account.hideNew")}</Text>
         <Switch
           size="small"
           checked={disableShowNewBadge}
@@ -143,11 +127,11 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
               emitLocalStorageChange("disableShowNewBadge");
             }
           }}
-          aria-label="Toggle hide new feature indicators"
+          aria-label={t("auth.account.hideNewAria")}
         />
       </Space>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide All Prompts</Text>
+        <Text type="secondary">{t("auth.account.hidePrompts")}</Text>
         <Switch
           size="small"
           checked={disableShowPrompts}
@@ -160,41 +144,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
               emitLocalStorageChange("disableShowPrompts");
             }
           }}
-          aria-label="Toggle hide all prompts"
-        />
-      </Space>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide Blog Posts</Text>
-        <Switch
-          size="small"
-          checked={disableBlogPosts}
-          onChange={(checked) => {
-            if (checked) {
-              setLocalStorageItem("disableBlogPosts", "true");
-              emitLocalStorageChange("disableBlogPosts");
-            } else {
-              removeLocalStorageItem("disableBlogPosts");
-              emitLocalStorageChange("disableBlogPosts");
-            }
-          }}
-          aria-label="Toggle hide blog posts"
-        />
-      </Space>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text type="secondary">Hide Bouncing Icon</Text>
-        <Switch
-          size="small"
-          checked={disableBouncingIcon}
-          onChange={(checked) => {
-            if (checked) {
-              setLocalStorageItem("disableBouncingIcon", "true");
-              emitLocalStorageChange("disableBouncingIcon");
-            } else {
-              removeLocalStorageItem("disableBouncingIcon");
-              emitLocalStorageChange("disableBouncingIcon");
-            }
-          }}
-          aria-label="Toggle hide bouncing icon"
+          aria-label={t("auth.account.hidePromptsAria")}
         />
       </Space>
     </Space>
@@ -204,6 +154,10 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
   const initials = initialsFromIdentity(userEmail, userId);
   const hue = hueFromString(seed);
   const displayName = navAccountDisplayName(userEmail, userId);
+  const triggerLabel = t("auth.account.menu", {
+    role: userRole ?? unknownRole,
+    identity: userEmail || userId || unknownIdentity,
+  });
 
   return (
     <Dropdown
@@ -227,7 +181,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
             "flex w-full items-center rounded-lg border border-transparent transition-colors hover:bg-sidebar-accent",
             collapsed ? "justify-center px-0 py-1" : "gap-2.5 px-2 py-1.5 text-left",
           )}
-          aria-label={`Account menu — ${userRole ?? "Unknown role"} — signed in as ${userEmail || userId || "unknown"}`}
+          aria-label={triggerLabel}
           aria-haspopup="menu"
           title={collapsed ? displayName : undefined}
         >
@@ -250,7 +204,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
         <Button
           type="text"
           className="flex! max-w-[min(200px,34vw)] items-center gap-2 rounded-md! py-0.5! pl-1! pr-2! transition-colors hover:bg-gray-100!"
-          aria-label={`Account menu — ${userRole ?? "Unknown role"} — signed in as ${userEmail || userId || "unknown"}`}
+          aria-label={triggerLabel}
           aria-haspopup="menu"
         >
           <Avatar className="shadow-inner ring-1 ring-black/5" aria-hidden>

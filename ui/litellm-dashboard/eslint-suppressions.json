@@ -1427,6 +1427,9 @@
     }
   },
   "src/app/(dashboard)/policies/_components/index.tsx": {
+    "no-restricted-imports": {
+      "count": 2
+    },
     "local/filename-pascal-case": {
       "count": 1
     },
@@ -4206,7 +4209,7 @@
       "count": 1
     },
     "no-restricted-imports": {
-      "count": 1
+      "count": 2
     }
   },
   "src/components/view_logs/log_filter_logic.tsx": {
@@ -4245,7 +4248,7 @@
   },
   "src/contexts/AntdGlobalProvider.tsx": {
     "no-restricted-imports": {
-      "count": 1
+      "count": 3
     }
   },
   "src/contexts/AuthContext.tsx": {
