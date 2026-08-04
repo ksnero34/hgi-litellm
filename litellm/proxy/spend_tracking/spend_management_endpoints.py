@@ -1868,14 +1868,18 @@ async def ui_view_spend_logs(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail={"error": "Not authorized to view team spend for team_id={}".format(team_id)},
                     )
-            scoped_key_hashes = None if authorized_team_fallback else (
-                observability_scope.key_hashes_for_team(team_id)
-                if team_id is not None
-                else observability_scope.allowed_key_hashes
+            scoped_key_hashes = (
+                None
+                if authorized_team_fallback
+                else (
+                    observability_scope.key_hashes_for_team(team_id)
+                    if team_id is not None
+                    else observability_scope.allowed_key_hashes
+                )
             )
             if api_key is not None:
                 requested_key_hash = prisma_client.hash_token(token=api_key) if api_key.startswith("sk-") else api_key
-                if requested_key_hash not in scoped_key_hashes:
+                if scoped_key_hashes is not None and requested_key_hash not in scoped_key_hashes:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail={"error": "Not authorized to view spend logs for the requested api_key"},
@@ -3640,7 +3644,7 @@ async def _assert_user_can_view_request_id(
     row_api_key = getattr(row, "api_key", None)
     if row_api_key is not None and row_api_key in observability_scope.allowed_key_hashes:
         return
-    if getattr(row, "user", None) == user_api_key_dict.user_id:
+    if user_api_key_dict.user_id is not None and getattr(row, "user", None) == user_api_key_dict.user_id:
         return
     row_team_id = getattr(row, "team_id", None)
     if row_team_id is not None and await _can_team_member_view_log(

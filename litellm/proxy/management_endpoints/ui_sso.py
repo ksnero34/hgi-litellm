@@ -886,27 +886,6 @@ def process_sso_jwt_access_token(
     return None
 
 
-async def _raise_if_sso_exceeds_free_user_limit(premium_user: bool, prisma_client: PrismaClient | None) -> None:
-    """Free tier allows SSO for up to 5 billable users; beyond that requires an Enterprise license."""
-    if premium_user is True:
-        return
-    if prisma_client is None:
-        raise ProxyException(
-            message=CommonProxyErrors.db_not_connected_error.value,
-            type=ProxyErrorTypes.auth_error,
-            param="premium_user",
-            code=status.HTTP_403_FORBIDDEN,
-        )
-    billable_users = await UserRepository(prisma_client).count_billable_users()
-    if billable_users and billable_users > 5:
-        raise ProxyException(
-            message="You must be a LiteLLM Enterprise user to use SSO for more than 5 users. If you have a license please set `LITELLM_LICENSE` in your env. If you want to obtain a license meet with us here: https://enterprise.litellm.ai/demo You are seeing this error message because You configured SSO (one of `MICROSOFT_CLIENT_ID`, `GOOGLE_CLIENT_ID`, `GENERIC_CLIENT_ID`, or SAML) in your env. Please unset it",
-            type=ProxyErrorTypes.auth_error,
-            param="premium_user",
-            code=status.HTTP_403_FORBIDDEN,
-        )
-
-
 @router.get("/sso/key/generate", tags=["experimental"], include_in_schema=False)
 async def google_login(
     request: Request,
@@ -1999,7 +1978,6 @@ async def saml_callback(request: Request):
         general_settings,
         jwt_handler,
         master_key,
-        premium_user,
         prisma_client,
         user_api_key_cache,
     )
@@ -2023,8 +2001,6 @@ async def saml_callback(request: Request):
         raise HTTPException(status_code=400, detail="Missing SAMLResponse in callback request.")
 
     result = await SAMLAuthHandler.handle_acs(request=request, cache=user_api_key_cache, post_data=post_data)
-
-    await _raise_if_sso_exceeds_free_user_limit(premium_user, prisma_client)
 
     ui_access_mode = general_settings.get("ui_access_mode", None)
     relay_state = post_data.get("RelayState")
