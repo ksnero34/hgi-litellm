@@ -19,10 +19,7 @@ import {
 
 vi.mock("../networking", () => ({
   uiSpendLogsCall: vi.fn(),
-}));
-
-vi.mock("@/components/key_team_helpers/filter_helpers", () => ({
-  fetchAllTeams: vi.fn().mockResolvedValue([]),
+  teamListCall: vi.fn().mockResolvedValue({ data: [] }),
 }));
 
 import { uiSpendLogsCall } from "../networking";
@@ -195,6 +192,27 @@ describe("useLogFilterLogic", () => {
 
       await waitFor(() => expect(uiSpendLogsCall).toHaveBeenCalled());
       expect(lastCallParams()?.params).toMatchObject({ user_id: "someone-else" });
+    });
+
+    it("sends only team_id for an explicitly selected team scope", async () => {
+      renderFilterHook({
+        filterByCurrentUser: false,
+        selectedTeamId: "team-123",
+      });
+
+      await waitFor(() => expect(uiSpendLogsCall).toHaveBeenCalled());
+      expect(lastCallParams()?.params).toMatchObject({ team_id: "team-123", user_id: undefined });
+    });
+
+    it("does not fetch while a required team scope has no selection", async () => {
+      renderFilterHook({
+        filterByCurrentUser: false,
+        selectedTeamId: null,
+        scopeReady: false,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(uiSpendLogsCall).not.toHaveBeenCalled();
     });
   });
 

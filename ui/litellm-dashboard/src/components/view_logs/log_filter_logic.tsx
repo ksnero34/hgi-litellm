@@ -98,6 +98,8 @@ export function useLogFilterLogic({
   userID,
   columnFilters,
   filterByCurrentUser,
+  selectedTeamId,
+  scopeReady = true,
   activeTab,
   isLiveTail,
   startTime,
@@ -112,6 +114,8 @@ export function useLogFilterLogic({
   userID: string | null;
   columnFilters: ColumnFiltersState;
   filterByCurrentUser: boolean | null;
+  selectedTeamId?: string | null;
+  scopeReady?: boolean;
   activeTab: string;
   isLiveTail: boolean;
   startTime: string;
@@ -136,6 +140,7 @@ export function useLogFilterLogic({
       isCustomDate,
       columnFilters,
       filterByCurrentUser ? userID : null,
+      selectedTeamId,
       sortBy,
       sortOrder,
     ],
@@ -162,10 +167,10 @@ export function useLogFilterLogic({
         page_size: pageSize,
         params: {
           api_key: getFilterValue(columnFilters, LOG_FILTER_IDS.KEY_HASH),
-          team_id: getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID),
+          team_id: selectedTeamId ?? getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID),
           request_id: getFilterValue(columnFilters, LOG_FILTER_IDS.REQUEST_ID),
           session_id: getFilterValue(columnFilters, LOG_FILTER_IDS.SESSION_ID),
-          user_id: userIdFilter ?? (filterByCurrentUser ? userID ?? undefined : undefined),
+          user_id: userIdFilter ?? (!selectedTeamId && filterByCurrentUser ? userID ?? undefined : undefined),
           end_user: getFilterValue(columnFilters, LOG_FILTER_IDS.END_USER),
           status_filter: getFilterValue(columnFilters, LOG_FILTER_IDS.STATUS),
           model_id: getFilterValue(columnFilters, LOG_FILTER_IDS.MODEL_ID),
@@ -178,7 +183,7 @@ export function useLogFilterLogic({
         },
       });
     },
-    enabled: !!accessToken && !!token && !!userRole && !!userID && activeTab === "request logs",
+    enabled: !!accessToken && !!token && !!userRole && !!userID && activeTab === "request logs" && scopeReady,
     refetchInterval: getLiveTailRefetchInterval(isLiveTail, pagination.pageIndex),
     placeholderData: keepPreviousData,
     refetchIntervalInBackground: false,
