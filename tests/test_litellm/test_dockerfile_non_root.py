@@ -30,6 +30,11 @@ def _final_user_directive(dockerfile_text: str) -> str:
     return matches[-1]
 
 
+def _dockerfile_contents() -> str:
+    with open(DOCKERFILE_PATH, "r", encoding="utf-8") as dockerfile:
+        return dockerfile.read()
+
+
 @pytest.mark.skipif(
     not os.path.exists(DOCKERFILE_PATH),
     reason="Dockerfile.non_root not present in this checkout",
@@ -37,8 +42,7 @@ def _final_user_directive(dockerfile_text: str) -> str:
 def test_final_user_directive_is_numeric():
     """The runtime USER must be a numeric UID so kubelet's runAsNonRoot
     admission check (strconv.Atoi) succeeds."""
-    with open(DOCKERFILE_PATH, "r", encoding="utf-8") as f:
-        contents = f.read()
+    contents = _dockerfile_contents()
 
     final_user = _final_user_directive(contents)
 
@@ -52,3 +56,23 @@ def test_final_user_directive_is_numeric():
         f"Dockerfile.non_root final USER is {final_user} (root); the non_root image "
         "must run as a non-zero UID."
     )
+
+
+def test_prisma_cli_and_binary_engine_are_baked_for_offline_runtime():
+    contents = _dockerfile_contents()
+
+    assert "COPY --from=builder /opt/prisma /opt/prisma" in contents
+    assert "PRISMA_BINARY_CACHE_DIR=/opt/prisma/binaries" in contents
+    assert "PRISMA_CLI_PATH=/opt/prisma/binaries/node_modules/.bin/prisma" in contents
+    assert "PRISMA_CLI_QUERY_ENGINE_TYPE=binary" in contents
+    assert "test -x /opt/prisma/binaries/node_modules/.bin/prisma" in contents
+    assert "query-engine-*" in contents
+
+
+def test_prisma_runtime_does_not_generate_or_write_to_baked_engine_directory():
+    contents = _dockerfile_contents()
+    runtime_stage = contents.split("FROM $LITELLM_RUNTIME_IMAGE AS runtime", 1)[1]
+    runtime_after_user = runtime_stage.rsplit("USER 65534", 1)[1]
+
+    assert "RUN prisma generate" not in runtime_after_user
+    assert "XDG_CACHE_HOME=/opt/prisma" not in runtime_stage
