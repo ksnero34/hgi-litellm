@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import litellm
 import litellm.proxy.proxy_server as ps
+from litellm.proxy.customizations.observability_scope import ObservabilityScope
 
 
 def _default_date_range():
@@ -101,6 +102,7 @@ def _reconstruct_ui_where_from_sql(sql_query, params):
         msg = re.search(r"error_message' LIKE \$(\d+)", cond)
         sess = re.fullmatch(r"session_id LIKE \$(\d+)", cond)
         status = re.fullmatch(r"status = \$(\d+)", cond)
+        api_key_any = re.fullmatch(r"api_key = ANY\(\$(\d+)::text\[\]\)", cond)
         if gte:
             date_bounds["gte"] = _iso(params[int(gte.group(1)) - 1])
         elif lte:
@@ -113,6 +115,8 @@ def _reconstruct_ui_where_from_sql(sql_query, params):
             where["session_id"] = {"contains": str(params[int(sess.group(1)) - 1]).strip("%")}
         elif status:
             where["status"] = {"equals": params[int(status.group(1)) - 1]}
+        elif api_key_any:
+            where["api_key"] = {"in": params[int(api_key_any.group(1)) - 1]}
         elif alias:
             metadata_conds.append(
                 {
@@ -399,6 +403,7 @@ async def test_assert_user_can_view_request_id_rejects_both_users_none():
     class MockRow:
         user = None
         team_id = None
+        api_key = None
 
     class MockSpendLogs:
         async def find_unique(self, where, include=None):
@@ -417,6 +422,51 @@ async def test_assert_user_can_view_request_id_rejects_both_users_none():
         await spend_management_endpoints._assert_user_can_view_request_id(
             MockPrisma(), auth, "req-none-user"
         )
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assert_user_can_view_request_id_allows_owner():
+    row = MagicMock(user="user_1", team_id=None, api_key="owned-key")
+    spend_logs = MagicMock()
+    spend_logs.find_unique = AsyncMock(return_value=row)
+    prisma = MagicMock()
+    prisma.db.litellm_spendlogs = spend_logs
+    auth = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        user_id="user_1",
+    )
+
+    with patch(
+        "litellm.proxy.spend_tracking.spend_management_endpoints.resolve_observability_scope",
+        new_callable=AsyncMock,
+        return_value=ObservabilityScope(False, False, "user_1", None, (), ("owned-key",)),
+    ):
+        await spend_management_endpoints._assert_user_can_view_request_id(
+            prisma,
+            auth,
+            "req-owned",
+        )
+
+
+@pytest.mark.asyncio
+async def test_assert_user_can_view_request_id_rejects_missing_row():
+    spend_logs = MagicMock()
+    spend_logs.find_unique = AsyncMock(return_value=None)
+    prisma = MagicMock()
+    prisma.db.litellm_spendlogs = spend_logs
+    auth = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        user_id="user_1",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await spend_management_endpoints._assert_user_can_view_request_id(
+            prisma,
+            auth,
+            "req-missing",
+        )
+
     assert exc_info.value.status_code == 403
 
 
@@ -564,7 +614,7 @@ async def test_ui_view_spend_logs_with_user_id(client, monkeypatch):
         {
             "id": "log2",
             "request_id": "req2",
-            "api_key": "sk-test-key",
+            "api_key": "sk-other-key",
             "user": "test_user_2",
             "team_id": "team1",
             "spend": 0.10,
@@ -1289,13 +1339,26 @@ async def test_ui_view_spend_logs_internal_user_scoped_without_user_id(
     ]
 
     def filter_by_user(where):
-        if "user" in where and where["user"] == "internal_user_1":
+        if where.get("api_key") == {"in": ["sk-test-key"]}:
             return [mock_spend_logs[0]]
         return mock_spend_logs
 
     monkeypatch.setattr(
         "litellm.proxy.proxy_server.prisma_client",
         make_ui_spend_logs_mock_prisma(mock_spend_logs, filter_by_user),
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.spend_tracking.spend_management_endpoints.resolve_observability_scope",
+        AsyncMock(
+            return_value=ObservabilityScope(
+                False,
+                False,
+                "internal_user_1",
+                None,
+                (),
+                ("sk-test-key",),
+            )
+        ),
     )
     app.dependency_overrides[ps.user_api_key_auth] = lambda: UserAPIKeyAuth(
         user_role=LitellmUserRoles.INTERNAL_USER, user_id="internal_user_1"
@@ -1371,6 +1434,19 @@ async def test_ui_view_spend_logs_team_admin_can_view_team_spend(client, monkeyp
     monkeypatch.setattr(
         "litellm.proxy.proxy_server.prisma_client",
         make_ui_spend_logs_mock_prisma(mock_spend_logs, filter_by_team, team_lookup),
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.spend_tracking.spend_management_endpoints.resolve_observability_scope",
+        AsyncMock(
+            return_value=ObservabilityScope(
+                False,
+                False,
+                "admin_user",
+                None,
+                (("team_admin_team", ("sk-test-key",)),),
+                ("sk-test-key",),
+            )
+        ),
     )
     app.dependency_overrides[ps.user_api_key_auth] = lambda: UserAPIKeyAuth(
         user_role=LitellmUserRoles.INTERNAL_USER, user_id="admin_user"
@@ -1557,6 +1633,10 @@ async def test_ui_view_session_spend_logs_pagination(client, monkeypatch):
 
     mock_prisma_client = MockPrismaClient()
     monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
+    monkeypatch.setattr(
+        "litellm.proxy.spend_tracking.spend_management_endpoints.resolve_observability_scope",
+        AsyncMock(return_value=ObservabilityScope(True, False, None, None, (), ())),
+    )
 
     response = client.get(
         "/spend/logs/session/ui",

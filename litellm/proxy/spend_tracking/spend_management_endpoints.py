@@ -22,6 +22,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.proxy._types import *
 from litellm.proxy._types import ProviderBudgetResponse, ProviderBudgetResponseObject
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.customizations.observability_scope import resolve_observability_scope
 
 # NOTE: Avoid module-level import from common_utils: proxy_server imports this
 # module while common_utils may pull proxy_server during init, which can leave
@@ -1849,39 +1850,37 @@ async def ui_view_spend_logs(
                 user_api_key_dict=user_api_key_dict,
                 request_id=request_id,
             )
-        permitted_team_ids: List[str] | None = None
-        if not is_request_id_lookup and not is_admin_view:
-            if team_id is not None:
-                can_view_team = await _can_team_member_view_log(
+        observability_scope = await resolve_observability_scope(
+            prisma_client=prisma_client,
+            user_api_key_dict=user_api_key_dict,
+        )
+        scoped_key_hashes: tuple[str, ...] | None = None
+        if not observability_scope.unrestricted:
+            authorized_team_fallback = False
+            if team_id is not None and not observability_scope.can_view_team(team_id):
+                authorized_team_fallback = await _can_team_member_view_log(
                     prisma_client=prisma_client,
                     user_api_key_dict=user_api_key_dict,
                     team_id=team_id,
                 )
-                if not can_view_team:
+                if not authorized_team_fallback:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail={"error": "Not authorized to view team spend for team_id={}".format(team_id)},
                     )
-                where_conditions["team_id"] = team_id
-                where_conditions.pop("user", None)
-            else:
-                if _can_user_view_spend_log(user_api_key_dict=user_api_key_dict):
-                    try:
-                        permitted_team_ids = await _get_permitted_team_ids_for_spend_logs(
-                            prisma_client=prisma_client,
-                            user_api_key_dict=user_api_key_dict,
-                        )
-                    except Exception:
-                        permitted_team_ids = []
-                    if permitted_team_ids:
-                        where_conditions.pop("user", None)
-                        where_conditions["OR"] = [
-                            {"user": user_api_key_dict.user_id},
-                            {"team_id": {"in": permitted_team_ids}},
-                        ]
-                    else:
-                        where_conditions["user"] = user_api_key_dict.user_id
-                    where_conditions.pop("team_id", None)
+            scoped_key_hashes = None if authorized_team_fallback else (
+                observability_scope.key_hashes_for_team(team_id)
+                if team_id is not None
+                else observability_scope.allowed_key_hashes
+            )
+            if api_key is not None:
+                requested_key_hash = prisma_client.hash_token(token=api_key) if api_key.startswith("sk-") else api_key
+                if requested_key_hash not in scoped_key_hashes:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={"error": "Not authorized to view spend logs for the requested api_key"},
+                    )
+                where_conditions["api_key"] = requested_key_hash
         # Calculate skip value for pagination
         skip = (page - 1) * page_size
 
@@ -1924,13 +1923,10 @@ async def ui_view_spend_logs(
                 sql_params.append(val)
                 p += 1
 
-        # Multi-team OR filter: (user = $X OR team_id = ANY($Y))
-        if permitted_team_ids is not None and len(permitted_team_ids) > 0:
-            or_clause = f'("user" = ${p} OR team_id = ANY(${p + 1}::text[]))'
-            sql_params.append(user_api_key_dict.user_id)
-            sql_params.append(permitted_team_ids)
-            p += 2
-            sql_conditions.append(or_clause)
+        if scoped_key_hashes is not None:
+            sql_conditions.append(f"api_key = ANY(${p}::text[])")
+            sql_params.append(list(scoped_key_hashes))
+            p += 1
 
         if session_id is not None and isinstance(session_id, str):
             like_escaped_session_id = session_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -2053,6 +2049,7 @@ async def ui_view_spend_logs(
             total_pages,
             enrich_session_counts=not is_v2,
             total_is_capped=total_is_capped,
+            allowed_api_keys=scoped_key_hashes,
         )
     except Exception as e:
         verbose_proxy_logger.exception(f"Error in ui_view_spend_logs: {e}")
@@ -2302,17 +2299,38 @@ async def view_spend_logs(
     """
     from litellm.proxy.proxy_server import prisma_client
 
-    if (
-        user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER
-        or user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY
-    ):
-        user_id = user_api_key_dict.user_id
-
     try:
         verbose_proxy_logger.debug("inside view_spend_logs")
         if prisma_client is None:
             raise Exception(
                 "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
+            )
+        observability_scope = await resolve_observability_scope(
+            prisma_client=prisma_client,
+            user_api_key_dict=user_api_key_dict,
+        )
+        scoped_key_hashes = None if observability_scope.unrestricted else observability_scope.allowed_key_hashes
+        effective_user_id = (
+            user_api_key_dict.user_id
+            if (
+                user_id is None
+                and not observability_scope.unrestricted
+                and not observability_scope.oidc_managed
+                and user_api_key_dict.user_id is not None
+            )
+            else user_id
+        )
+        requested_key_hash = (
+            prisma_client.hash_token(token=api_key) if api_key is not None and api_key.startswith("sk-") else api_key
+        )
+        if (
+            scoped_key_hashes is not None
+            and requested_key_hash is not None
+            and requested_key_hash not in scoped_key_hashes
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Not authorized to view spend logs for the requested api_key"},
             )
         spend_logs = []
         if (
@@ -2336,15 +2354,14 @@ async def view_spend_logs(
                 }
             }
 
-            if api_key is not None and isinstance(api_key, str):
-                if api_key.startswith("sk-"):
-                    filter_query["api_key"] = prisma_client.hash_token(token=api_key)  # type: ignore
-                else:
-                    filter_query["api_key"] = api_key  # type: ignore
+            if requested_key_hash is not None:
+                filter_query["api_key"] = requested_key_hash  # type: ignore
+            elif scoped_key_hashes is not None:
+                filter_query["api_key"] = {"in": list(scoped_key_hashes)}  # type: ignore
             if request_id is not None and isinstance(request_id, str):
                 filter_query["request_id"] = request_id  # type: ignore
-            if user_id is not None and isinstance(user_id, str):
-                filter_query["user"] = user_id  # type: ignore
+            if effective_user_id is not None and isinstance(effective_user_id, str):
+                filter_query["user"] = effective_user_id  # type: ignore
 
             # Check if user wants unsummarized data
             if not summarize:
@@ -2412,16 +2429,14 @@ async def view_spend_logs(
 
         else:
             scoped_filter: Dict[str, Any] = {}
-            if api_key is not None and isinstance(api_key, str):
-                if api_key.startswith("sk-"):
-                    hashed_token = prisma_client.hash_token(token=api_key)
-                else:
-                    hashed_token = api_key
-                scoped_filter["api_key"] = hashed_token
+            if requested_key_hash is not None:
+                scoped_filter["api_key"] = requested_key_hash
+            elif scoped_key_hashes is not None:
+                scoped_filter["api_key"] = {"in": list(scoped_key_hashes)}
             if request_id is not None and isinstance(request_id, str):
                 scoped_filter["request_id"] = request_id
-            if user_id is not None and isinstance(user_id, str):
-                scoped_filter["user"] = user_id
+            if effective_user_id is not None and isinstance(effective_user_id, str):
+                scoped_filter["user"] = effective_user_id
 
             if not scoped_filter:
                 spend_logs = await prisma_client.get_data(table_name="spend", query_type="find_all")
@@ -3308,8 +3323,16 @@ async def ui_view_session_spend_logs(
                 detail="Database not connected",
             )
 
-        # Build query conditions
-        where_conditions = {"session_id": session_id}
+        observability_scope = await resolve_observability_scope(
+            prisma_client=prisma_client,
+            user_api_key_dict=user_api_key_dict,
+        )
+        scoped_key_hashes = None if observability_scope.unrestricted else observability_scope.allowed_key_hashes
+        where_conditions = (
+            {"session_id": session_id}
+            if scoped_key_hashes is None
+            else {"session_id": session_id, "api_key": {"in": list(scoped_key_hashes)}}
+        )
 
         # Calculate pagination offsets
         skip = (page - 1) * page_size
@@ -3318,7 +3341,8 @@ async def ui_view_session_spend_logs(
         total_records = await SpendLogsRepository(prisma_client).table.count(where=where_conditions)
 
         # Query with raw SQL to exclude heavy columns (messages, response, proxy_server_request)
-        sql_query = """
+        key_scope_clause = "" if scoped_key_hashes is None else " AND api_key = ANY($4::text[])"
+        sql_query = f"""
             SELECT
                 request_id, call_type, api_key, spend, total_tokens,
                 prompt_tokens, completion_tokens, "startTime", "endTime",
@@ -3328,11 +3352,16 @@ async def ui_view_session_spend_logs(
                 organization_id, end_user, requester_ip_address,
                 session_id, status, mcp_namespaced_tool_name, agent_id
             FROM "LiteLLM_SpendLogs"
-            WHERE session_id = $1
+            WHERE session_id = $1{key_scope_clause}
             ORDER BY "startTime" DESC
             LIMIT $2 OFFSET $3
         """
-        result = await prisma_client.db.query_raw(sql_query, session_id, page_size, skip)
+        sql_params = (
+            (session_id, page_size, skip)
+            if scoped_key_hashes is None
+            else (session_id, page_size, skip, list(scoped_key_hashes))
+        )
+        result = await prisma_client.db.query_raw(sql_query, *sql_params)
 
         total_pages = (total_records + page_size - 1) // page_size
 
@@ -3362,6 +3391,7 @@ async def _build_ui_spend_logs_response(
     total_pages: int,
     enrich_session_counts: bool = True,
     total_is_capped: bool = False,
+    allowed_api_keys: tuple[str, ...] | None = None,
 ) -> dict:
     """
     Build the paginated response for the UI spend-logs endpoint.
@@ -3407,9 +3437,17 @@ async def _build_ui_spend_logs_response(
             # is bounded by page_size (typically 25-50 distinct session IDs).
             # If performance degrades at scale, consider short-lived caching or
             # folding the count into the main query via a window function.
+            session_count_where = (
+                {"session_id": {"in": session_ids}}
+                if allowed_api_keys is None
+                else {
+                    "session_id": {"in": session_ids},
+                    "api_key": {"in": list(allowed_api_keys)},
+                }
+            )
             counts = await SpendLogsRepository(prisma_client).table.group_by(
                 by=["session_id"],
-                where={"session_id": {"in": session_ids}},
+                where=session_count_where,
                 count={"session_id": True},
             )
             count_map = {r["session_id"]: r["_count"]["session_id"] for r in counts if r.get("session_id")}
@@ -3590,19 +3628,27 @@ async def _assert_user_can_view_request_id(
         include=None,
     )
     if row is None:
-        return
-
-    if row.user is not None and row.user == user_api_key_dict.user_id:
-        return
-
-    if row.team_id:
-        can_view = await _can_team_member_view_log(
-            prisma_client=prisma_client,
-            user_api_key_dict=user_api_key_dict,
-            team_id=row.team_id,
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Not authorized to view spend log for request_id={}".format(request_id)},
         )
-        if can_view:
-            return
+
+    observability_scope = await resolve_observability_scope(
+        prisma_client=prisma_client,
+        user_api_key_dict=user_api_key_dict,
+    )
+    row_api_key = getattr(row, "api_key", None)
+    if row_api_key is not None and row_api_key in observability_scope.allowed_key_hashes:
+        return
+    if getattr(row, "user", None) == user_api_key_dict.user_id:
+        return
+    row_team_id = getattr(row, "team_id", None)
+    if row_team_id is not None and await _can_team_member_view_log(
+        prisma_client=prisma_client,
+        user_api_key_dict=user_api_key_dict,
+        team_id=row_team_id,
+    ):
+        return
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
