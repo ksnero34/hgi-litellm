@@ -110,6 +110,7 @@ def mock_in_memory_handler(mocker):
     mock_handler.get_source.return_value = "config"
     mock_handler.initialize_guardrail = mocker.Mock()
     mock_handler.update_in_memory_guardrail = mocker.Mock()
+    mock_handler.reinitialize_guardrail = mocker.Mock()
     mock_handler.delete_in_memory_guardrail = mocker.Mock()
     mock_handler.reconcile_db_guardrails = mocker.Mock(return_value=[])
     return mock_handler
@@ -877,7 +878,7 @@ async def test_update_guardrail_endpoint(
 
     elif scenario == "success_sync_fails":
         mock_prisma_client = mocker.Mock()
-        mock_in_memory_handler.update_in_memory_guardrail.side_effect = Exception(
+        mock_in_memory_handler.reinitialize_guardrail.side_effect = Exception(
             "Sync failed"
         )
         mock_logger = mocker.patch(
@@ -937,8 +938,8 @@ async def test_update_guardrail_endpoint(
             prisma_client=mocker.ANY,
         )
 
-        mock_in_memory_handler.update_in_memory_guardrail.assert_called_once_with(
-            guardrail_id="test-guardrail-id", guardrail=mocker.ANY
+        mock_in_memory_handler.reinitialize_guardrail.assert_called_once_with(
+            guardrail=mocker.ANY, source="db"
         )
 
         if scenario == "success_sync_fails":
