@@ -24,6 +24,14 @@ vi.mock("./OrganizationsTable", () => ({
     <div data-testid="organizations-table">isLoading:{String(props.isLoading)}</div>
   ),
 }));
+vi.mock("@/components/organization/org-create/OrgCreateDialog", () => ({
+  __esModule: true,
+  OrgCreateDialog: () => null,
+}));
+vi.mock("@/components/organization/organization_view", () => ({
+  __esModule: true,
+  default: () => null,
+}));
 
 import OrganizationsPanel from "./OrganizationsPanel";
 

@@ -63,6 +63,8 @@ describe("resources", () => {
     expect(resources.ko.translation["auth.account.logout"]).toBe("로그아웃");
     expect(resources.en.translation["access.budgets.create"]).toBe("Create Budget");
     expect(resources.en.translation["observability.logs.request"]).toBe("Request");
+    expect(resources.en.translation["identityAdmin.organization.backToOrganizations"]).toBe("Back to Organizations");
+    expect(resources.ko.translation["identityAdmin.organization.emptyTitle"]).toBe("아직 조직이 없습니다");
   });
 
   it("defines every static migrated translation key referenced by source files", () => {

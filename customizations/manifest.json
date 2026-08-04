@@ -162,6 +162,7 @@
       "commit": "feat(hgi): localize and simplify the closed-network dashboard",
       "paths": [
         "ui/litellm-dashboard/src/app/(dashboard)/layout.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/organizations/page.test.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/organizations/page.tsx",
         "ui/litellm-dashboard/src/app/(dashboard)/policies/_components/index.tsx",
         "ui/litellm-dashboard/src/app/globals.css",

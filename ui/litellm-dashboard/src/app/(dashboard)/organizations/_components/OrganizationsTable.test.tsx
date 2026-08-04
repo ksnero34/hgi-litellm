@@ -1,6 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
+import { i18n } from "@/i18n/i18n";
 import { describe, expect, it, vi } from "vitest";
 
 import { Organization } from "@/components/networking";
@@ -145,7 +146,7 @@ describe("OrganizationsTable", () => {
     expect(screen.getByText("$100.00")).toBeInTheDocument();
     expect(screen.getByText("TPM: 1000")).toBeInTheDocument();
     expect(screen.getByText("RPM: 60")).toBeInTheDocument();
-    expect(screen.getByText("3 Members")).toBeInTheDocument();
+    expect(screen.getByText("3 members")).toBeInTheDocument();
     // Five models, three visible -> the shared ModelsCell collapses the rest.
     expect(screen.getByText("+2 more")).toBeInTheDocument();
   });
@@ -184,5 +185,42 @@ describe("OrganizationsTable", () => {
 
     rerender(<OrganizationsTable {...baseProps} searchActive={true} organizations={[]} />);
     expect(screen.getByText("No matching organizations")).toBeInTheDocument();
+  });
+
+  it("localizes the empty state and row actions in Korean", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ko");
+    });
+
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <OrganizationsTable
+        {...baseProps}
+        organizations={[makeOrganization({ organization_id: "org-ko" })]}
+        searchActive={true}
+      />,
+    );
+
+    expect(screen.queryByText("일치하는 조직이 없습니다")).not.toBeInTheDocument();
+
+    rerender(<OrganizationsTable {...baseProps} searchActive={true} organizations={[]} />);
+    expect(screen.getByText("일치하는 조직이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("검색과 일치하는 조직이 없습니다. 다른 이름이나 ID로 시도하세요.")).toBeInTheDocument();
+
+    rerender(
+      <OrganizationsTable
+        {...baseProps}
+        organizations={[makeOrganization({ organization_id: "org-ko" })]}
+        searchActive={false}
+      />,
+    );
+
+    await user.click(screen.getByTestId("organization-actions-org-ko"));
+    expect(await screen.findByText("조직 수정")).toBeInTheDocument();
+    expect(screen.getByText("조직 삭제")).toBeInTheDocument();
+
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
   });
 });

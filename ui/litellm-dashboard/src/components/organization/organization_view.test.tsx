@@ -2,6 +2,8 @@ import React from "react";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, test, expect, beforeEach } from "vitest";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 import { renderWithProviders } from "../../../tests/test-utils";
 import OrganizationInfoView from "./organization_view";
 import { useOrganization } from "@/app/(dashboard)/hooks/organizations/useOrganizations";
@@ -40,6 +42,21 @@ vi.mock("../molecules/notifications_manager", () => ({
   __esModule: true,
   default: { success: vi.fn(), fromBackend: vi.fn() },
 }));
+vi.mock("./org-settings/OrgSettingsForm", async () => {
+  const ReactModule = await vi.importActual<typeof import("react")>("react");
+  return {
+    __esModule: true,
+    OrgSettingsForm: ({ org }: { org: { organization_alias: string } }) => {
+      const [value, setValue] = ReactModule.useState(org.organization_alias);
+      return (
+        <label>
+          Organization Name
+          <input aria-label="Organization Name" value={value} onChange={(event) => setValue(event.target.value)} />
+        </label>
+      );
+    },
+  };
+});
 vi.mock("../team/edit_membership", () => ({
   __esModule: true,
   default: () => null,
@@ -99,6 +116,8 @@ const mockOrg = {
 
 beforeEach(() => {
   mockUseOrganization.mockReset();
+  localStorage.setItem(languageStorageKey, "en");
+  void i18n.changeLanguage("en");
 });
 
 test("renders organization view after loading data", async () => {
@@ -234,4 +253,33 @@ test("should keep unsaved settings edits when switching tabs and back", async ()
   await user.click(screen.getByRole("tab", { name: "Settings" }));
 
   expect(screen.getByLabelText(/Organization Name/i)).toHaveValue("Renamed Org");
+});
+
+test("renders organization detail copy in Korean", async () => {
+  localStorage.setItem(languageStorageKey, "ko");
+  await i18n.changeLanguage("ko");
+  mockUseOrganization.mockReturnValue({ data: mockOrg, isLoading: false } as any);
+
+  renderWithProviders(
+    <OrganizationInfoView
+      organizationId="org_123"
+      onClose={() => {}}
+      accessToken="test-token"
+      is_org_admin={false}
+      is_proxy_admin={false}
+      userModels={[]}
+      editOrg={false}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "조직 목록으로 돌아가기" })).toBeInTheDocument();
+  });
+
+  expect(screen.getByRole("tab", { name: "개요" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "구성원" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "설정" })).toBeInTheDocument();
+  expect(screen.getByText("조직 세부 정보")).toBeInTheDocument();
+  expect(screen.getByText("예산 상태")).toBeInTheDocument();
+  expect(screen.getByText("속도 제한")).toBeInTheDocument();
 });
