@@ -1,8 +1,8 @@
 """Regression tests for ProxyExtrasDBManager v2 migration resolver.
 
-The v2 resolver is opt-in via `--use_v2_migration_resolver` / the
-`use_v2_resolver=True` kwarg. These tests exercise the v2 path; the v1
-(default) behavior is unchanged from pre-fix.
+The v2 resolver is the default. These tests exercise its fail-fast behavior;
+the v1 resolver's legacy best-effort behavior remains available through an
+explicit `use_v2_resolver=False` kwarg.
 """
 
 import subprocess
@@ -99,13 +99,8 @@ def test_max_migration_timestamp_empty_set():
     assert _max_migration_timestamp(set()) == 0
 
 
-def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
-    """v1 (default) continues to call _resolve_all_migrations on the happy path.
-
-    This is the existing buggy behavior — we're not fixing it in v1, only
-    offering v2 as opt-in. This test pins the default so that a future
-    inadvertent default flip is caught.
-    """
+@pytest.mark.parametrize("stdout", ["Applied migration.\n", "No pending migrations to apply\n"])
+def test_v1_opt_out_always_calls_resolve_all_migrations(monkeypatch, tmp_path, stdout):
     monkeypatch.setattr(ProxyExtrasDBManager, "_get_prisma_dir", lambda: str(tmp_path))
     (tmp_path / "schema.prisma").write_text("// stub")
 
@@ -113,8 +108,10 @@ def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
     # applied, which is the code path that triggers the legacy post-migration
     # sanity check (a call to _resolve_all_migrations).
     class FakeResult:
-        stdout = "Applied migration.\n"
-        stderr = ""
+        pass
+
+    FakeResult.stdout = stdout
+    FakeResult.stderr = ""
 
     def fake_run(cmd, *args, **kwargs):
         return FakeResult()
@@ -127,9 +124,11 @@ def test_v1_default_still_calls_resolve_all_migrations(monkeypatch, tmp_path):
     monkeypatch.setattr("subprocess.run", fake_run)
     monkeypatch.setattr(ProxyExtrasDBManager, "_resolve_all_migrations", fake_resolve)
 
-    ok = ProxyExtrasDBManager.setup_database(use_migrate=True)  # v2 flag NOT set
+    ok = ProxyExtrasDBManager.setup_database(
+        use_migrate=True, use_v2_resolver=False
+    )
     assert ok is True
-    assert resolve_called["n"] == 1, "v1 default should still invoke the legacy path"
+    assert resolve_called["n"] == 1
 
 
 def test_v2_db_push_wraps_subprocess_error_as_runtime_error(monkeypatch, tmp_path):
@@ -216,8 +215,8 @@ def test_v2_resolve_specific_migration_failure_raises_runtime_error(
             ProxyExtrasDBManager.setup_database(use_migrate=True, use_v2_resolver=True)
 
 
-def test_v2_does_not_call_resolve_all_migrations(monkeypatch, tmp_path):
-    """v2 must never call _resolve_all_migrations — that's the bug it fixes."""
+def test_v2_default_does_not_call_resolve_all_migrations(monkeypatch, tmp_path):
+    """The v2 default must never call the legacy diff-and-force recovery."""
     monkeypatch.setattr(
         ProxyExtrasDBManager, "_warn_if_db_ahead_of_head", lambda _: None
     )
@@ -237,6 +236,6 @@ def test_v2_does_not_call_resolve_all_migrations(monkeypatch, tmp_path):
         lambda *a, **kw: resolve_called.__setitem__("n", resolve_called["n"] + 1),
     )
 
-    ok = ProxyExtrasDBManager.setup_database(use_migrate=True, use_v2_resolver=True)
+    ok = ProxyExtrasDBManager.setup_database(use_migrate=True)
     assert ok is True
     assert resolve_called["n"] == 0, "v2 must not invoke the diff-and-force recovery"

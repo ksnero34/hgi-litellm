@@ -286,23 +286,25 @@ class ProxyExtrasDBManager:
         # 1. Generate migration SQL for the diff between DB and schema
         try:
             logger.info("Generating migration diff between DB and schema.prisma...")
-            with open(diff_sql_path, "w") as f:
-                subprocess.run(
-                    [
-                        _get_prisma_command(),
-                        "migrate",
-                        "diff",
-                        "--from-url",
-                        diff_url,
-                        "--to-schema-datamodel",
-                        schema_path,
-                        "--script",
-                    ],
-                    check=True,
-                    timeout=60,
-                    stdout=f,
-                    env=_get_prisma_env(),
-                )
+            result = subprocess.run(
+                [
+                    _get_prisma_command(),
+                    "migrate",
+                    "diff",
+                    "--from-url",
+                    diff_url,
+                    "--to-schema-datamodel",
+                    schema_path,
+                    "--script",
+                ],
+                check=True,
+                timeout=60,
+                capture_output=True,
+                text=True,
+                env=_get_prisma_env(),
+            )
+            if result.stdout.strip():
+                diff_sql_path.write_text(result.stdout)
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to generate migration diff: {e.stderr}")
         except subprocess.TimeoutExpired:
@@ -504,7 +506,7 @@ class ProxyExtrasDBManager:
     @staticmethod
     def _setup_database_v2(use_migrate: bool) -> bool:
         """
-        v2 migration resolver (opt-in via --use_v2_migration_resolver).
+        v2 migration resolver (default; opt out via --use_v1_migration_resolver).
 
         Runs `prisma migrate deploy` and handles standard recovery paths
         (P3005 baseline, P3009/P3018 idempotent errors). Critically, it does
@@ -678,7 +680,7 @@ class ProxyExtrasDBManager:
 
     @staticmethod
     def setup_database(
-        use_migrate: bool = False, use_v2_resolver: bool = False
+        use_migrate: bool = False, use_v2_resolver: bool = True
     ) -> bool:
         """
         Set up the database using either prisma migrate or prisma db push
@@ -686,16 +688,15 @@ class ProxyExtrasDBManager:
 
         Args:
             use_migrate: Whether to use prisma migrate instead of db push
-            use_v2_resolver: Opt into the v2 migration resolver (safer during
+            use_v2_resolver: Use the v2 migration resolver (safer during
                 rolling deploys; does not run the diff-and-force recovery
-                that causes schema thrashing). Defaults to False for
-                backwards compatibility.
+                that causes schema thrashing). Defaults to True.
 
         Returns:
             bool: True if setup was successful, False otherwise
         """
         if use_v2_resolver:
-            logger.info("Using v2 migration resolver (--use_v2_migration_resolver)")
+            logger.info("Using v2 migration resolver")
             return ProxyExtrasDBManager._setup_database_v2(use_migrate=use_migrate)
 
         schema_path = ProxyExtrasDBManager._get_prisma_dir() + "/schema.prisma"
@@ -720,14 +721,6 @@ class ProxyExtrasDBManager:
                         logger.info(f"prisma migrate deploy stdout: {result.stdout}")
 
                         logger.info("prisma migrate deploy completed")
-
-                        # Skip sanity check when deploy reports no pending migrations —
-                        # DB already matches schema, no drift to correct.
-                        if "No pending migrations to apply" in result.stdout:
-                            logger.info(
-                                "No pending migrations — skipping post-migration sanity check"
-                            )
-                            return True
 
                         # Run sanity check to ensure DB matches schema
                         logger.info("Running post-migration sanity check...")
