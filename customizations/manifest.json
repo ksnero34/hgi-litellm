@@ -151,6 +151,7 @@
         "tests/test_litellm/proxy/guardrails/test_guardrail_endpoints.py",
         "tests/test_litellm/proxy/guardrails/test_guardrail_registry.py",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_configs.ts",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.ts",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx",
         "ui/litellm-dashboard/src/components/GuardrailsMonitor/mockData.ts"

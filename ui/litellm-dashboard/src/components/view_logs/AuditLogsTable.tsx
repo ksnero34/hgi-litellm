@@ -154,11 +154,11 @@ export function AuditLogsTable({
 
   const tableOptions = useMemo(
     () => [
-      { label: getAuditTableNameLabel("LiteLLM_VerificationToken", t), value: "LiteLLM_VerificationToken" },
-      { label: getAuditTableNameLabel("LiteLLM_TeamTable", t), value: "LiteLLM_TeamTable" },
-      { label: getAuditTableNameLabel("LiteLLM_UserTable", t), value: "LiteLLM_UserTable" },
-      { label: getAuditTableNameLabel("LiteLLM_OrganizationTable", t), value: "LiteLLM_OrganizationTable" },
-      { label: getAuditTableNameLabel("LiteLLM_ProxyModelTable", t), value: "LiteLLM_ProxyModelTable" },
+      { label: getAuditTableNameLabel("LiteLLM_VerificationToken"), value: "LiteLLM_VerificationToken" },
+      { label: getAuditTableNameLabel("LiteLLM_TeamTable"), value: "LiteLLM_TeamTable" },
+      { label: getAuditTableNameLabel("LiteLLM_UserTable"), value: "LiteLLM_UserTable" },
+      { label: getAuditTableNameLabel("LiteLLM_OrganizationTable"), value: "LiteLLM_OrganizationTable" },
+      { label: getAuditTableNameLabel("LiteLLM_ProxyModelTable"), value: "LiteLLM_ProxyModelTable" },
     ],
     [i18n.resolvedLanguage, t],
   );
@@ -177,8 +177,8 @@ export function AuditLogsTable({
 
   const formatFilterValue = (columnId: string, value: unknown): string => {
     const raw = String(value);
-    if (columnId === "action") return getAuditActionLabel(raw, t);
-    if (columnId === "table_name") return getAuditTableNameLabel(raw, t);
+    if (columnId === "action") return getAuditActionLabel(raw);
+    if (columnId === "table_name") return getAuditTableNameLabel(raw);
     return raw;
   };
 

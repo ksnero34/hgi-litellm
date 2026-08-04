@@ -161,6 +161,9 @@ const MCPServers: React.FC<MCPServerProps> = ({ accessToken, userRole, userID })
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
+  const sortLabel = t(
+    SORT_OPTIONS.find((option) => option.value === sortKey)?.labelKey ?? "toolsModels.mcp.servers.sort.recentlyCreated",
+  );
   const isInternalUser = userRole === "Internal User";
 
   // Single bulk fetch of this user's per-server env-var status. Drives the
@@ -643,13 +646,9 @@ const MCPServers: React.FC<MCPServerProps> = ({ accessToken, userRole, userID })
                     <p className="text-sm font-medium whitespace-nowrap text-muted-foreground">
                       {t("toolsModels.mcp.servers.sort.label")}
                     </p>
-                    <Select
-                      items={SORT_OPTIONS}
-                      value={sortKey}
-                      onValueChange={(v: string | null) => setSortKey((v ?? "created_desc") as SortKey)}
-                    >
+                    <Select value={sortKey} onValueChange={(v) => setSortKey((v ?? "created_desc") as SortKey)}>
                       <SelectTrigger className="w-55">
-                        <SelectValue />
+                        <SelectValue>{sortLabel}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {SORT_OPTIONS.map((opt) => (
