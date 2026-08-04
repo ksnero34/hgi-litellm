@@ -640,9 +640,7 @@ def _usage_log_entry_from_row(
     )
 
 
-def _policy_usage_log_entry_from_row(
-    row: Any, spend_log: Any, action_filter: str | None
-) -> UsageLogEntry | None:
+def _policy_usage_log_entry_from_row(row: Any, spend_log: Any, action_filter: str | None) -> UsageLogEntry | None:
     metadata = spend_log.metadata
     if isinstance(metadata, str):
         try:

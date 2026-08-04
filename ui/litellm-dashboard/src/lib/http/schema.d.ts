@@ -30746,6 +30746,10 @@ export interface components {
              * @default 0
              */
             api_requests: number;
+            /** Average Response Time Ms */
+            average_response_time_ms?: number | null;
+            /** Average Ttft Ms */
+            average_ttft_ms?: number | null;
             /**
              * Cache Creation Input Tokens
              * @default 0
@@ -30787,6 +30791,11 @@ export interface components {
              */
             prompt_tokens: number;
             /**
+             * Response Time Count
+             * @default 0
+             */
+            response_time_count: number;
+            /**
              * Spend
              * @default 0
              */
@@ -30801,6 +30810,11 @@ export interface components {
              * @default 0
              */
             total_tokens: number;
+            /**
+             * Ttft Count
+             * @default 0
+             */
+            ttft_count: number;
         };
         /**
          * SuccessfulKeyUpdate
