@@ -21,6 +21,7 @@ from litellm.proxy.config_resolvers.sso import (
     SSO_SECRET_FIELDS,
     resolve_sso_config,
 )
+from litellm.proxy.customizations.oidc import preserve_masked_sso_secrets
 from litellm.repositories.config_repository import ConfigRepository
 from litellm.repositories.table_repositories import (
     SSOConfigRepository,
@@ -907,7 +908,10 @@ async def update_sso_settings(
         config["general_settings"] = {}
 
     # Update environment variables in config and in memory
-    sso_data = sso_config.model_dump()
+    sso_data = preserve_masked_sso_secrets(
+        incoming_settings=sso_config.model_dump(),
+        database_settings=before_sso_data or {},
+    )
     for field_name, value in sso_data.items():
         if field_name in SSO_FIELD_ENV_VARS:
             env_var_name = SSO_FIELD_ENV_VARS[field_name]

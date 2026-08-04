@@ -54,6 +54,10 @@ def get_litellm_user_role(role_str) -> Optional[LitellmUserRoles]:
 
 
 class CustomOpenID(OpenID):
+    sub: str | None = None
     team_ids: List[str]
     user_role: Optional[LitellmUserRoles] = None
     extra_fields: Optional[Dict[str, Any]] = None
+    sso_team_mapping_configured: bool = False
+    sso_team_claim_present: bool = False
+    sso_team_claim_values: List[str] = []

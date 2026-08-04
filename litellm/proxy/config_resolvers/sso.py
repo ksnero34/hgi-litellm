@@ -30,6 +30,7 @@ SSO_DESCRIPTORS: tuple[FieldDescriptor, ...] = (
     FieldDescriptor("microsoft_tenant", "microsoft_tenant", "MICROSOFT_TENANT"),
     FieldDescriptor("generic_client_id", "generic_client_id", "GENERIC_CLIENT_ID"),
     FieldDescriptor("generic_client_secret", "generic_client_secret", "GENERIC_CLIENT_SECRET", is_secret=True),
+    FieldDescriptor("generic_discovery_url", "generic_discovery_url", "GENERIC_DISCOVERY_URL"),
     FieldDescriptor(
         "generic_authorization_endpoint", "generic_authorization_endpoint", "GENERIC_AUTHORIZATION_ENDPOINT"
     ),

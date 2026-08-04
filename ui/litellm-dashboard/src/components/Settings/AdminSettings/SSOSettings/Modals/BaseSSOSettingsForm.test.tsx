@@ -40,8 +40,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const googleOption = screen.getByText(/google sso/i);
-      fireEvent.click(googleOption);
+      fireEvent.click(screen.getByText(/google sso/i));
     });
 
     await waitFor(() => {
@@ -66,8 +65,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const oktaOption = screen.getByText(/okta/i);
-      fireEvent.click(oktaOption);
+      fireEvent.click(screen.getByText(/okta/i));
     });
 
     await waitFor(() => {
@@ -133,8 +131,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const genericOption = screen.getByText(/generic sso/i);
-      fireEvent.click(genericOption);
+      fireEvent.click(screen.getByText(/generic sso/i));
     });
 
     await waitFor(() => {
@@ -168,8 +165,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const oktaOption = screen.getByText(/okta/i);
-      fireEvent.click(oktaOption);
+      fireEvent.click(screen.getByText(/okta/i));
     });
 
     await waitFor(() => {
@@ -193,8 +189,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const genericOption = screen.getByText(/generic sso/i);
-      fireEvent.click(genericOption);
+      fireEvent.click(screen.getByText(/generic sso/i));
     });
 
     await waitFor(() => {
@@ -218,8 +213,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const oktaOption = screen.getByText(/okta/i);
-      fireEvent.click(oktaOption);
+      fireEvent.click(screen.getByText(/okta/i));
     });
 
     await waitFor(() => {
@@ -252,8 +246,7 @@ describe("BaseSSOSettingsForm", () => {
     });
 
     await waitFor(() => {
-      const googleOption = screen.getByText(/google sso/i);
-      fireEvent.click(googleOption);
+      fireEvent.click(screen.getByText(/google sso/i));
     });
 
     await waitFor(() => {
@@ -285,31 +278,33 @@ describe("renderProviderFields", () => {
   it("should return fields for okta provider", () => {
     const result = renderProviderFields("okta");
     expect(result).not.toBeNull();
-    expect(result?.length).toBe(6);
+    expect(result?.length).toBe(7);
   });
 
   it("should return fields for generic provider", () => {
     const result = renderProviderFields("generic");
     expect(result).not.toBeNull();
-    expect(result?.length).toBe(6);
+    expect(result?.length).toBe(7);
+  });
+
+  it("should return fields for saml provider", () => {
+    const result = renderProviderFields("saml");
+    expect(result).not.toBeNull();
+    expect(result?.length).toBe(4);
   });
 
   it.each(["okta", "generic"])(
-    "renders an optional generic_scope field for %s so editing cannot clear it",
+    "renders discovery and scope fields for %s so editing cannot clear newer OIDC settings",
     (provider) => {
-      const scopeField = ssoProviderConfigs[provider].fields.find((field) => field.name === "generic_scope");
-      expect(scopeField).toBeDefined();
-      expect(scopeField?.required).toBe(false);
+      const fields = ssoProviderConfigs[provider].fields;
+      expect(fields.find((field) => field.name === "generic_discovery_url")).toBeDefined();
+      expect(fields.find((field) => field.name === "generic_scope")?.required).toBe(false);
+      expect(ssoProviderConfigs[provider].envVarMap.generic_discovery_url).toBe("GENERIC_DISCOVERY_URL");
       expect(ssoProviderConfigs[provider].envVarMap.generic_scope).toBe("GENERIC_SCOPE");
     },
   );
 
   it("submits generic_scope untouched, so saving an unrelated edit cannot clear GENERIC_SCOPE", async () => {
-    // update_sso_settings clears the env var for any mapped field its payload
-    // omits, and antd only submits mounted fields. So the Scopes field being
-    // present is what stops an unrelated edit from downgrading a custom scope
-    // to the provider default. Dropping the field from ssoProviderConfigs must
-    // fail here rather than silently in production.
     const handleSubmit = vi.fn();
     let form: any;
     const TestWrapper = () => {
@@ -320,12 +315,12 @@ describe("renderProviderFields", () => {
 
     renderWithProviders(<TestWrapper />);
 
-    // Mirror EditSSOSettingsModal hydrating the form from the GET response.
     await act(async () => {
       form.setFieldsValue({
         sso_provider: "generic",
         generic_client_id: "client-id",
         generic_client_secret: "client-secret",
+        generic_discovery_url: "https://idp.example.com/.well-known/openid-configuration",
         generic_authorization_endpoint: "https://idp.example.com/authorize",
         generic_token_endpoint: "https://idp.example.com/token",
         generic_userinfo_endpoint: "https://idp.example.com/userinfo",
@@ -335,7 +330,6 @@ describe("renderProviderFields", () => {
       });
     });
 
-    // The admin edits something else entirely and saves.
     await act(async () => {
       form.setFieldsValue({ generic_token_endpoint: "https://idp.example.com/token/v2" });
       form.submit();
@@ -346,6 +340,7 @@ describe("renderProviderFields", () => {
         expect.objectContaining({
           generic_token_endpoint: "https://idp.example.com/token/v2",
           generic_scope: "openid email profile groups",
+          generic_discovery_url: "https://idp.example.com/.well-known/openid-configuration",
         }),
       );
     });

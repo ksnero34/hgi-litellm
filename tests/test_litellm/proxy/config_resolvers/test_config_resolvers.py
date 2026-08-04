@@ -84,6 +84,16 @@ def test_resolve_sso_config_resolves_saml_fields():
     assert resolved.provenance["saml_allow_unsolicited"] == "env"
 
 
+def test_resolve_sso_config_resolves_generic_discovery_url():
+    resolved = resolve_sso_config(
+        None,
+        {"GENERIC_DISCOVERY_URL": "https://idp.example.com/.well-known/openid-configuration"},
+    )
+
+    assert resolved.config.generic_discovery_url == "https://idp.example.com/.well-known/openid-configuration"
+    assert resolved.provenance["generic_discovery_url"] == "env"
+
+
 def test_resolve_sso_config_returns_unmasked_secret_and_provenance():
     # The resolver hands back plaintext; masking is the endpoint's job. If the
     # resolver masked, the login path would consume a masked secret and fail.

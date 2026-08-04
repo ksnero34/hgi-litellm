@@ -9,7 +9,7 @@ from litellm.llms.custom_httpx.http_handler import (
     get_async_httpx_client,
     httpxSpecialProvider,
 )
-from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 
 
 class Oauth2Handler:
@@ -126,13 +126,6 @@ class Oauth2Handler:
         Raises:
             ValueError: If the token is invalid, the request fails, or the token info endpoint is not set.
         """
-        from litellm.proxy.proxy_server import premium_user
-
-        if premium_user is not True:
-            raise ValueError(
-                "Oauth2 token validation is only available for premium users" + CommonProxyErrors.not_premium_user.value
-            )
-
         verbose_proxy_logger.debug("Oauth2 token validation for token=[set=%s]", token is not None)
 
         # Get the token info endpoint from environment variable
@@ -181,11 +174,7 @@ class Oauth2Handler:
             # If we get here, the request was successful
             data = response.json()
 
-            verbose_proxy_logger.debug(
-                "Oauth2 token validation for token=%s, response from endpoint=%s",
-                token,
-                data,
-            )
+            verbose_proxy_logger.debug("Oauth2 token validation succeeded")
 
             # For introspection endpoints, check if token is active
             if is_introspection_endpoint and not data.get("active", True):

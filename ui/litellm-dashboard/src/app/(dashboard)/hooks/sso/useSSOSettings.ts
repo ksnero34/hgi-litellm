@@ -21,6 +21,7 @@ export interface SSOSettingsValues {
   microsoft_tenant: string | null;
   generic_client_id: string | null;
   generic_client_secret: string | null;
+  generic_discovery_url: string | null;
   generic_authorization_endpoint: string | null;
   generic_token_endpoint: string | null;
   generic_userinfo_endpoint: string | null;
@@ -32,8 +33,8 @@ export interface SSOSettingsValues {
   proxy_base_url: string | null;
   user_email: string | null;
   ui_access_mode: string | null;
-  role_mappings: RoleMappings;
-  team_mappings: TeamMappings;
+  role_mappings: RoleMappings | null;
+  team_mappings: TeamMappings | null;
 }
 
 export interface RoleMappings {

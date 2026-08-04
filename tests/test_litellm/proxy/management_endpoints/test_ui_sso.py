@@ -17,6 +17,7 @@ sys.path.insert(
 import litellm
 from litellm.proxy._types import LiteLLM_UserTable, NewUserResponse
 from litellm.proxy.auth.handle_jwt import JWTHandler
+from litellm.proxy.customizations.sso import handle_custom_ui_sso_sign_in
 from litellm.proxy.management_endpoints.sso import CustomMicrosoftSSO
 from litellm.proxy.management_endpoints.types import CustomOpenID
 from litellm.proxy.management_endpoints.ui_sso import (
@@ -37,6 +38,16 @@ from litellm.types.proxy.management_endpoints.ui_sso import (
 )
 
 
+def _get_enterprise_custom_sso_handler():
+    try:
+        from litellm_enterprise.proxy.auth.custom_sso_handler import (
+            EnterpriseCustomSSOHandler,
+        )
+    except ModuleNotFoundError:
+        pytest.skip("litellm_enterprise package is not available in the OSS fork")
+    return EnterpriseCustomSSOHandler
+
+
 def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     # Arrange
     # Create a mock response similar to what Microsoft SSO would return
@@ -52,7 +63,10 @@ def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     # Act
     # Call the method being tested
     result = MicrosoftSSOHandler.openid_from_response(
-        response=mock_response, team_ids=expected_team_ids, user_role=None
+        response=mock_response,
+        team_ids=expected_team_ids,
+        user_role=None,
+        sub="microsoft-oidc-sub",
     )
 
     # Assert
@@ -63,6 +77,7 @@ def test_microsoft_sso_handler_openid_from_response_user_principal_name():
     assert result.display_name == "Test User"
     assert result.provider == "microsoft"
     assert result.id == "user123"
+    assert result.sub == "microsoft-oidc-sub"
     assert result.first_name == "Test"
     assert result.last_name == "User"
     assert result.team_ids == expected_team_ids
@@ -294,6 +309,35 @@ def test_get_google_callback_response():
     assert result.get("sub") == "google123"
     assert result.get("given_name") == "Google"
     assert result.get("family_name") == "User"
+
+
+def test_get_google_callback_response_preserves_sub_as_alias_source():
+    from fastapi_sso.sso.base import OpenID
+
+    mock_request = MagicMock(spec=Request)
+    mock_openid = OpenID(
+        id="google-oidc-sub",
+        email="google_user@example.com",
+        display_name="Google User",
+        provider="google",
+    )
+
+    with patch.dict(os.environ, {"GOOGLE_CLIENT_SECRET": "mock_secret"}):
+        with patch(
+            "fastapi_sso.sso.google.GoogleSSO.verify_and_process",
+            new=AsyncMock(return_value=mock_openid),
+        ):
+            result = asyncio.run(
+                GoogleSSOHandler.get_google_callback_response(
+                    request=mock_request,
+                    google_client_id="mock_client_id",
+                    redirect_url="http://mock_redirect_url",
+                )
+            )
+
+    assert isinstance(result, CustomOpenID)
+    assert result.id == "google-oidc-sub"
+    assert result.sub == "google-oidc-sub"
 
 
 @pytest.mark.asyncio
@@ -765,9 +809,10 @@ def test_build_sso_user_update_data_with_valid_role():
     from litellm.proxy.management_endpoints.ui_sso import _build_sso_user_update_data
 
     sso_result = CustomOpenID(
-        id="test-user-123",
+        id="configured-user-id",
+        sub="oidc-sub-123",
         email="test@example.com",
-        display_name="Test User",
+        display_name="Different Display Name",
         provider="microsoft",
         team_ids=[],
         user_role=LitellmUserRoles.PROXY_ADMIN,
@@ -781,6 +826,7 @@ def test_build_sso_user_update_data_with_valid_role():
 
     assert update_data["user_email"] == "test@example.com"
     assert update_data["user_role"] == "proxy_admin"
+    assert update_data["user_alias"] == "oidc-sub-123"
 
 
 def test_build_sso_user_update_data_without_role():
@@ -807,6 +853,7 @@ def test_build_sso_user_update_data_without_role():
 
     assert update_data["user_email"] == "test@example.com"
     assert "user_role" not in update_data
+    assert "user_alias" not in update_data
 
 
 def test_normalize_email():
@@ -856,11 +903,13 @@ def test_build_sso_user_update_data_normalizes_email():
     assert "user_role" not in update_data
 
 
-def test_generic_response_convertor_normalizes_email():
+def test_generic_response_convertor_normalizes_email(monkeypatch: pytest.MonkeyPatch):
     """
     Test that generic_response_convertor normalizes email addresses.
     """
     from litellm.proxy.management_endpoints.ui_sso import generic_response_convertor
+
+    monkeypatch.setenv("GENERIC_USER_ID_ATTRIBUTE", "preferred_username")
 
     mock_response = {
         "preferred_username": "user123",
@@ -885,6 +934,7 @@ def test_generic_response_convertor_normalizes_email():
     # Email should be normalized to lowercase
     assert result.email == "test.user@example.com"
     assert result.id == "user123"
+    assert result.sub == "Test User"
     assert result.display_name == "Test User"
 
 
@@ -1961,11 +2011,9 @@ class TestCustomUISSO:
     async def test_handle_custom_ui_sso_sign_in_success(self):
         """Test successful custom UI SSO sign-in with valid headers"""
         from fastapi_sso.sso.base import OpenID
-
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         # Mock request with custom headers
         mock_request = MagicMock(spec=Request)
@@ -2037,10 +2085,9 @@ class TestCustomUISSO:
     @pytest.mark.asyncio
     async def test_handle_custom_ui_sso_sign_in_rejects_untrusted_proxy(self):
         """Custom UI SSO rejects spoofed identity headers from direct clients."""
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         mock_request = MagicMock(spec=Request)
         mock_request.headers = {
@@ -2076,11 +2123,9 @@ class TestCustomUISSO:
         and its methods are called with the correct parameters
         """
         from fastapi_sso.sso.base import OpenID
-
-        from litellm_enterprise.proxy.auth.custom_sso_handler import (
-            EnterpriseCustomSSOHandler,
-        )
         from litellm.integrations.custom_sso_handler import CustomSSOLoginHandler
+
+        EnterpriseCustomSSOHandler = _get_enterprise_custom_sso_handler()
 
         # Create a real custom handler class instance
         class TestCustomSSOHandler(CustomSSOLoginHandler):
@@ -3404,6 +3449,21 @@ class TestGetAppRolesFromIdToken:
 
             # Assert - should return empty list on error
             assert result == []
+
+
+class TestGetSubjectFromIdToken:
+    def test_returns_subject(self):
+        with patch("jwt.decode", return_value={"sub": "microsoft-oidc-sub"}):
+            result = MicrosoftSSOHandler.get_subject_from_id_token("mock.jwt.token")
+
+        assert result == "microsoft-oidc-sub"
+
+    @pytest.mark.parametrize("payload", [{}, {"sub": None}, {"sub": ""}])
+    def test_returns_none_when_subject_is_missing(self, payload):
+        with patch("jwt.decode", return_value=payload):
+            result = MicrosoftSSOHandler.get_subject_from_id_token("mock.jwt.token")
+
+        assert result is None
 
 
 class TestProcessSSOJWTAccessToken:
@@ -5400,8 +5460,9 @@ async def test_role_mappings_override_default_internal_user_params():
         # Mock SSO result
         mock_result_openid = CustomOpenID(
             id="test-user-123",
+            sub="oidc-sub-123",
             email="test@example.com",
-            display_name="Test User",
+            display_name="Different Display Name",
             provider="microsoft",
             team_ids=[],
         )
@@ -5437,6 +5498,8 @@ async def test_role_mappings_override_default_internal_user_params():
             mock_new_user.assert_called_once()
             call_args = mock_new_user.call_args
             new_user_request = call_args.kwargs["data"]
+
+            assert new_user_request.user_alias == "oidc-sub-123"
 
             # The role from SSO should be preserved, not overridden by default_internal_user_params
             assert (
@@ -7343,6 +7406,83 @@ async def _render_legacy_login_page(env_overrides, general_settings):
             os.environ.pop(var, None)
         os.environ.update(env_overrides)
         return await google_login(request=mock_request)
+
+
+@pytest.mark.asyncio
+async def test_oidc_login_has_no_user_count_limit():
+    from litellm.proxy.management_endpoints.ui_sso import google_login
+
+    mock_request = MagicMock(spec=Request)
+    mock_request.base_url = "http://proxy.example.com/"
+    expected_response = MagicMock()
+
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "GENERIC_CLIENT_ID": "client-id",
+                "GENERIC_CLIENT_SECRET": "client-secret",
+                "GENERIC_AUTHORIZATION_ENDPOINT": "https://idp.example.com/authorize",
+                "GENERIC_TOKEN_ENDPOINT": "https://idp.example.com/token",
+                "GENERIC_USERINFO_ENDPOINT": "https://idp.example.com/userinfo",
+            },
+            clear=True,
+        ),
+        patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
+        patch("litellm.proxy.proxy_server.general_settings", {}),
+        patch("litellm.proxy.proxy_server.user_api_key_cache", MagicMock()),
+        patch("litellm.proxy.proxy_server.user_custom_ui_sso_sign_in_handler", None),
+        patch(
+            "litellm.proxy.management_endpoints.ui_sso.show_missing_vars_in_env",
+            return_value=None,
+        ),
+        patch(
+            "litellm.proxy.management_endpoints.ui_sso.UserRepository",
+            side_effect=AssertionError("OIDC login must not query a licensed-user limit"),
+        ),
+        patch.object(
+            SSOAuthenticationHandler,
+            "get_sso_login_redirect",
+            new=AsyncMock(return_value=expected_response),
+        ) as redirect,
+    ):
+        response = await google_login(request=mock_request)
+
+    assert response is expected_response
+    redirect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_custom_sso_handler_uses_oss_extension_object():
+    request = MagicMock(spec=Request)
+    request.client = SimpleNamespace(host="10.0.0.10")
+    openid = MagicMock()
+    expected_response = MagicMock()
+    handler = MagicMock()
+    handler.handle_custom_ui_sso_sign_in = AsyncMock(return_value=openid)
+
+    with patch.object(
+        SSOAuthenticationHandler,
+        "get_redirect_response_from_openid",
+        new=AsyncMock(return_value=expected_response),
+    ) as redirect:
+        response = await handle_custom_ui_sso_sign_in(
+            request=request,
+            handler=handler,
+            general_settings={"trusted_proxy_ranges": ["10.0.0.0/24"]},
+            return_to="https://control.example.com/ui",
+        )
+
+    assert response is expected_response
+    handler.handle_custom_ui_sso_sign_in.assert_awaited_once_with(request=request)
+    redirect.assert_awaited_once_with(
+        result=openid,
+        request=request,
+        received_response=None,
+        generic_client_id=None,
+        ui_access_mode=None,
+        return_to="https://control.example.com/ui",
+    )
 
 
 @pytest.mark.asyncio

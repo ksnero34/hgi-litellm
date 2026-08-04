@@ -1186,14 +1186,6 @@ async def _user_api_key_auth_builder(
             RouteChecks.is_llm_api_route(route=route) or RouteChecks.is_info_route(route=route)
         )
         if (should_apply_global_oauth2 and not is_jwt) or should_apply_override_oauth2:
-            from litellm.proxy.proxy_server import premium_user
-
-            if premium_user is not True:
-                raise ValueError(
-                    "Oauth2 token validation is only available for premium users"
-                    + CommonProxyErrors.not_premium_user.value
-                )
-
             return await Oauth2Handler.check_oauth2_token(token=api_key)
 
         if general_settings.get("enable_oauth2_proxy_auth", False) is True:

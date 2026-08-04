@@ -76,11 +76,8 @@ export const detectSSOProvider = (values: SSOSettingsValues): string | null => {
   if (values.google_client_id) return "google";
   if (values.microsoft_client_id) return "microsoft";
   if (values.generic_client_id) {
-    // Check if it looks like Okta/Auth0 based on endpoints
-    if (
-      values.generic_authorization_endpoint?.includes("okta") ||
-      values.generic_authorization_endpoint?.includes("auth0")
-    ) {
+    const providerUrl = values.generic_authorization_endpoint || values.generic_discovery_url;
+    if (providerUrl?.includes("okta") || providerUrl?.includes("auth0")) {
       return "okta";
     }
     return "generic";

@@ -94,7 +94,7 @@ class TeamMappings(LiteLLMPydanticObjectBase):
 
     team_ids_jwt_field: Optional[str] = Field(
         default=None,
-        description="The field name in the SSO/JWT token that contains the team IDs array (e.g., 'groups', 'teams'). Supports dot notation for nested fields.",
+        description="The field name in the SSO/JWT token that contains team IDs or names. String, array, and JSON object values are supported. Supports dot notation for nested fields.",
     )
 
 
@@ -135,6 +135,10 @@ class SSOConfig(LiteLLMPydanticObjectBase):
     generic_client_secret: Optional[str] = Field(
         default=None,
         description="Generic OAuth Client Secret for SSO authentication",
+    )
+    generic_discovery_url: Optional[str] = Field(
+        default=None,
+        description="OpenID Connect discovery document URL for the generic OAuth provider",
     )
     generic_authorization_endpoint: Optional[str] = Field(
         default=None,

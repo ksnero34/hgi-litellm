@@ -181,10 +181,13 @@ vi.mock("@/components/shared/errorUtils", () => ({
   parseErrorMessage: vi.fn(),
 }));
 
-vi.mock("../utils", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../utils")>()),
-  processSSOSettingsPayload: vi.fn(),
-}));
+vi.mock("../utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils")>();
+  return {
+    ...actual,
+    processSSOSettingsPayload: vi.fn(),
+  };
+});
 
 // Test helpers
 const setupMocks = (
@@ -530,7 +533,7 @@ describe("EditSSOSettingsModal", () => {
 
       fireEvent.click(screen.getByTestId(TEST_IDS.TRIGGER_FORM_SUBMIT));
 
-      expect(NotificationsManager.fromBackend).toHaveBeenCalledWith(`${TEST_DATA.ERROR_MESSAGE_PREFIX} undefined`);
+      expect(NotificationsManager.fromBackend).toHaveBeenCalledWith(`${TEST_DATA.ERROR_MESSAGE_PREFIX} `);
     });
 
     it("handles form submission with malformed data", async () => {
