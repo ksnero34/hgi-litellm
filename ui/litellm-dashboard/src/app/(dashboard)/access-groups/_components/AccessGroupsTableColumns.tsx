@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cva.config";
+import { TFunction, useTranslation } from "react-i18next";
 
 import { AccessGroup } from "./types";
 
@@ -28,10 +29,11 @@ const RESOURCE_TONES: Record<"models" | "mcpServers" | "agents", ResourceTone> =
 };
 
 function ResourcesCell({ group }: { group: AccessGroup }) {
+  const { t } = useTranslation();
   const items = [
-    { key: "models" as const, label: "Models", count: group.modelIds.length },
-    { key: "mcpServers" as const, label: "MCP Servers", count: group.mcpServerIds.length },
-    { key: "agents" as const, label: "Agents", count: group.agentIds.length },
+    { key: "models" as const, label: t("identityAdmin.organization.models"), count: group.modelIds.length },
+    { key: "mcpServers" as const, label: t("identityAdmin.accessGroups.mcpServers"), count: group.mcpServerIds.length },
+    { key: "agents" as const, label: t("identityAdmin.accessGroups.agents"), count: group.agentIds.length },
   ];
 
   return (
@@ -64,10 +66,11 @@ function AccessGroupRowActions({
   group: AccessGroup;
   onDeleteClick: (group: AccessGroup) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Open access group actions"
+        aria-label={t("identityAdmin.accessGroups.openActions")}
         data-testid={`access-group-actions-${group.id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -80,7 +83,7 @@ function AccessGroupRowActions({
           onClick={() => onDeleteClick(group)}
         >
           <Trash2 />
-          Delete access group
+          {t("identityAdmin.accessGroups.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -88,12 +91,14 @@ function AccessGroupRowActions({
 }
 
 interface AccessGroupsTableColumnsDeps {
+  translator: TFunction;
   canModify: boolean;
   onGroupClick: (id: string) => void;
   onDeleteClick: (group: AccessGroup) => void;
 }
 
 export const getAccessGroupsTableColumns = ({
+  translator,
   canModify,
   onGroupClick,
   onDeleteClick,
@@ -102,8 +107,8 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "id",
       accessorKey: "id",
-      meta: { title: "ID" },
-      header: "ID",
+      meta: { title: translator("identityAdmin.accessGroups.id") },
+      header: translator("identityAdmin.accessGroups.id"),
       size: 200,
       enableSorting: false,
       cell: ({ row }) => (
@@ -117,8 +122,10 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "name",
       accessorKey: "name",
-      meta: { title: "Name" },
-      header: ({ column }) => <DataTableSortHeader column={column} title="Name" />,
+      meta: { title: translator("identityAdmin.accessGroups.name") },
+      header: ({ column }) => (
+        <DataTableSortHeader column={column} title={translator("identityAdmin.accessGroups.name")} />
+      ),
       size: 220,
       enableSorting: true,
       cell: ({ row }) => {
@@ -132,8 +139,8 @@ export const getAccessGroupsTableColumns = ({
     },
     {
       id: "resources",
-      meta: { title: "Resources" },
-      header: "Resources",
+      meta: { title: translator("identityAdmin.accessGroups.resources") },
+      header: translator("identityAdmin.accessGroups.resources"),
       size: 220,
       enableSorting: false,
       cell: ({ row }) => <ResourcesCell group={row.original} />,
@@ -141,8 +148,10 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "createdAt",
       accessorKey: "createdAt",
-      meta: { title: "Created" },
-      header: ({ column }) => <DataTableSortHeader column={column} title="Created" />,
+      meta: { title: translator("identityAdmin.accessGroups.created") },
+      header: ({ column }) => (
+        <DataTableSortHeader column={column} title={translator("identityAdmin.accessGroups.created")} />
+      ),
       size: 150,
       enableSorting: true,
       sortingFn: "datetime",
@@ -151,8 +160,8 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "updatedAt",
       accessorKey: "updatedAt",
-      meta: { title: "Updated" },
-      header: "Updated",
+      meta: { title: translator("identityAdmin.accessGroups.updated") },
+      header: translator("identityAdmin.accessGroups.updated"),
       size: 150,
       enableSorting: false,
       cell: ({ row }) => <DateCell value={row.original.updatedAt} precision="date" />,
@@ -167,8 +176,12 @@ export const getAccessGroupsTableColumns = ({
     ...columns,
     {
       id: "actions",
-      meta: { className: "text-right", headerClassName: "text-right" },
-      header: () => <span className="sr-only">Actions</span>,
+      meta: {
+        title: translator("identityAdmin.users.actions"),
+        className: "text-right",
+        headerClassName: "text-right",
+      },
+      header: () => <span className="sr-only">{translator("identityAdmin.users.actions")}</span>,
       size: 64,
       enableSorting: false,
       enableHiding: false,

@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/../tests/test-utils";
+import { languageStorageKey } from "@/i18n/resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AddGuardrailForm from "./add_guardrail_form";
 
@@ -20,6 +21,7 @@ const renderForm = () => {
 describe("AddGuardrailForm close behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.setItem(languageStorageKey, "en");
   });
 
   it("does not close when the user clicks outside the modal on the mask", () => {

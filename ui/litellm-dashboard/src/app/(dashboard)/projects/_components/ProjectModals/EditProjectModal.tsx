@@ -6,6 +6,7 @@ import { ProjectResponse } from "@/app/(dashboard)/hooks/projects/useProjects";
 import { useUpdateProject, ProjectUpdateParams } from "@/app/(dashboard)/hooks/projects/useUpdateProject";
 import { ProjectBaseForm, ProjectFormValues } from "./ProjectBaseForm";
 import { buildProjectApiParams } from "./projectFormUtils";
+import { useTranslation } from "react-i18next";
 
 interface EditProjectModalProps {
   isOpen: boolean;
@@ -15,13 +16,12 @@ interface EditProjectModalProps {
 }
 
 export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditProjectModalProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<ProjectFormValues>();
   const updateMutation = useUpdateProject();
 
-  // Populate form with existing project data when modal opens
   useEffect(() => {
     if (isOpen && project) {
-      // Model limits are stored inside metadata by the backend
       const metadataObj = (project.metadata ?? {}) as Record<string, unknown>;
       const rpmLimits = (metadataObj.model_rpm_limit ?? {}) as Record<string, number>;
       const tpmLimits = (metadataObj.model_tpm_limit ?? {}) as Record<string, number>;
@@ -30,14 +30,9 @@ export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditPr
       const modelLimits: ProjectFormValues["modelLimits"] = [];
       const allLimitModels = new Set([...Object.keys(rpmLimits), ...Object.keys(tpmLimits)]);
       for (const model of allLimitModels) {
-        modelLimits.push({
-          model,
-          rpm: rpmLimits[model],
-          tpm: tpmLimits[model],
-        });
+        modelLimits.push({ model, rpm: rpmLimits[model], tpm: tpmLimits[model] });
       }
 
-      // Filter out internal keys from user-facing metadata
       const internalKeys = new Set(["model_rpm_limit", "model_tpm_limit", "guardrails"]);
       const metadata: ProjectFormValues["metadata"] = [];
       for (const [key, value] of Object.entries(metadataObj)) {
@@ -72,12 +67,12 @@ export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditPr
         { projectId: project.project_id, params },
         {
           onSuccess: () => {
-            MessageManager.success("Project updated successfully");
+            MessageManager.success(t("access.projects.modal.updateSuccess"));
             onSuccess?.();
             onClose();
           },
           onError: (error) => {
-            MessageManager.error(error.message || "Failed to update project");
+            MessageManager.error(error.message || t("access.projects.modal.updateError"));
           },
         },
       );
@@ -90,7 +85,7 @@ export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditPr
     <Modal
       title={
         <Typography.Text strong style={{ fontSize: 18 }}>
-          Edit Project
+          {t("access.projects.modal.editTitle")}
         </Typography.Text>
       }
       open={isOpen}
@@ -99,7 +94,7 @@ export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditPr
       destroyOnHidden
       footer={[
         <Button key="cancel" onClick={onClose}>
-          Cancel
+          {t("access.common.cancel")}
         </Button>,
         <Button
           key="submit"
@@ -108,7 +103,7 @@ export function EditProjectModal({ isOpen, project, onClose, onSuccess }: EditPr
           loading={updateMutation.isPending}
           onClick={handleSubmit}
         >
-          Save Changes
+          {t("access.common.saveChanges")}
         </Button>,
       ]}
     >

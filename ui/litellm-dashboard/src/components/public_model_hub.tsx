@@ -5,6 +5,7 @@ import { Card, Text, Title } from "@tremor/react";
 import { Modal, Select, Tabs, Tag, Tooltip } from "antd";
 import { Copy, Inbox, Info } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DataTable } from "./shared/DataTable";
 import NotificationsManager from "./molecules/notifications_manager";
 import Navbar from "./navbar";
@@ -52,6 +53,7 @@ function PublicHubEmptyState({ title, body }: { title: string; body: string }) {
 }
 
 const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded = false }) => {
+  const { t } = useTranslation();
   const [modelHubData, setModelHubData] = useState<ModelGroupInfo[] | null>(null);
   const [agentHubData, setAgentHubData] = useState<AgentCard[] | null>(null);
   const [mcpHubData, setMcpHubData] = useState<MCPServerData[] | null>(null);
@@ -487,9 +489,9 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
           {/* About Section - only shown when not embedded */}
           {!isEmbedded && (
             <Card className="mb-10 p-8 bg-white border border-gray-200 rounded-lg shadow-xs">
-              <Title className="text-2xl font-semibold mb-6 text-gray-900">About</Title>
+              <Title className="text-2xl font-semibold mb-6 text-gray-900">{t("hubSkills.hub.about")}</Title>
               <p className="text-gray-700 mb-6 text-base leading-relaxed">
-                {customDocsDescription ? customDocsDescription : "Proxy Server to call 100+ LLMs in the OpenAI format."}
+                {customDocsDescription ? customDocsDescription : t("hubSkills.hub.aboutDefault")}
               </p>
               <div className="flex items-center space-x-3 text-sm text-gray-600">
                 <span className="flex items-center">
@@ -503,7 +505,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
           {/* Useful Links - only shown when not embedded */}
           {usefulLinks && Object.keys(usefulLinks).length > 0 && (
             <Card className="mb-10 p-8 bg-white border border-gray-200 rounded-lg shadow-xs">
-              <Title className="text-2xl font-semibold mb-6 text-gray-900">Useful Links</Title>
+              <Title className="text-2xl font-semibold mb-6 text-gray-900">{t("hubSkills.hub.usefulLinks")}</Title>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {Object.entries(usefulLinks || {})
                   .map(([title, value]) => {
@@ -530,7 +532,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
           {/* Health and Endpoint Status - only shown when not embedded */}
           {!isEmbedded && (
             <Card className="mb-10 p-8 bg-white border border-gray-200 rounded-lg shadow-xs">
-              <Title className="text-2xl font-semibold mb-6 text-gray-900">Health and Endpoint Status</Title>
+              <Title className="text-2xl font-semibold mb-6 text-gray-900">{t("hubSkills.hub.healthEndpoint")}</Title>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Text className="text-green-600 font-medium text-sm">Service status: {serviceStatus}</Text>
               </div>
@@ -541,16 +543,16 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
           <Card className="p-8 bg-white border border-gray-200 rounded-lg shadow-xs">
             <Tabs activeKey={activeTab} onChange={setActiveTab} size="large" className="public-hub-tabs">
               {/* Models Tab */}
-              <TabPane tab="Model Hub" key="models">
+              <TabPane tab={t("hubSkills.hub.modelHub")} key="models">
                 <div className="flex justify-between items-center mb-8">
-                  <Title className="text-2xl font-semibold text-gray-900">Available Models</Title>
+                  <Title className="text-2xl font-semibold text-gray-900">{t("hubSkills.hub.availableModels")}</Title>
                 </div>
 
                 {/* Filters */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                   <div>
                     <div className="flex items-center space-x-2 mb-3">
-                      <Text className="text-sm font-medium text-gray-700">Search Models:</Text>
+                      <Text className="text-sm font-medium text-gray-700">{t("hubSkills.hub.searchModels")}</Text>
                       <Tooltip
                         title="Smart search with relevance ranking - finds models containing your search terms, ranked by relevance. Try searching 'xai grok-4', 'claude-4', 'gpt-4', or 'sonnet'"
                         placement="top"
@@ -562,7 +564,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                       <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
                       <input
                         type="text"
-                        placeholder="Search model names... (smart search enabled)"
+                        placeholder={t("hubSkills.hub.searchModelsPlaceholder")}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="border border-gray-300 rounded-lg pl-10 pr-4 py-2 w-full text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
@@ -570,7 +572,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                     </div>
                   </div>
                   <div>
-                    <Text className="text-sm font-medium mb-3 text-gray-700">Provider:</Text>
+                    <Text className="text-sm font-medium mb-3 text-gray-700">{t("hubSkills.hub.provider")}</Text>
                     <Select
                       mode="multiple"
                       value={selectedProviders}
@@ -608,7 +610,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                     </Select>
                   </div>
                   <div>
-                    <Text className="text-sm font-medium mb-3 text-gray-700">Mode:</Text>
+                    <Text className="text-sm font-medium mb-3 text-gray-700">{t("hubSkills.hub.mode")}</Text>
                     <Select
                       mode="multiple"
                       value={selectedModes}
@@ -628,7 +630,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                     </Select>
                   </div>
                   <div>
-                    <Text className="text-sm font-medium mb-3 text-gray-700">Features:</Text>
+                    <Text className="text-sm font-medium mb-3 text-gray-700">{t("hubSkills.hub.features")}</Text>
                     <Select
                       mode="multiple"
                       value={selectedFeatures}
@@ -680,16 +682,16 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
 
               {/* Agents Tab */}
               {agentHubData && Array.isArray(agentHubData) && agentHubData.length > 0 && (
-                <TabPane tab="Agent Hub" key="agents">
+                <TabPane tab={t("hubSkills.hub.agentHub")} key="agents">
                   <div className="flex justify-between items-center mb-8">
-                    <Title className="text-2xl font-semibold text-gray-900">Available Agents</Title>
+                    <Title className="text-2xl font-semibold text-gray-900">{t("hubSkills.hub.availableAgents")}</Title>
                   </div>
 
                   {/* Filters */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                     <div>
                       <div className="flex items-center space-x-2 mb-3">
-                        <Text className="text-sm font-medium text-gray-700">Search Agents:</Text>
+                        <Text className="text-sm font-medium text-gray-700">{t("hubSkills.hub.searchAgents")}</Text>
                         <Tooltip title="Search agents by name or description" placement="top">
                           <Info className="w-4 h-4 text-gray-400 cursor-help" />
                         </Tooltip>
@@ -698,7 +700,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                         <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
                         <input
                           type="text"
-                          placeholder="Search agent names or descriptions..."
+                          placeholder={t("hubSkills.hub.searchAgentsPlaceholder")}
                           value={agentSearchTerm}
                           onChange={(e) => setAgentSearchTerm(e.target.value)}
                           className="border border-gray-300 rounded-lg pl-10 pr-4 py-2 w-full text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
@@ -706,7 +708,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                       </div>
                     </div>
                     <div>
-                      <Text className="text-sm font-medium mb-3 text-gray-700">Skills:</Text>
+                      <Text className="text-sm font-medium mb-3 text-gray-700">{t("hubSkills.hub.skills")}</Text>
                       <Select
                         mode="multiple"
                         value={selectedAgentSkills}
@@ -755,16 +757,16 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
 
               {/* MCP Servers Tab */}
               {mcpHubData && Array.isArray(mcpHubData) && mcpHubData.length > 0 && (
-                <TabPane tab="MCP Hub" key="mcp">
+                <TabPane tab={t("hubSkills.hub.mcpHub")} key="mcp">
                   <div className="flex justify-between items-center mb-8">
-                    <Title className="text-2xl font-semibold text-gray-900">Available MCP Servers</Title>
+                    <Title className="text-2xl font-semibold text-gray-900">{t("hubSkills.hub.availableMcp")}</Title>
                   </div>
 
                   {/* Filters */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                     <div>
                       <div className="flex items-center space-x-2 mb-3">
-                        <Text className="text-sm font-medium text-gray-700">Search MCP Servers:</Text>
+                        <Text className="text-sm font-medium text-gray-700">{t("hubSkills.hub.searchMcp")}</Text>
                         <Tooltip title="Search MCP servers by name or description" placement="top">
                           <Info className="w-4 h-4 text-gray-400 cursor-help" />
                         </Tooltip>
@@ -773,7 +775,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                         <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
                         <input
                           type="text"
-                          placeholder="Search MCP server names or descriptions..."
+                          placeholder={t("hubSkills.hub.searchMcpPlaceholder")}
                           value={mcpSearchTerm}
                           onChange={(e) => setMcpSearchTerm(e.target.value)}
                           className="border border-gray-300 rounded-lg pl-10 pr-4 py-2 w-full text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
@@ -781,7 +783,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
                       </div>
                     </div>
                     <div>
-                      <Text className="text-sm font-medium mb-3 text-gray-700">Transport:</Text>
+                      <Text className="text-sm font-medium mb-3 text-gray-700">{t("hubSkills.hub.transport")}</Text>
                       <Select
                         mode="multiple"
                         value={selectedMcpTransports}
@@ -829,7 +831,7 @@ const PublicModelHub: React.FC<PublicModelHubProps> = ({ accessToken, isEmbedded
               )}
 
               {/* Skill Hub Tab */}
-              <TabPane tab="Skill Hub" key="skills">
+              <TabPane tab={t("hubSkills.hub.skillHub")} key="skills">
                 <SkillHubDashboard skills={skillHubData} isLoading={skillLoading} publicPage={true} />
               </TabPane>
             </Tabs>

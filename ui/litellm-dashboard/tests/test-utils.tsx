@@ -1,6 +1,7 @@
 import React, { PropsWithChildren } from "react";
 import { render, RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import I18nProvider from "@/i18n/I18nProvider";
 
 // Create a client for testing
 export const testQueryClient = new QueryClient({
@@ -20,7 +21,11 @@ export const testQueryClient = new QueryClient({
 });
 
 const Providers: React.FC<PropsWithChildren> = ({ children }) => {
-  return <QueryClientProvider client={testQueryClient}>{children}</QueryClientProvider>;
+  return (
+    <I18nProvider>
+      <QueryClientProvider client={testQueryClient}>{children}</QueryClientProvider>
+    </I18nProvider>
+  );
 };
 
 export const renderWithProviders = (ui: React.ReactElement, options?: RenderOptions) =>

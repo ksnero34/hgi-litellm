@@ -24,9 +24,9 @@ import {
   Title,
 } from "@tremor/react";
 import { ExportOutlined, LoadingOutlined } from "@ant-design/icons";
-import { Alert, Button } from "antd";
+import { Alert, Button, Select } from "antd";
 import React, { type ReactNode, useMemo, useState } from "react";
-import TeamMultiSelect from "@/components/common_components/team_multi_select";
+import { useTranslation } from "react-i18next";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import { UsageExportHeader } from "@/components/EntityUsageExport";
 import type { EntityType } from "@/components/EntityUsageExport/types";
@@ -51,6 +51,7 @@ import { valueFormatterSpend } from "@/components/UsagePage/utils/value_formatte
 import EndpointUsage from "../EndpointUsage/EndpointUsage";
 import TopKeyView from "@/components/UsagePage/components/EntityUsage/TopKeyView";
 import TopModelView from "./TopModelView";
+import { all_admin_roles } from "@/utils/roles";
 
 interface EntityMetrics {
   metrics: {
@@ -107,7 +108,15 @@ const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
   user: userDailyActivityCall,
 };
 
-const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, entityId, entityList, dateValue }) => {
+const EntityUsage: React.FC<EntityUsageProps> = ({
+  accessToken,
+  entityType,
+  entityId,
+  entityList,
+  dateValue,
+  userRole,
+}) => {
+  const { t } = useTranslation();
   const { teams } = useTeams();
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [topKeysLimit, setTopKeysLimit] = useState<number>(5);
@@ -123,7 +132,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
   }, [entityType, selectedTags]);
 
   const fetchFn = ENTITY_FETCH_FNS[entityType];
-  const enabled = !!accessToken && !!startTime && !!endTime;
+  const enabled = !!accessToken && !!startTime && !!endTime && (entityType !== "team" || selectedTags.length > 0);
+  const isAdmin = all_admin_roles.includes(userRole || "");
 
   const {
     data: spendDataRaw,
@@ -131,6 +141,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     progress,
     cancelled,
     cancel,
+    error,
+    retry,
   } = usePaginatedDailyActivity({
     fetchFn,
     args: [accessToken, startTime, endTime, entityFilterArg],
@@ -145,10 +157,12 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     progress: agentProgress,
     cancelled: agentCancelled,
     cancel: agentCancel,
+    error: agentError,
+    retry: agentRetry,
   } = usePaginatedDailyActivity({
     fetchFn: agentDailyActivityCall,
     args: [accessToken, startTime, endTime, null],
-    enabled: enabled && entityType === "team",
+    enabled: enabled && entityType === "team" && isAdmin,
   });
 
   const agentSpendData = agentSpendDataRaw as unknown as EntitySpendData;
@@ -396,15 +410,11 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
     }));
   };
 
-  const getFilterLabel = (entityType: string) => {
-    return `Filter by ${entityType}`;
-  };
+  const getFilterLabel = (entityType: string) => t("observability.usage.filter_by_entity", { entityType });
 
-  const getFilterPlaceholder = (entityType: string) => {
-    return `Select ${entityType} to filter...`;
-  };
+  const getFilterPlaceholder = (entityType: string) => t("observability.usage.select_entity_to_filter", { entityType });
 
-  const capitalizedEntityLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1);
+  const capitalizedEntityLabel = t(`observability.usage.entity.${entityType}`);
 
   const costPanel = (
     <Grid numItems={2} className="gap-2 w-full">
@@ -687,21 +697,34 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
   );
 
   const tabs: readonly { key: string; label: string; content: ReactNode }[] = [
-    { key: "cost", label: "Cost", content: costPanel },
+    { key: "cost", label: t("observability.usage.cost_tab"), content: costPanel },
     {
       key: "models",
-      label: entityType === "agent" ? "Request / Token Consumption" : "Model Activity",
+      label:
+        entityType === "agent"
+          ? t("observability.usage.request_token_consumption_tab")
+          : t("observability.usage.model_activity_tab"),
       content: <ActivityMetrics modelMetrics={modelMetrics} hidePromptCachingMetrics={entityType === "agent"} />,
     },
     ...(entityType === "team"
-      ? [{ key: "agents", label: "Agent Activity", content: <ActivityMetrics modelMetrics={agentMetrics} /> }]
+      ? [
+          {
+            key: "agents",
+            label: t("observability.usage.agent_activity_tab"),
+            content: <ActivityMetrics modelMetrics={agentMetrics} />,
+          },
+        ]
       : []),
     {
       key: "keys",
-      label: "Key Activity",
+      label: t("observability.usage.key_activity_tab"),
       content: <ActivityMetrics modelMetrics={keyMetrics} hidePromptCachingMetrics={entityType === "agent"} />,
     },
-    { key: "endpoints", label: "Endpoint Activity", content: <EndpointUsage userSpendData={spendData} /> },
+    {
+      key: "endpoints",
+      label: t("observability.usage.endpoint_activity_tab"),
+      content: <EndpointUsage userSpendData={spendData} />,
+    },
   ];
 
   return (
@@ -715,16 +738,17 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
             <div className="flex items-center justify-between">
               <span>
                 <LoadingOutlined spin className="mr-2" />
-                Currently fetching spend data: fetched {progress.currentPage} / {progress.totalPages} pages. Charts will
-                update periodically as data loads. Moving off of this page will stop and reset this. To continue using
-                the UI in the meantime,{" "}
+                {t("observability.usage.fetching_spend_data", {
+                  current: progress.currentPage,
+                  total: progress.totalPages,
+                })}{" "}
                 <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  open a new tab <ExportOutlined />
+                  {t("observability.usage.open_new_tab")} <ExportOutlined />
                 </a>
                 .
               </span>
               <Button type="primary" danger onClick={cancel}>
-                Stop
+                {t("observability.usage.stop")}
               </Button>
             </div>
           }
@@ -737,9 +761,22 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           className="mb-2"
           message={
             <span>
-              Showing partial data ({progress.currentPage}/{progress.totalPages} pages loaded)
+              {t("observability.usage.showing_partial_data", {
+                current: progress.currentPage,
+                total: progress.totalPages,
+              })}
             </span>
           }
+        />
+      )}
+      {error && (
+        <Alert
+          banner
+          type="error"
+          className="mb-2"
+          message={t("observability.usage.load_failed")}
+          description={error.message}
+          action={<Button onClick={retry}>{t("observability.usage.retry")}</Button>}
         />
       )}
       {agentIsFetchingMore && entityType === "team" && (
@@ -751,16 +788,17 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
             <div className="flex items-center justify-between">
               <span>
                 <LoadingOutlined spin className="mr-2" />
-                Currently fetching agent data: fetched {agentProgress.currentPage} / {agentProgress.totalPages} pages.
-                Charts will update periodically as data loads. Moving off of this page will stop and reset this. To
-                continue using the UI in the meantime,{" "}
+                {t("observability.usage.fetching_agent_data", {
+                  current: agentProgress.currentPage,
+                  total: agentProgress.totalPages,
+                })}{" "}
                 <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  open a new tab <ExportOutlined />
+                  {t("observability.usage.open_new_tab")} <ExportOutlined />
                 </a>
                 .
               </span>
               <Button type="primary" danger onClick={agentCancel}>
-                Stop
+                {t("observability.usage.stop")}
               </Button>
             </div>
           }
@@ -773,15 +811,38 @@ const EntityUsage: React.FC<EntityUsageProps> = ({ accessToken, entityType, enti
           className="mb-2"
           message={
             <span>
-              Showing partial agent data ({agentProgress.currentPage}/{agentProgress.totalPages} pages loaded)
+              {t("observability.usage.showing_partial_agent_data", {
+                current: agentProgress.currentPage,
+                total: agentProgress.totalPages,
+              })}
             </span>
           }
         />
       )}
+      {agentError && entityType === "team" && isAdmin && (
+        <Alert
+          banner
+          type="error"
+          className="mb-2"
+          message={t("observability.usage.agent_load_failed")}
+          description={agentError.message}
+          action={<Button onClick={agentRetry}>{t("observability.usage.retry")}</Button>}
+        />
+      )}
       {entityType === "team" && (
         <div className="mb-4">
-          <Text className="mb-2">Filter by team</Text>
-          <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} />
+          <Text className="mb-2">{t("observability.usage.filter_by_team")}</Text>
+          <Select
+            mode="multiple"
+            value={selectedTags}
+            onChange={setSelectedTags}
+            options={entityList ?? []}
+            placeholder={t("observability.usage.select_team")}
+            className="w-full"
+          />
+          {selectedTags.length === 0 && (
+            <Text className="mt-2 text-gray-500">{t("observability.usage.team_required")}</Text>
+          )}
         </div>
       )}
       <UsageExportHeader

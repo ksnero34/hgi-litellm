@@ -3,6 +3,7 @@
 import moment from "moment";
 import { CalendarDays } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export function LogsTableToolbar({
   onResetToFirstPage,
   onResetFilters,
 }: LogsTableToolbarProps) {
+  const { t } = useTranslation();
   const [quickSelectOpen, setQuickSelectOpen] = useState(false);
 
   const applyQuickSelect = (option: { label: string; value: number; unit: string }) => {
@@ -107,7 +109,7 @@ export function LogsTableToolbar({
               onResetToFirstPage();
             }}
           />
-          <span className="text-sm text-muted-foreground">to</span>
+          <span className="text-sm text-muted-foreground">{t("observabilityExtra.logs.to")}</span>
           <Input
             type="datetime-local"
             className="w-auto"
@@ -121,7 +123,7 @@ export function LogsTableToolbar({
       )}
 
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">Live Tail</span>
+        <span className="text-sm font-medium">{t("observabilityExtra.logs.liveTail")}</span>
         <Switch checked={isLiveTail} onCheckedChange={onIsLiveTailChange} aria-label="Live Tail" />
       </div>
 
@@ -133,9 +135,11 @@ export function LogsTableToolbar({
 }
 
 export function LiveTailBanner({ onStop }: { onStop: () => void }) {
+  const { t } = useTranslation();
+
   return (
     <div className="mb-4 flex items-center justify-between rounded-md border border-green-200 bg-green-50 px-4 py-2">
-      <span className="text-sm text-green-700">Auto-refreshing every 15 seconds</span>
+      <span className="text-sm text-green-700">{t("observabilityExtra.logs.autoRefresh")}</span>
       <button type="button" onClick={onStop} className="text-sm text-green-600 hover:text-green-800">
         Stop
       </button>

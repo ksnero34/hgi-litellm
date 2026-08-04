@@ -17,8 +17,9 @@ import { Textarea } from "@/components/ui/textarea";
 import VectorStoreSelector from "@/components/vector_store_management/VectorStoreSelector";
 import { useZodForm } from "@/lib/forms/useZodForm";
 import { fetchClient } from "@/lib/http/api";
+import { useTranslation } from "react-i18next";
 
-import { BUDGET_DURATION_OPTIONS, NO_RESET } from "../org-settings/OrgSettingsForm";
+import { getBudgetDurationOptions, NO_RESET } from "../org-settings/OrgSettingsForm";
 import { orgSettingsSchema } from "../org-settings/schema";
 import { buildOrgCreateBody, emptyOrgFormValues, type OrgCreateBody } from "./mapper";
 
@@ -40,8 +41,10 @@ export const OrgCreateDialog = ({
   accessToken,
   createOrganization = defaultCreateOrganization,
 }: OrgCreateDialogProps) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const form = useZodForm(orgSettingsSchema, { defaultValues: emptyOrgFormValues });
+  const budgetDurationOptions = React.useMemo(() => getBudgetDurationOptions(t), [t]);
 
   const closeAndReset = () => {
     form.reset(emptyOrgFormValues);
@@ -51,12 +54,14 @@ export const OrgCreateDialog = ({
   const mutation = useMutation({
     mutationFn: (body: OrgCreateBody) => createOrganization(body),
     onSuccess: () => {
-      NotificationsManager.success("Organization created successfully");
+      NotificationsManager.success(t("identityAdmin.organization.created"));
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
       closeAndReset();
     },
     onError: (error: unknown) =>
-      NotificationsManager.fromBackend(error instanceof Error ? error.message : "Failed to create organization"),
+      NotificationsManager.fromBackend(
+        error instanceof Error ? error.message : t("identityAdmin.organization.createFailed"),
+      ),
   });
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -76,16 +81,16 @@ export const OrgCreateDialog = ({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Organization</DialogTitle>
+          <DialogTitle>{t("identityAdmin.organization.create")}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={onSubmit}>
           <FieldGroup>
-            <FormField control={form.control} name="organization_alias" label="Organization Name">
+            <FormField control={form.control} name="organization_alias" label={t("identityAdmin.organization.name")}>
               {({ ref, ...field }) => <Input {...field} ref={ref} />}
             </FormField>
 
-            <FormField control={form.control} name="models" label="Models">
+            <FormField control={form.control} name="models" label={t("identityAdmin.organization.models")}>
               {(field) => (
                 <ModelSelect
                   value={field.value}
@@ -96,14 +101,18 @@ export const OrgCreateDialog = ({
               )}
             </FormField>
 
-            <FormField control={form.control} name="max_budget" label="Max Budget (USD)">
+            <FormField control={form.control} name="max_budget" label={t("identityAdmin.organization.form.maxBudget")}>
               {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={0.01} min={0} />}
             </FormField>
 
-            <FormField control={form.control} name="budget_duration" label="Reset Budget">
+            <FormField
+              control={form.control}
+              name="budget_duration"
+              label={t("identityAdmin.organization.form.resetBudget")}
+            >
               {({ id, value, onChange, "aria-invalid": ariaInvalid, "aria-describedby": ariaDescribedBy }) => (
                 <Select
-                  items={BUDGET_DURATION_OPTIONS}
+                  items={budgetDurationOptions}
                   value={value === "" ? NO_RESET : value}
                   onValueChange={(selected) => onChange(selected === NO_RESET ? "" : selected)}
                 >
@@ -111,7 +120,7 @@ export const OrgCreateDialog = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {BUDGET_DURATION_OPTIONS.map((option) => (
+                    {budgetDurationOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -121,26 +130,26 @@ export const OrgCreateDialog = ({
               )}
             </FormField>
 
-            <FormField control={form.control} name="tpm_limit" label="Tokens per minute Limit (TPM)">
+            <FormField control={form.control} name="tpm_limit" label={t("identityAdmin.organization.form.tpmLimit")}>
               {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={1} min={0} />}
             </FormField>
 
-            <FormField control={form.control} name="rpm_limit" label="Requests per minute Limit (RPM)">
+            <FormField control={form.control} name="rpm_limit" label={t("identityAdmin.organization.form.rpmLimit")}>
               {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={1} min={0} />}
             </FormField>
 
             <FormField
               control={form.control}
               name="vector_stores"
-              label="Allowed Vector Stores"
-              description="Select vector stores this organization can access. Leave empty for access to all vector stores"
+              label={t("identityAdmin.organization.form.allowedVectorStores")}
+              description={t("identityAdmin.organization.form.allowedVectorStoresDescription")}
             >
               {(field) => (
                 <VectorStoreSelector
                   value={field.value}
                   onChange={field.onChange}
                   accessToken={accessToken}
-                  placeholder="Select vector stores (optional)"
+                  placeholder={t("identityAdmin.organization.form.allowedVectorStoresPlaceholder")}
                 />
               )}
             </FormField>
@@ -148,20 +157,20 @@ export const OrgCreateDialog = ({
             <FormField
               control={form.control}
               name="mcp"
-              label="Allowed MCP Servers"
-              description="Select MCP servers, access groups, and toolsets this organization can access. Leave empty for access to all"
+              label={t("identityAdmin.organization.form.allowedMcpServers")}
+              description={t("identityAdmin.organization.form.allowedMcpServersDescription")}
             >
               {(field) => (
                 <MCPServerSelector
                   value={field.value}
                   onChange={field.onChange}
                   accessToken={accessToken}
-                  placeholder="Select MCP servers and access groups (optional)"
+                  placeholder={t("identityAdmin.organization.form.allowedMcpServersPlaceholder")}
                 />
               )}
             </FormField>
 
-            <FormField control={form.control} name="metadata" label="Metadata">
+            <FormField control={form.control} name="metadata" label={t("identityAdmin.createUser.metadata")}>
               {({ ref, ...field }) => <Textarea {...field} ref={ref} rows={4} />}
             </FormField>
           </FieldGroup>
@@ -173,10 +182,10 @@ export const OrgCreateDialog = ({
               onClick={() => handleOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {t("identityAdmin.team.cancel")}
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Creating..." : "Create Organization"}
+              {mutation.isPending ? t("identityAdmin.organization.creating") : t("identityAdmin.organization.create")}
             </Button>
           </DialogFooter>
         </form>

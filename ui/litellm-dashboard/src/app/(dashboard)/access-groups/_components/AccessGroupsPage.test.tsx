@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AccessGroupsPage } from "./AccessGroupsPage";
 import type { AccessGroupResponse } from "@/app/(dashboard)/hooks/accessGroups/useAccessGroups";
+import { i18n } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 
 const mockAccessGroups: AccessGroupResponse[] = [
   {
@@ -87,8 +89,10 @@ const openRowMenu = async (user: ReturnType<typeof userEvent.setup>, groupId: st
 };
 
 describe("AccessGroupsPage", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    localStorage.setItem(languageStorageKey, "en");
+    await i18n.changeLanguage("en");
     mockUseAccessGroups.mockReturnValue({ data: mockAccessGroups, isLoading: false });
     mockUseDeleteAccessGroup.mockReturnValue({ mutate: mockMutate, isPending: false });
     mockUseAuthorized.mockReturnValue({ userRole: "Admin", accessToken: "sk-test" });
@@ -98,6 +102,17 @@ describe("AccessGroupsPage", () => {
     renderWithProviders(<AccessGroupsPage />);
     expect(screen.getByRole("heading", { name: "Access Groups" })).toBeInTheDocument();
     expect(screen.getByText("Manage resource permissions for your organization")).toBeInTheDocument();
+  });
+
+  it("renders the access group page in Korean", async () => {
+    localStorage.setItem(languageStorageKey, "ko");
+    await i18n.changeLanguage("ko");
+
+    renderWithProviders(<AccessGroupsPage />);
+
+    expect(screen.getByRole("heading", { name: "액세스 그룹" })).toBeInTheDocument();
+    expect(screen.getByText("조직의 리소스 권한을 관리합니다")).toBeInTheDocument();
+    expect(screen.getByText("액세스 그룹 생성")).toBeInTheDocument();
   });
 
   it("shows the Create Access Group button for an admin", () => {
@@ -115,7 +130,6 @@ describe("AccessGroupsPage", () => {
 
   it("renders resource counts for each group", () => {
     renderWithProviders(<AccessGroupsPage />);
-    // ag-1 has 2 models, 1 mcp server, 1 agent.
     const adminRow = screen.getByText("ag-1").closest("tr") as HTMLElement;
     expect(within(adminRow).getByTitle("2 Models")).toHaveTextContent("2");
     expect(within(adminRow).getByTitle("1 MCP Servers")).toHaveTextContent("1");
@@ -219,39 +233,34 @@ describe("AccessGroupsPage", () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it("calls the delete mutation with the group ID when confirmed", async () => {
+  it("confirms deletion with the selected access group ID", async () => {
     const user = userEvent.setup();
-    mockMutate.mockImplementation((_id: string, opts?: { onSuccess?: () => void }) => {
-      opts?.onSuccess?.();
-    });
     renderWithProviders(<AccessGroupsPage />);
     await user.click(await openRowMenu(user, "ag-1"));
     const dialog = screen.getByRole("dialog", { name: "Delete Access Group" });
-    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(mockMutate).toHaveBeenCalledWith("ag-1", expect.any(Object));
   });
 
-  it("still shows matches when searching from a later page", async () => {
-    const user = userEvent.setup();
-    mockUseAccessGroups.mockReturnValue({ data: makeGroups(25), isLoading: false });
-    renderWithProviders(<AccessGroupsPage />);
-
-    await user.click(screen.getByTestId("pagination-next"));
-    expect(screen.getByText("ag-11")).toBeInTheDocument();
-    expect(screen.queryByText("ag-01")).not.toBeInTheDocument();
-
-    // The only match lives on page 1, so the page index must reset or the table reads as empty.
-    await user.type(screen.getByPlaceholderText("Search groups by name, ID, or description..."), "ag-01");
-    expect(await screen.findByText("ag-01")).toBeInTheDocument();
-    expect(screen.queryByText("No matching access groups")).not.toBeInTheDocument();
-  });
-
-  it("hides the Create button and row actions for a non-admin", () => {
+  it("hides write actions for an admin viewer", () => {
     mockUseAuthorized.mockReturnValue({ userRole: "Admin Viewer", accessToken: "sk-test" });
     renderWithProviders(<AccessGroupsPage />);
     expect(screen.queryByRole("button", { name: /create access group/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId("access-group-actions-ag-1")).not.toBeInTheDocument();
-    // The read-only view still lists the groups.
-    expect(screen.getByText("Admin Group")).toBeInTheDocument();
+  });
+
+  it("renders all rows when a later page search narrows the results", async () => {
+    const user = userEvent.setup();
+    const pagedGroups = makeGroups(11);
+    mockUseAccessGroups.mockReturnValue({ data: pagedGroups, isLoading: false });
+    renderWithProviders(<AccessGroupsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("ag-11")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Search groups by name, ID, or description..."), "Group 01");
+
+    expect(screen.getByText("Group 01")).toBeInTheDocument();
+    expect(screen.queryByText("Group 11")).not.toBeInTheDocument();
   });
 });

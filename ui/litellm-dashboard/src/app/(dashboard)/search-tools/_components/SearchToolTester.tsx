@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import MessageManager from "@/components/molecules/message_manager";
 import { searchToolQueryCall } from "@/components/networking";
 import NotificationsManager from "@/components/molecules/notifications_manager";
@@ -25,6 +26,7 @@ interface SearchToolTesterProps {
 }
 
 export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolName, accessToken, className = "" }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<
@@ -39,7 +41,7 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
 
   const handleSearch = async () => {
     if (!query.trim()) {
-      MessageManager.warning("Please enter a search query");
+      MessageManager.warning(t("toolsModels.search.queryRequired"));
       return;
     }
 
@@ -61,7 +63,7 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
       setSearchHistory((prev) => [historyEntry, ...prev]);
     } catch (error) {
       console.error("Error querying search tool:", error);
-      NotificationsManager.fromBackend("Failed to query search tool");
+      NotificationsManager.fromBackend(t("operations.search.queryError"));
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +76,7 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
   const clearHistory = () => {
     setSearchHistory([]);
     setExpandedResults({});
-    NotificationsManager.success("Search history cleared");
+    NotificationsManager.success(t("operations.search.historyCleared"));
   };
 
   const toggleResultExpansion = (historyIndex: number, resultIndex: number) => {
@@ -90,7 +92,7 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
   return (
     <Card className={`mt-6 ${className}`}>
       <div className="px-6">
-        <h2 className="text-lg font-semibold text-foreground">Test Search Tool</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t("toolsModels.search.testerTitle")}</h2>
       </div>
 
       <div className="flex min-h-[600px] flex-col px-6">
@@ -107,14 +109,14 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
                     handleSearch();
                   }
                 }}
-                placeholder="Enter your search query..."
+                placeholder={t("toolsModels.search.queryPlaceholder")}
                 disabled={isLoading}
                 className="h-12 pl-11 text-[15px]"
               />
             </div>
             <Button onClick={handleSearch} disabled={isLoading || !query.trim()} className="h-12 px-6 text-[15px]">
               {isLoading ? <UiLoadingSpinner className="size-4" /> : <Search className="size-4" />}
-              Search
+              {t("toolsModels.search.searchButton")}
             </Button>
           </div>
         </div>
@@ -125,15 +127,15 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
               <div className="mb-6 flex size-24 items-center justify-center rounded-full bg-muted">
                 <Search className="size-12 text-muted-foreground" />
               </div>
-              <p className="text-lg font-medium text-foreground">Test your search tool</p>
-              <p className="mt-2 text-sm text-muted-foreground">Enter a query above to see search results</p>
+              <p className="text-lg font-medium text-foreground">{t("toolsModels.search.emptyTitle")}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t("toolsModels.search.emptyDescription")}</p>
             </div>
           ) : (
             <div>
               {isLoading && (
                 <div className="flex flex-col items-center justify-center py-16">
                   <UiLoadingSpinner className="size-8 text-primary" />
-                  <p className="mt-4 font-medium text-muted-foreground">Searching...</p>
+                  <p className="mt-4 font-medium text-muted-foreground">{t("toolsModels.search.searching")}</p>
                 </div>
               )}
 
@@ -143,7 +145,7 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          Search Query
+                          {t("toolsModels.search.queryLabel")}
                         </p>
                         <div className="mt-1.5 text-base font-semibold text-foreground">{latestResults.query}</div>
                       </div>
@@ -152,7 +154,9 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
                         <div className="mt-1 flex items-center gap-3">
                           <div className="text-sm font-semibold text-primary">
                             {latestResults.response?.results?.length || 0}{" "}
-                            {latestResults.response?.results?.length === 1 ? "result" : "results"}
+                            {latestResults.response?.results?.length === 1
+                              ? t("toolsModels.search.resultSingular")
+                              : t("toolsModels.search.resultPlural")}
                           </div>
                           {latestResults.latency !== undefined && (
                             <>
@@ -238,34 +242,26 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
                   <div className="mb-4 flex items-center justify-between">
                     <p className="text-sm font-semibold text-foreground">Previous Searches</p>
                     <Button variant="link" size="sm" className="h-auto p-0" onClick={clearHistory}>
-                      Clear All
+                      Clear history
                     </Button>
                   </div>
                   <div className="space-y-2">
-                    {searchHistory.slice(1, 6).map((entry, index) => (
-                      <div
-                        key={index + 1}
-                        className="cursor-pointer rounded-lg border border-border bg-muted/50 p-3 transition-colors hover:bg-muted"
-                        onClick={() => {
-                          setQuery(entry.query);
-                        }}
+                    {searchHistory.slice(1).map((entry, index) => (
+                      <button
+                        key={index}
+                        className="w-full rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/50"
+                        onClick={() => setSearchHistory((prev) => [entry, ...prev.filter((_, i) => i !== index + 1)])}
                       >
-                        <div className="truncate text-sm font-medium text-foreground">{entry.query}</div>
-                        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="font-medium text-primary">
-                            {entry.response?.results?.length || 0}{" "}
-                            {entry.response?.results?.length === 1 ? "result" : "results"}
-                          </span>
-                          {entry.latency !== undefined && (
-                            <>
-                              <span>•</span>
-                              <span className="font-medium text-emerald-600">{entry.latency}ms</span>
-                            </>
-                          )}
-                          <span>•</span>
-                          <span>{formatTimestamp(entry.timestamp)}</span>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{entry.query}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {entry.response?.results?.length || 0} results
+                          </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -277,5 +273,3 @@ export const SearchToolTester: React.FC<SearchToolTesterProps> = ({ searchToolNa
     </Card>
   );
 };
-
-export default SearchToolTester;

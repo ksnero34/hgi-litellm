@@ -1,7 +1,8 @@
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@tremor/react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
-import { Button } from "antd";
+import { Button, Skeleton } from "antd";
 import BulkEditUserModal from "./BulkEditUsers";
 import { CreateUserButton } from "@/components/CreateUserButton";
 import EditUserModal from "./edit_user";
@@ -34,7 +35,6 @@ import { DefaultUserSettingsForm } from "./default-user-settings/DefaultUserSett
 import { UsersTable } from "./view_users/UsersTable";
 import UserInfoView from "./view_users/user_info_view";
 import { UserInfo } from "@/components/networking";
-import { Skeleton } from "antd";
 
 interface ViewUserDashboardProps {
   accessToken: string | null;
@@ -46,9 +46,7 @@ interface ViewUserDashboardProps {
 }
 
 const DEFAULT_PAGE_SIZE = 25;
-
 const DEFAULT_SORT_BY = "created_at";
-
 const DEFAULT_SORTING: SortingState = [{ id: DEFAULT_SORT_BY, desc: true }];
 
 const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
@@ -59,6 +57,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   teams,
   orgAdminOrgIds,
 }) => {
+  const { t } = useTranslation();
   const isProxyAdmin = userRole ? isProxyAdminRole(userRole) : false;
   const queryClient = useQueryClient();
 
@@ -89,7 +88,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
     setBaseUrl(getProxyBaseUrl());
   }, []);
 
-  // Fetch available models for bulk edit
   useEffect(() => {
     const fetchUserModels = async () => {
       try {
@@ -98,7 +96,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         }
 
         const model_available = await modelAvailableCall(accessToken, userID, userRole);
-        let available_model_names = model_available["data"].map((element: { id: string }) => element.id);
+        const available_model_names = model_available["data"].map((element: { id: string }) => element.id);
         setUserModels(available_model_names);
       } catch (error) {
         console.error("Error fetching user models:", error);
@@ -157,19 +155,19 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const handleResetPassword = useCallback(
     async (userId: string) => {
       if (!accessToken) {
-        NotificationsManager.fromBackend("Access token not found");
+        NotificationsManager.fromBackend(t("identityAdmin.users.tokenMissing"));
         return;
       }
       try {
-        NotificationsManager.success("Generating password reset link...");
+        NotificationsManager.success(t("identityAdmin.users.generatingReset"));
         const data = await invitationCreateCall(accessToken, userId);
         setInvitationLinkData(data);
         setIsInvitationLinkModalVisible(true);
       } catch (error) {
-        NotificationsManager.fromBackend("Failed to generate password reset link");
+        NotificationsManager.fromBackend(t("identityAdmin.users.resetFailed"));
       }
     },
-    [accessToken],
+    [accessToken, t],
   );
 
   const confirmDelete = async () => {
@@ -178,17 +176,16 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         setIsDeletingUser(true);
         await userDeleteCall(accessToken, [userToDelete.user_id]);
 
-        // Update the user list after deletion
         queryClient.setQueriesData<UserListResponse>({ queryKey: ["userList"] }, (previousData) => {
           if (previousData === undefined) return previousData;
           const updatedUsers = previousData.users.filter((user) => user.user_id !== userToDelete.user_id);
           return { ...previousData, users: updatedUsers };
         });
 
-        NotificationsManager.success("User deleted successfully");
+        NotificationsManager.success(t("identityAdmin.users.deleted"));
       } catch (error) {
         console.error("Error deleting user:", error);
-        NotificationsManager.fromBackend("Failed to delete user");
+        NotificationsManager.fromBackend(t("identityAdmin.users.deleteFailed"));
       } finally {
         setIsDeleteModalOpen(false);
         setUserToDelete(null);
@@ -226,13 +223,12 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         return { ...previousData, users: updatedUsers };
       });
 
-      NotificationsManager.success(`User ${editedUser.user_id} updated successfully`);
+      NotificationsManager.success(t("identityAdmin.users.updated", { userId: editedUser.user_id }));
     } catch (error) {
       console.error("There was an error updating the user", error);
     }
     setSelectedUser(null);
     setEditModalVisible(false);
-    // Close the modal
   };
 
   const handleToggleSelectionMode = () => {
@@ -241,7 +237,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   };
 
   const handleBulkEditSuccess = () => {
-    // Refresh the user list
     queryClient.invalidateQueries({ queryKey: ["userList"] });
     setRowSelection({});
     setSelectionMode(false);
@@ -376,7 +371,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
                   className="flex items-center"
                   data-testid="toggle-user-selection"
                 >
-                  {selectionMode ? "Cancel Selection" : "Select Users"}
+                  {selectionMode ? t("identityAdmin.users.cancelSelection") : t("identityAdmin.users.select")}
                 </Button>
               )}
 
@@ -388,7 +383,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
                   className="flex items-center"
                   data-testid="bulk-edit-users"
                 >
-                  Bulk Edit ({selectedUsers.length} selected)
+                  {t("identityAdmin.users.bulkEdit", { count: selectedUsers.length })}
                 </Button>
               )}
             </>
@@ -399,8 +394,8 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       {isProxyAdmin ? (
         <TabGroup defaultIndex={0}>
           <TabList className="mb-4">
-            <Tab>Users</Tab>
-            <Tab>Default User Settings</Tab>
+            <Tab>{t("identityAdmin.users.title")}</Tab>
+            <Tab>{t("identityAdmin.users.defaultSettings")}</Tab>
           </TabList>
 
           <TabPanels>
@@ -421,7 +416,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         usersTable
       )}
 
-      {/* Existing Modals */}
       <EditUserModal
         visible={editModalVisible}
         possibleUIRoles={possibleUIRoles}
@@ -432,18 +426,18 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
 
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
-        title="Delete User?"
-        message="Are you sure you want to delete this user? This action cannot be undone."
-        resourceInformationTitle="User Information"
+        title={t("identityAdmin.users.deleteTitle")}
+        message={t("identityAdmin.users.deleteMessage")}
+        resourceInformationTitle={t("identityAdmin.users.info")}
         resourceInformation={[
-          { label: "Email", value: userToDelete?.user_email },
-          { label: "User ID", value: userToDelete?.user_id, code: true },
+          { label: t("identityAdmin.users.email"), value: userToDelete?.user_email },
+          { label: t("identityAdmin.users.userId"), value: userToDelete?.user_id, code: true },
           {
-            label: "Global Proxy Role",
+            label: t("identityAdmin.users.globalRole"),
             value:
               (userToDelete && possibleUIRoles?.[userToDelete.user_role]?.ui_label) || userToDelete?.user_role || "-",
           },
-          { label: "Total Spend (USD)", value: userToDelete?.spend?.toFixed(2) },
+          { label: t("identityAdmin.users.totalSpend"), value: userToDelete?.spend?.toFixed(2) },
         ]}
         onCancel={cancelDelete}
         onOk={confirmDelete}

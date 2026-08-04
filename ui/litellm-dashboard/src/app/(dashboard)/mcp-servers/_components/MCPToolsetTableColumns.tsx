@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cva.config";
+import { i18n } from "@/i18n/i18n";
 import { getProxyBaseUrl } from "@/components/networking";
 import { MCPToolset } from "@/components/mcp_tools/types";
 import { copyToClipboard } from "@/utils/dataUtils";
@@ -44,7 +45,7 @@ function ToolsetRowActions({ toolset, isAdmin, onEditClick, onDeleteClick }: Too
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Open toolset actions"
+        aria-label={i18n.t("toolsModels.mcp.toolsets.actions.open")}
         data-testid={`toolset-actions-${toolset.toolset_id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -53,24 +54,29 @@ function ToolsetRowActions({ toolset, isAdmin, onEditClick, onDeleteClick }: Too
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem
           data-testid="toolset-action-copy-url"
-          onClick={() => void copyToClipboard(toolsetEndpointUrl(toolset.toolset_name), "Endpoint URL copied")}
+          onClick={() =>
+            void copyToClipboard(
+              toolsetEndpointUrl(toolset.toolset_name),
+              i18n.t("toolsModels.mcp.toolsets.actions.endpointCopied"),
+            )
+          }
         >
           <Link2 />
-          Copy endpoint URL
+          {i18n.t("toolsModels.mcp.toolsets.actions.copyEndpoint")}
         </DropdownMenuItem>
         <DropdownMenuItem
           data-testid="toolset-action-copy-id"
-          onClick={() => void copyToClipboard(toolset.toolset_id, "Toolset ID copied")}
+          onClick={() => void copyToClipboard(toolset.toolset_id, i18n.t("toolsModels.mcp.toolsets.actions.idCopied"))}
         >
           <Copy />
-          Copy toolset ID
+          {i18n.t("toolsModels.mcp.toolsets.actions.copyId")}
         </DropdownMenuItem>
         {isAdmin && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="toolset-action-edit" onClick={() => onEditClick(toolset)}>
               <Pencil />
-              Edit
+              {i18n.t("toolsModels.mcp.common.edit")}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -78,7 +84,7 @@ function ToolsetRowActions({ toolset, isAdmin, onEditClick, onDeleteClick }: Too
               onClick={() => onDeleteClick(toolset.toolset_id)}
             >
               <Trash2 />
-              Delete
+              {i18n.t("toolsModels.mcp.common.delete")}
             </DropdownMenuItem>
           </>
         )}
@@ -103,8 +109,8 @@ export const getMCPToolsetTableColumns = ({
   {
     id: "toolset_id",
     accessorKey: "toolset_id",
-    meta: { title: "Toolset ID" },
-    header: "Toolset ID",
+    meta: { title: i18n.t("toolsModels.mcp.toolsets.columns.id") },
+    header: i18n.t("toolsModels.mcp.toolsets.columns.id"),
     size: 140,
     enableSorting: false,
     cell: ({ row }) => <IdCell value={row.original.toolset_id} />,
@@ -129,8 +135,8 @@ export const getMCPToolsetTableColumns = ({
   {
     id: "description",
     accessorKey: "description",
-    meta: { title: "Description" },
-    header: "Description",
+    meta: { title: i18n.t("toolsModels.mcp.toolsets.columns.description") },
+    header: i18n.t("toolsModels.mcp.toolsets.columns.description"),
     size: 200,
     enableSorting: false,
     cell: ({ row }) => (
@@ -141,8 +147,8 @@ export const getMCPToolsetTableColumns = ({
   },
   {
     id: "tools",
-    meta: { title: "Tools", skeleton: "chips" },
-    header: "Tools",
+    meta: { title: i18n.t("toolsModels.mcp.toolsets.columns.tools"), skeleton: "chips" },
+    header: i18n.t("toolsModels.mcp.toolsets.columns.tools"),
     size: 260,
     enableSorting: false,
     cell: ({ row }) => {
@@ -158,7 +164,9 @@ export const getMCPToolsetTableColumns = ({
             </span>
           ))}
           {tools.length > 4 && (
-            <span className="self-center text-xs text-muted-foreground">+{tools.length - 4} more</span>
+            <span className="self-center text-xs text-muted-foreground">
+              {i18n.t("toolsModels.mcp.toolsets.moreTools", { count: tools.length - 4 })}
+            </span>
           )}
         </div>
       );
@@ -176,7 +184,7 @@ export const getMCPToolsetTableColumns = ({
   {
     id: "actions",
     meta: { className: "text-right", headerClassName: "text-right" },
-    header: () => <span className="sr-only">Actions</span>,
+    header: () => <span className="sr-only">{i18n.t("toolsModels.mcp.toolsets.actions.open")}</span>,
     size: 64,
     enableSorting: false,
     enableHiding: false,

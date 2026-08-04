@@ -18,18 +18,22 @@ import VectorStoreSelector from "@/components/vector_store_management/VectorStor
 import { pickDirty } from "@/lib/forms/pickDirty";
 import { useZodForm } from "@/lib/forms/useZodForm";
 import { fetchClient } from "@/lib/http/api";
+import { useTranslation } from "react-i18next";
 
 import { buildOrgPatch, orgToForm, type OrgPatchBody } from "./mapper";
 import { orgSettingsSchema } from "./schema";
 
 export const NO_RESET = "never";
 
-export const BUDGET_DURATION_OPTIONS = [
-  { value: NO_RESET, label: "No reset" },
-  { value: "24h", label: "daily" },
-  { value: "7d", label: "weekly" },
-  { value: "30d", label: "monthly" },
-] as const;
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+export const getBudgetDurationOptions = (t: TranslateFn) =>
+  [
+    { value: NO_RESET, label: t("identityAdmin.organization.form.budgetReset.none") },
+    { value: "24h", label: t("identityAdmin.organization.form.budgetReset.daily") },
+    { value: "7d", label: t("identityAdmin.organization.form.budgetReset.weekly") },
+    { value: "30d", label: t("identityAdmin.organization.form.budgetReset.monthly") },
+  ] as const;
 
 const defaultPatchOrganization = async (organizationId: string, body: OrgPatchBody): Promise<unknown> => {
   const { data } = await fetchClient.PATCH("/v2/organization/{organization_id}", {
@@ -56,20 +60,22 @@ export const OrgSettingsForm = ({
   onSaved,
   patchOrganization = defaultPatchOrganization,
 }: OrgSettingsFormProps) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const form = useZodForm(orgSettingsSchema, { defaultValues: orgToForm(org) });
   const { isDirty } = form.formState;
+  const budgetDurationOptions = React.useMemo(() => getBudgetDurationOptions(t), [t]);
 
   const mutation = useMutation({
     mutationFn: (body: OrgPatchBody) => patchOrganization(organizationId, body),
     onSuccess: () => {
-      NotificationsManager.success("Organization settings updated successfully");
+      NotificationsManager.success(t("identityAdmin.organization.settingsUpdated"));
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
       onSaved();
     },
     onError: (error: unknown) =>
       NotificationsManager.fromBackend(
-        error instanceof Error ? error.message : "Failed to update organization settings",
+        error instanceof Error ? error.message : t("identityAdmin.organization.settingsUpdateFailed"),
       ),
   });
 
@@ -80,11 +86,11 @@ export const OrgSettingsForm = ({
   return (
     <form onSubmit={onSubmit}>
       <FieldGroup>
-        <FormField control={form.control} name="organization_alias" label="Organization Name">
+        <FormField control={form.control} name="organization_alias" label={t("identityAdmin.organization.name")}>
           {({ ref, ...field }) => <Input {...field} ref={ref} />}
         </FormField>
 
-        <FormField control={form.control} name="models" label="Models">
+        <FormField control={form.control} name="models" label={t("identityAdmin.organization.models")}>
           {(field) => (
             <ModelSelect
               value={field.value}
@@ -95,14 +101,18 @@ export const OrgSettingsForm = ({
           )}
         </FormField>
 
-        <FormField control={form.control} name="max_budget" label="Max Budget (USD)">
+        <FormField control={form.control} name="max_budget" label={t("identityAdmin.organization.form.maxBudget")}>
           {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={0.01} min={0} />}
         </FormField>
 
-        <FormField control={form.control} name="budget_duration" label="Reset Budget">
+        <FormField
+          control={form.control}
+          name="budget_duration"
+          label={t("identityAdmin.organization.form.resetBudget")}
+        >
           {({ id, value, onChange, "aria-invalid": ariaInvalid, "aria-describedby": ariaDescribedBy }) => (
             <Select
-              items={BUDGET_DURATION_OPTIONS}
+              items={budgetDurationOptions}
               value={value === "" ? NO_RESET : value}
               onValueChange={(selected) => onChange(selected === NO_RESET ? "" : selected)}
             >
@@ -110,7 +120,7 @@ export const OrgSettingsForm = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {BUDGET_DURATION_OPTIONS.map((option) => (
+                {budgetDurationOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -120,37 +130,41 @@ export const OrgSettingsForm = ({
           )}
         </FormField>
 
-        <FormField control={form.control} name="tpm_limit" label="Tokens per minute Limit (TPM)">
+        <FormField control={form.control} name="tpm_limit" label={t("identityAdmin.organization.form.tpmLimit")}>
           {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={1} min={0} />}
         </FormField>
 
-        <FormField control={form.control} name="rpm_limit" label="Requests per minute Limit (RPM)">
+        <FormField control={form.control} name="rpm_limit" label={t("identityAdmin.organization.form.rpmLimit")}>
           {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={1} min={0} />}
         </FormField>
 
-        <FormField control={form.control} name="vector_stores" label="Vector Stores">
+        <FormField
+          control={form.control}
+          name="vector_stores"
+          label={t("identityAdmin.organization.form.vectorStores")}
+        >
           {(field) => (
             <VectorStoreSelector
               value={field.value}
               onChange={field.onChange}
               accessToken={accessToken}
-              placeholder="Select vector stores"
+              placeholder={t("identityAdmin.organization.form.vectorStoresPlaceholder")}
             />
           )}
         </FormField>
 
-        <FormField control={form.control} name="mcp" label="MCP Servers & Access Groups">
+        <FormField control={form.control} name="mcp" label={t("identityAdmin.organization.form.mcpAccess")}>
           {(field) => (
             <MCPServerSelector
               value={field.value}
               onChange={field.onChange}
               accessToken={accessToken}
-              placeholder="Select MCP servers and access groups"
+              placeholder={t("identityAdmin.organization.form.mcpAccessPlaceholder")}
             />
           )}
         </FormField>
 
-        <FormField control={form.control} name="metadata" label="Metadata">
+        <FormField control={form.control} name="metadata" label={t("identityAdmin.createUser.metadata")}>
           {({ ref, ...field }) => <Textarea {...field} ref={ref} rows={4} />}
         </FormField>
       </FieldGroup>
@@ -158,10 +172,10 @@ export const OrgSettingsForm = ({
       <div className="sticky z-10 bg-white p-4 border-t border-gray-200 -bottom-6 -inset-x-6 mt-6">
         <div className="flex justify-end items-center gap-2">
           <Button type="button" variant="outline" onClick={onCancel} disabled={mutation.isPending}>
-            Cancel
+            {t("identityAdmin.team.cancel")}
           </Button>
           <Button type="submit" disabled={!isDirty || mutation.isPending}>
-            {mutation.isPending ? "Saving..." : "Save Changes"}
+            {mutation.isPending ? t("identityAdmin.team.saving") : t("identityAdmin.team.saveChanges")}
           </Button>
         </div>
       </div>

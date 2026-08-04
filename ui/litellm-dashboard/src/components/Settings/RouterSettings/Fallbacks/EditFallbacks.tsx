@@ -12,6 +12,7 @@ import { fetchAvailableModels } from "@/components/llm_calls/fetch_models";
 import NotificationManager from "../../../molecules/notifications_manager";
 import { AddFallbacksModal } from "./AddFallbacksModal";
 import { FallbackGroup, FallbackGroupConfig } from "./FallbackGroupConfig";
+import { useTranslation } from "react-i18next";
 
 export type FallbackEntry = { [modelName: string]: string[] };
 export type Fallbacks = FallbackEntry[];
@@ -42,6 +43,7 @@ export default function EditFallbacks({
   onClose,
   maxFallbacks = 10,
 }: EditFallbacksProps) {
+  const { t } = useTranslation();
   const [group, setGroup] = useState<FallbackGroup>(() => toGroup(fallbackEntry));
   const [isSaving, setIsSaving] = useState(false);
 
@@ -69,7 +71,7 @@ export default function EditFallbacks({
     setIsSaving(true);
     try {
       await onChange(updatedFallbacks);
-      NotificationManager.success(`Fallbacks for ${primaryModel} updated successfully!`);
+      NotificationManager.success(t("settingsExtra.fallbacks.editUpdated", { model: primaryModel }));
       onClose();
     } catch (error) {
       console.error("Error updating fallbacks:", error);
@@ -89,7 +91,7 @@ export default function EditFallbacks({
       />
       <div className="flex items-center justify-end space-x-3 pt-6 mt-6 border-t border-gray-100">
         <Button type="default" onClick={onClose} disabled={isSaving}>
-          Cancel
+          {t("settingsExtra.fallbacks.cancel")}
         </Button>
         <Button
           type="primary"
@@ -98,7 +100,7 @@ export default function EditFallbacks({
           disabled={isSaving || group.fallbackModels.length === 0}
           loading={isSaving}
         >
-          {isSaving ? "Saving Changes..." : "Save Changes"}
+          {isSaving ? t("settingsExtra.fallbacks.savingChanges") : t("settingsExtra.fallbacks.saveChanges")}
         </Button>
       </div>
     </AddFallbacksModal>

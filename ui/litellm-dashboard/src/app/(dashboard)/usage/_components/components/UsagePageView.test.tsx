@@ -57,8 +57,22 @@ vi.mock("./EndpointUsage/EndpointUsage", () => ({
 
 vi.mock("./UsageViewSelect/UsageViewSelect", async () => {
   const React = await import("react");
-  const UsageViewSelect = ({ value, onChange, canViewTagUsage = false }: any) => {
+  const UsageViewSelect = ({ value, onChange, canViewTagUsage = false, isAdmin }: any) => {
     const tagOption = canViewTagUsage ? React.createElement("option", { value: "tag" }, "Tag Usage") : null;
+    const adminOptions = isAdmin
+      ? [
+          React.createElement("option", { key: "global", value: "global" }, "Global Usage"),
+          React.createElement("option", { key: "organization", value: "organization" }, "Organization Usage"),
+          React.createElement("option", { key: "customer", value: "customer" }, "Customer Usage"),
+          tagOption,
+          React.createElement("option", { key: "agent", value: "agent" }, "Agent Usage"),
+          React.createElement(
+            "option",
+            { key: "user-agent-activity", value: "user-agent-activity" },
+            "User Agent Activity",
+          ),
+        ]
+      : [];
     return React.createElement(
       "select",
       {
@@ -67,13 +81,9 @@ vi.mock("./UsageViewSelect/UsageViewSelect", async () => {
         role: "combobox",
         "data-testid": "usage-view-select",
       },
-      React.createElement("option", { value: "global" }, "Global Usage"),
+      React.createElement("option", { value: "my-usage" }, "Your Usage"),
       React.createElement("option", { value: "team" }, "Team Usage"),
-      React.createElement("option", { value: "organization" }, "Organization Usage"),
-      React.createElement("option", { value: "customer" }, "Customer Usage"),
-      tagOption,
-      React.createElement("option", { value: "agent" }, "Agent Usage"),
-      React.createElement("option", { value: "user-agent-activity" }, "User Agent Activity"),
+      ...adminOptions,
     );
   };
   UsageViewSelect.displayName = "UsageViewSelect";
@@ -650,7 +660,7 @@ describe("UsagePage", () => {
     });
   });
 
-  it("should show tag usage selector option for internal users", async () => {
+  it("should only show personal and team usage selector options for internal users", async () => {
     mockUseAuthorized.mockReturnValue({
       isLoading: false,
       isAuthorized: true,
@@ -670,7 +680,11 @@ describe("UsagePage", () => {
       expect(mockUserDailyActivityAggregatedCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByRole("option", { name: "Tag Usage" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Your Usage" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Team Usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Global Usage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Organization Usage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Tag Usage" })).not.toBeInTheDocument();
   });
 
   it("should show organization usage banner and view for admins", async () => {
@@ -1062,7 +1076,7 @@ describe("UsagePage", () => {
 
       // Title should change to "Top Litellm Models"
       await waitFor(() => {
-        expect(screen.getByText("Top Litellm Models")).toBeInTheDocument();
+        expect(screen.getByText("Top LiteLLM Models")).toBeInTheDocument();
       });
     });
 
@@ -1080,7 +1094,7 @@ describe("UsagePage", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Top Litellm Models")).toBeInTheDocument();
+        expect(screen.getByText("Top LiteLLM Models")).toBeInTheDocument();
       });
 
       // Switch back to groups

@@ -550,10 +550,10 @@
     "local/no-complex-jsx-arrow": {
       "count": 1
     },
-    "max-params": {
+    "max-lines": {
       "count": 1
     },
-    "max-lines": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-imports": {
@@ -893,6 +893,9 @@
     }
   },
   "src/app/(dashboard)/mcp-servers/_components/ToolTestPanel.tsx": {
+    "max-lines": {
+      "count": 1
+    },
     "no-nested-ternary": {
       "count": 3
     },
@@ -1430,14 +1433,14 @@
     }
   },
   "src/app/(dashboard)/policies/_components/index.tsx": {
-    "no-restricted-imports": {
-      "count": 2
-    },
     "local/filename-pascal-case": {
       "count": 1
     },
     "local/no-complex-jsx-arrow": {
       "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 2
     },
     "react-hooks/set-state-in-effect": {
       "count": 1
@@ -1798,6 +1801,9 @@
   "src/app/(dashboard)/usage/_components/components/EntityUsage/EntityUsage.tsx": {
     "local/no-complex-jsx-arrow": {
       "count": 2
+    },
+    "max-lines": {
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -4142,6 +4148,11 @@
       "count": 1
     }
   },
+  "src/components/view_logs/LogDetailsDrawer/ResponseItemsView.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
   "src/components/view_logs/LogDetailsDrawer/SectionHeader.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -4314,6 +4325,16 @@
       "count": 1
     },
     "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/i18n/messages/en/toolsModels.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/i18n/messages/ko/toolsModels.ts": {
+    "max-lines": {
       "count": 1
     }
   },

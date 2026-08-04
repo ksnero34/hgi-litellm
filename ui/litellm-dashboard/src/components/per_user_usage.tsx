@@ -18,6 +18,7 @@ import {
 } from "@tremor/react";
 import { BarChart } from "@/components/shared/charts";
 import { perUserAnalyticsCall } from "./networking";
+import { useTranslation } from "react-i18next";
 
 interface PerUserMetrics {
   user_id: string;
@@ -45,6 +46,7 @@ interface PerUserUsageProps {
 }
 
 const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, formatAbbreviatedNumber }) => {
+  const { t } = useTranslation();
   // Maximum number of user agent categories to show in charts to prevent color palette overflow
   const MAX_USER_AGENTS = 8;
   const [perUserData, setPerUserData] = useState<PerUserAnalyticsResponse>({
@@ -95,13 +97,13 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
 
   return (
     <div className="mb-6">
-      <Title>Per User Usage</Title>
-      <Subtitle>Individual developer usage metrics</Subtitle>
+      <Title>{t("observabilityExtra.usage.perUser")}</Title>
+      <Subtitle>{t("observabilityExtra.usage.perUserDescription")}</Subtitle>
 
       <TabGroup>
         <TabList className="mb-6">
-          <Tab>User Details</Tab>
-          <Tab>Usage Distribution</Tab>
+          <Tab>{t("observabilityExtra.usage.userDetails")}</Tab>
+          <Tab>{t("observabilityExtra.usage.distribution")}</Tab>
         </TabList>
 
         <TabPanels>
@@ -110,13 +112,17 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableHeaderCell>User ID</TableHeaderCell>
-                  <TableHeaderCell>User Email</TableHeaderCell>
-                  <TableHeaderCell>User Agent</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Success Generations</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Total Tokens</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Failed Requests</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Total Cost</TableHeaderCell>
+                  <TableHeaderCell>{t("observabilityExtra.usage.userId")}</TableHeaderCell>
+                  <TableHeaderCell>{t("observabilityExtra.usage.userEmail")}</TableHeaderCell>
+                  <TableHeaderCell>{t("observabilityExtra.usage.userAgent")}</TableHeaderCell>
+                  <TableHeaderCell className="text-right">
+                    {t("observabilityExtra.usage.successGenerations")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className="text-right">{t("observabilityExtra.usage.totalTokens")}</TableHeaderCell>
+                  <TableHeaderCell className="text-right">
+                    {t("observabilityExtra.usage.failedRequests")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className="text-right">{t("observabilityExtra.usage.totalCost")}</TableHeaderCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -129,7 +135,7 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
                       <Text>{item.user_email || "N/A"}</Text>
                     </TableCell>
                     <TableCell>
-                      <Text>{item.user_agent || "Unknown"}</Text>
+                      <Text>{item.user_agent || t("observabilityExtra.usage.unknown")}</Text>
                     </TableCell>
                     <TableCell className="text-right">
                       <Text>{formatAbbreviatedNumber(item.successful_requests)}</Text>
@@ -150,10 +156,12 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
 
             {perUserData.results.length > 10 && (
               <div className="mt-4 flex justify-between items-center">
-                <Text className="text-sm text-gray-500">Showing 10 of {perUserData.total_count} results</Text>
+                <Text className="text-sm text-gray-500">
+                  {t("observabilityExtra.usage.showingResults", { shown: 10, total: perUserData.total_count })}
+                </Text>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={handlePrevPage} disabled={currentPage === 1}>
-                    Previous
+                    {t("observabilityExtra.usage.previous")}
                   </Button>
                   <Button
                     size="sm"
@@ -161,7 +169,7 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
                     onClick={handleNextPage}
                     disabled={currentPage >= perUserData.total_pages}
                   >
-                    Next
+                    {t("observabilityExtra.usage.next")}
                   </Button>
                 </div>
               </div>
@@ -171,8 +179,8 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
           {/* Tab 2: Usage Distribution Histogram */}
           <TabPanel>
             <div className="mb-4">
-              <Title className="text-lg">User Usage Distribution</Title>
-              <Subtitle>Number of users by successful request frequency</Subtitle>
+              <Title className="text-lg">{t("observabilityExtra.usage.userDistribution")}</Title>
+              <Subtitle>{t("observabilityExtra.usage.userDistributionDescription")}</Subtitle>
             </div>
 
             <BarChart
@@ -245,7 +253,7 @@ const PerUserUsage: React.FC<PerUserUsageProps> = ({ accessToken, selectedTags, 
                   .map(([agent]) => agent);
               })()}
               colors={["blue", "green", "orange", "red", "purple", "yellow", "pink", "indigo"]}
-              valueFormatter={(value: number) => `${value} users`}
+              valueFormatter={(value: number) => t("observabilityExtra.usage.usersCount", { count: value })}
               yAxisWidth={80}
               showLegend={true}
               stack={true}

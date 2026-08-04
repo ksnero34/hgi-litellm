@@ -11,6 +11,7 @@ import { getCallbacksCall, setCallbacksCall } from "../../../networking";
 import { isProxyAdminRole } from "@/utils/roles";
 import AddFallbacks from "./AddFallbacks";
 import EditFallbacks from "./EditFallbacks";
+import { useTranslation } from "react-i18next";
 
 type FallbackEntry = { [modelName: string]: string[] };
 type Fallbacks = FallbackEntry[];
@@ -116,6 +117,7 @@ async function testFallbackModelResponse(selectedModel: string, accessToken: str
 }
 
 const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) => {
+  const { t } = useTranslation();
   const [routerSettings, setRouterSettings] = useState<{ [key: string]: any }>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [fallbackToDelete, setFallbackToDelete] = useState<FallbackEntry | null>(null);
@@ -189,9 +191,9 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
     try {
       await setCallbacksCall(accessToken, payload);
       setRouterSettings(updatedSettings);
-      NotificationsManager.success("Router settings updated successfully");
+      NotificationsManager.success(t("settingsExtra.fallbacks.updated"));
     } catch (error) {
-      NotificationsManager.fromBackend("Failed to update router settings: " + error);
+      NotificationsManager.fromBackend(t("settingsExtra.fallbacks.updateFailed", { error }));
     } finally {
       setIsDeleting(false);
       setIsDeleteModalOpen(false);
@@ -228,7 +230,7 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
       setRouterSettings(updatedSettings);
     } catch (error) {
       // Revert on error by refetching from server
-      NotificationsManager.fromBackend("Failed to update router settings: " + error);
+      NotificationsManager.fromBackend(t("settingsExtra.fallbacks.updateFailed", { error }));
       if (accessToken && userRole && userID) {
         getCallbacksCall(accessToken, userID, userRole).then((data) => {
           let router_settings = data.router_settings;
@@ -258,17 +260,15 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
       )}
       {!hasFallbacks ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center">
-          <Typography.Text type="secondary">
-            No fallbacks configured. Add fallbacks to automatically try another model when the primary fails.
-          </Typography.Text>
+          <Typography.Text type="secondary">{t("settingsExtra.fallbacks.noneConfigured")}</Typography.Text>
         </div>
       ) : (
         <Table>
           <TableHead>
             <TableRow>
-              <TableHeaderCell>Model Name</TableHeaderCell>
-              <TableHeaderCell>Fallbacks</TableHeaderCell>
-              <TableHeaderCell>Actions</TableHeaderCell>
+              <TableHeaderCell>{t("settingsExtra.fallbacks.modelName")}</TableHeaderCell>
+              <TableHeaderCell>{t("settingsExtra.fallbacks.fallbacks")}</TableHeaderCell>
+              <TableHeaderCell>{t("settingsExtra.common.actions")}</TableHeaderCell>
             </TableRow>
           </TableHead>
 
@@ -283,7 +283,7 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
                   <TableCell className="align-top">
                     {canModify && (
                       <>
-                        <Tooltip title="Test fallback">
+                        <Tooltip title={t("settingsExtra.fallbacks.test")}>
                           <Icon
                             icon={PlayIcon}
                             size="sm"
@@ -303,7 +303,7 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
                             <Icon icon={PencilAltIcon} size="sm" className="hover:text-blue-600" />
                           </span>
                         </Tooltip>
-                        <Tooltip title="Delete fallback">
+                        <Tooltip title={t("settingsExtra.fallbacks.delete")}>
                           <span
                             data-testid="delete-fallback-button"
                             role="button"
@@ -336,12 +336,12 @@ const Fallbacks: React.FC<FallbacksProps> = ({ accessToken, userRole, userID }) 
       )}
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
-        title="Delete Fallback?"
-        message="Are you sure you want to delete this fallback? This action cannot be undone."
-        resourceInformationTitle="Fallback Information"
+        title={t("settingsExtra.fallbacks.deleteTitle")}
+        message={t("settingsExtra.fallbacks.deleteConfirm")}
+        resourceInformationTitle={t("settingsExtra.fallbacks.information")}
         resourceInformation={[
           {
-            label: "Model Name",
+            label: t("settingsExtra.fallbacks.modelName"),
             value: fallbackToDelete ? Object.keys(fallbackToDelete)[0] : "",
             code: true,
           },

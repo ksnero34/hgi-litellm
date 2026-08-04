@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Form, Switch, Select, Tooltip } from "antd";
 import { Text, Accordion, AccordionHeader, AccordionBody, TextInput } from "@tremor/react";
 import { Row, Col, Typography } from "antd";
@@ -28,6 +29,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
   tagsList,
   accessToken,
 }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [customPricing, setCustomPricing] = React.useState(false);
   const [pricingModel, setPricingModel] = React.useState<"per_token" | "per_second">("per_token");
@@ -106,11 +108,16 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
     <>
       <Accordion className="mt-2 mb-4">
         <AccordionHeader>
-          <b>Advanced Settings</b>
+          <b>{t("modelManagement.advancedSettings")}</b>
         </AccordionHeader>
         <AccordionBody>
           <div className="bg-white rounded-lg">
-            <Form.Item label="Custom Pricing" name="custom_pricing" valuePropName="checked" className="mb-4">
+            <Form.Item
+              label={t("modelManagement.customPricing")}
+              name="custom_pricing"
+              valuePropName="checked"
+              className="mb-4"
+            >
               <Switch onChange={handleCustomPricingChange} className="bg-gray-600" />
             </Form.Item>
 
@@ -137,7 +144,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               <VectorStoreSelector
                 onChange={() => {}}
                 accessToken={accessToken}
-                placeholder="Select knowledge bases (optional)"
+                placeholder={t("modelManagement.knowledgeBasesPlaceholder")}
               />
             </Form.Item>
 
@@ -164,16 +171,16 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               <Select
                 mode="tags"
                 style={{ width: "100%" }}
-                placeholder="Select or enter guardrails"
+                placeholder={t("modelManagement.guardrailsPlaceholder")}
                 options={guardrailsList.map((name) => ({ value: name, label: name }))}
               />
             </Form.Item>
 
-            <Form.Item label="Tags" name="tags" className="mb-4">
+            <Form.Item label={t("modelManagement.tags")} name="tags" className="mb-4">
               <Select
                 mode="tags"
                 style={{ width: "100%" }}
-                placeholder="Select or enter tags"
+                placeholder={t("modelManagement.tagsPlaceholder")}
                 options={Object.values(tagsList).map((tag) => ({
                   value: tag.name,
                   label: tag.name,
@@ -184,13 +191,13 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
 
             {customPricing && (
               <div className="ml-6 pl-4 border-l-2 border-gray-200">
-                <Form.Item label="Pricing Model" name="pricing_model" className="mb-4">
+                <Form.Item label={t("modelManagement.pricingModel")} name="pricing_model" className="mb-4">
                   <Select
                     defaultValue="per_token"
                     onChange={(value: "per_token" | "per_second") => setPricingModel(value)}
                     options={[
-                      { value: "per_token", label: "Per Million Tokens" },
-                      { value: "per_second", label: "Per Second" },
+                      { value: "per_token", label: t("modelManagement.perMillionTokens") },
+                      { value: "per_second", label: t("modelManagement.perSecond") },
                     ]}
                   />
                 </Form.Item>
@@ -198,7 +205,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 {pricingModel === "per_token" ? (
                   <>
                     <Form.Item
-                      label="Input Cost (per 1M tokens)"
+                      label={t("modelManagement.inputCost")}
                       name="input_cost_per_token"
                       rules={[{ validator: validateNumber }]}
                       className="mb-4"
@@ -206,7 +213,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                       <TextInput />
                     </Form.Item>
                     <Form.Item
-                      label="Output Cost (per 1M tokens)"
+                      label={t("modelManagement.outputCost")}
                       name="output_cost_per_token"
                       rules={[{ validator: validateNumber }]}
                       className="mb-4"
@@ -214,27 +221,27 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                       <TextInput />
                     </Form.Item>
                     <Form.Item
-                      label="Cache Read Cost (per 1M tokens)"
+                      label={t("modelManagement.cacheReadCost")}
                       name="cache_read_input_token_cost"
                       rules={[{ validator: validateNumber }]}
                       tooltip="If left blank, defaults to Input Cost."
                       className="mb-4"
                     >
-                      <TextInput placeholder="Defaults to Input Cost if blank" />
+                      <TextInput placeholder={t("modelManagement.cacheCostDefault")} />
                     </Form.Item>
                     <Form.Item
-                      label="Cache Write Cost (per 1M tokens)"
+                      label={t("modelManagement.cacheWriteCost")}
                       name="cache_creation_input_token_cost"
                       rules={[{ validator: validateNumber }]}
                       tooltip="If left blank, defaults to Input Cost (the backend falls back to input_cost_per_token when no cache-write rate is set)."
                       className="mb-4"
                     >
-                      <TextInput placeholder="Defaults to Input Cost if blank" />
+                      <TextInput placeholder={t("modelManagement.cacheCostDefault")} />
                     </Form.Item>
                   </>
                 ) : (
                   <Form.Item
-                    label="Cost Per Second"
+                    label={t("modelManagement.costPerSecond")}
                     name="input_cost_per_second"
                     rules={[{ validator: validateNumber }]}
                     className="mb-4"
@@ -246,7 +253,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             )}
 
             <Form.Item
-              label="Use in pass through routes"
+              label={t("modelManagement.passThroughRoutes")}
               name="use_in_pass_through"
               valuePropName="checked"
               className="mb-4 mt-4"
@@ -268,7 +275,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               onCacheControlChange={handleCacheControlChange}
             />
             <Form.Item
-              label="LiteLLM Params"
+              label={t("modelManagement.litellmParams")}
               name="litellm_extra_params"
               tooltip="Optional litellm params used for making a litellm.completion() call."
               className="mb-4 mt-4"
@@ -295,7 +302,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               </Col>
             </Row>
             <Form.Item
-              label="Model Info"
+              label={t("modelManagement.modelInfo")}
               name="model_info_params"
               tooltip="Optional model info params. Returned when calling `/model/info` endpoint."
               className="mb-0"

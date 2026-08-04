@@ -111,15 +111,13 @@ describe("UsageViewSelect", () => {
     expect(mockOnChange).toHaveBeenCalledWith("team");
   });
 
-  it("should show Tag Usage for non-admin users with tag usage permission", () => {
-    render(<UsageViewSelect value="global" onChange={mockOnChange} isAdmin={false} canViewTagUsage={true} />);
+  it("should only show personal and team usage to non-admin users", () => {
+    render(<UsageViewSelect value="my-usage" onChange={mockOnChange} isAdmin={false} />);
 
-    expect(screen.getByRole("option", { name: "Tag Usage" })).toBeInTheDocument();
-  });
-
-  it("should hide Tag Usage for non-admin users without tag usage permission", () => {
-    render(<UsageViewSelect value="global" onChange={mockOnChange} isAdmin={false} />);
-
+    expect(screen.getByRole("option", { name: "Your Usage" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Team Usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Global Usage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Organization Usage" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Tag Usage" })).not.toBeInTheDocument();
   });
 });

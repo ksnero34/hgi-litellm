@@ -2,6 +2,7 @@ import { OnChangeFn, PaginationState, RowSelectionState } from "@tanstack/react-
 import { Modal } from "antd";
 import { Button as AntdButton } from "antd";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { errorPatterns } from "@/utils/errorPatterns";
 
@@ -161,6 +162,7 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
   onPaginationChange,
   rowCount,
 }) => {
+  const { t } = useTranslation();
   const [modelHealthStatuses, setModelHealthStatuses] = useState<{ [key: string]: HealthStatus }>({});
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [errorModalVisible, setErrorModalVisible] = useState(false);
@@ -495,10 +497,8 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Model Health Status</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Run health checks on individual models to verify they are working correctly
-            </p>
+            <h2 className="text-lg font-semibold text-foreground">{t("modelManagement.healthTitle")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t("modelManagement.healthDescription")}</p>
           </div>
           <div className="flex items-center gap-3">
             {selectedModelIds.length > 0 && (
@@ -508,7 +508,7 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
                 onClick={() => setRowSelection({})}
                 data-testid="clear-health-selection"
               >
-                Clear Selection
+                {t("modelManagement.clearSelection")}
               </Button>
             )}
             <Button
@@ -518,7 +518,7 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
               disabled={anyCheckRunning}
               data-testid="run-health-checks"
             >
-              {isPartialSelection ? "Run Selected Checks" : "Run All Checks"}
+              {isPartialSelection ? t("modelManagement.runSelectedChecks") : t("modelManagement.runAllChecks")}
             </Button>
           </div>
         </div>
@@ -543,12 +543,16 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
 
       {/* Error Modal */}
       <Modal
-        title={selectedErrorDetails ? `Health Check Error - ${selectedErrorDetails.modelName}` : "Error Details"}
+        title={
+          selectedErrorDetails
+            ? `${t("modelManagement.errorDetails")} - ${selectedErrorDetails.modelName}`
+            : t("modelManagement.errorDetails")
+        }
         open={errorModalVisible}
         onCancel={closeErrorModal}
         footer={[
           <AntdButton key="close" onClick={closeErrorModal}>
-            Close
+            {t("modelManagement.close")}
           </AntdButton>,
         ]}
         width={800}
@@ -556,14 +560,14 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
         {selectedErrorDetails && (
           <div className="space-y-4">
             <div>
-              <span className="font-medium">Error:</span>
+              <span className="font-medium">{t("modelManagement.error")}</span>
               <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
                 <span className="text-red-800">{selectedErrorDetails.cleanedError}</span>
               </div>
             </div>
 
             <div>
-              <span className="font-medium">Full Error Details:</span>
+              <span className="font-medium">{t("modelManagement.fullErrorDetails")}</span>
               <div className="mt-2 max-h-96 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
                 <pre className="text-sm whitespace-pre-wrap text-gray-800">{selectedErrorDetails.fullError}</pre>
               </div>
@@ -575,13 +579,15 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
       {/* Success Modal */}
       <Modal
         title={
-          selectedSuccessDetails ? `Health Check Response - ${selectedSuccessDetails.modelName}` : "Response Details"
+          selectedSuccessDetails
+            ? `${t("modelManagement.responseDetails")} - ${selectedSuccessDetails.modelName}`
+            : t("modelManagement.responseDetails")
         }
         open={successModalVisible}
         onCancel={closeSuccessModal}
         footer={[
           <AntdButton key="close" onClick={closeSuccessModal}>
-            Close
+            {t("modelManagement.close")}
           </AntdButton>,
         ]}
         width={800}
@@ -589,14 +595,14 @@ const HealthCheckComponent: React.FC<HealthCheckComponentProps> = ({
         {selectedSuccessDetails && (
           <div className="space-y-4">
             <div>
-              <span className="font-medium">Status:</span>
+              <span className="font-medium">{t("modelManagement.status")}</span>
               <div className="mt-2 rounded-md border border-green-200 bg-green-50 p-3">
-                <span className="text-green-800">Health check passed successfully</span>
+                <span className="text-green-800">{t("modelManagement.healthPassed")}</span>
               </div>
             </div>
 
             <div>
-              <span className="font-medium">Response Details:</span>
+              <span className="font-medium">{t("modelManagement.responseDetails")}:</span>
               <div className="mt-2 max-h-96 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
                 <pre className="text-sm whitespace-pre-wrap text-gray-800">
                   {JSON.stringify(selectedSuccessDetails.response, null, 2)}

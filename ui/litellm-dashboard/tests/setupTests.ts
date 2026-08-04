@@ -1,7 +1,14 @@
 import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
 import React from "react";
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { i18n } from "../src/i18n/i18n";
+import { languageStorageKey } from "../src/i18n/resources";
+
+beforeEach(async () => {
+  window.localStorage.setItem(languageStorageKey, "en");
+  await i18n.changeLanguage("en");
+});
 
 const ensureTestLocalStorage = () => {
   if (typeof window === "undefined" || typeof window.Storage === "undefined") {

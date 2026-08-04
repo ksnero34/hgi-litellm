@@ -3,6 +3,7 @@
 import React from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/cva.config";
+import { useTranslation } from "react-i18next";
 
 export const INPUT_POLICY_OPTIONS = [
   { value: "untrusted", label: "untrusted", dot: "bg-amber-500" },
@@ -39,6 +40,7 @@ export const PolicySelect: React.FC<PolicySelectProps> = ({
   size = "small",
   stopPropagation = true,
 }) => {
+  const { t } = useTranslation();
   const options = policyType === "output" ? OUTPUT_POLICY_OPTIONS : INPUT_POLICY_OPTIONS;
   const selected = policyStyle(value);
   return (
@@ -56,7 +58,7 @@ export const PolicySelect: React.FC<PolicySelectProps> = ({
           <SelectItem key={o.value} value={o.value}>
             <span className="inline-flex items-center gap-1.5">
               <span className={cn("size-2 shrink-0 rounded-full", o.dot)} />
-              {o.label}
+              {t(`observabilityExtra.toolPolicies.policy.${o.value}`)}
             </span>
           </SelectItem>
         ))}

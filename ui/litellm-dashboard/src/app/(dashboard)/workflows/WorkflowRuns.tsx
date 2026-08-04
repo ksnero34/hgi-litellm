@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { ArrowLeft, ChevronDown, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
 import { getGlobalLitellmHeaderName, proxyBaseUrl } from "@/components/networking";
 import {
@@ -59,8 +60,6 @@ interface WorkflowRunMessage {
   created_at: string;
 }
 
-// ── design tokens ─────────────────────────────────────────────────────────────
-
 const STATUS_DOT: Record<RunStatus, string> = {
   pending: "bg-gray-400",
   running: "bg-blue-500",
@@ -70,13 +69,6 @@ const STATUS_DOT: Record<RunStatus, string> = {
 };
 
 const RUN_STATUS_OPTIONS: RunStatus[] = ["pending", "running", "paused", "completed", "failed"];
-const STATUS_LABELS: Record<RunStatus, string> = {
-  pending: "Pending",
-  running: "Running",
-  paused: "Paused",
-  completed: "Completed",
-  failed: "Failed",
-};
 
 const EVENT_COLOR: Record<string, { bar: string; text: string }> = {
   "step.started": { bar: "border-green-300 bg-green-50", text: "text-green-600" },
@@ -88,8 +80,6 @@ const EVENT_COLOR: Record<string, { bar: string; text: string }> = {
 function eventStyle(type: string) {
   return EVENT_COLOR[type] ?? { bar: "border-border bg-muted", text: "text-muted-foreground" };
 }
-
-// ── helpers ───────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -110,8 +100,8 @@ function fmtDuration(ms: number): string {
 }
 
 function runTitle(run: WorkflowRun): string {
-  const t = run.metadata?.title;
-  if (t) return String(t);
+  const title = run.metadata?.title;
+  if (title) return String(title);
   return run.workflow_type ?? run.run_id.slice(0, 8);
 }
 
@@ -119,13 +109,9 @@ function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
-// ── status dot ────────────────────────────────────────────────────────────────
-
 const StatusDot: React.FC<{ status: RunStatus; className?: string }> = ({ status, className }) => (
   <span className={cn("inline-block flex-none rounded-full", STATUS_DOT[status] ?? "bg-gray-400", className)} />
 );
-
-// ── truncated text value ──────────────────────────────────────────────────────
 
 const TRUNCATE_AT = 120;
 
@@ -144,8 +130,6 @@ const TruncatedValue: React.FC<{ value: string }> = ({ value }) => {
   );
 };
 
-// ── metadata card ─────────────────────────────────────────────────────────────
-
 const MetadataCard: React.FC<{ run: WorkflowRun }> = ({ run }) => {
   const meta = run.metadata ?? {};
 
@@ -163,7 +147,6 @@ const MetadataCard: React.FC<{ run: WorkflowRun }> = ({ run }) => {
 
   return (
     <div className="mb-4 overflow-hidden rounded-lg border">
-      {/* title bar */}
       <div className="flex items-center gap-2.5 border-b px-5 py-3.5">
         <StatusDot status={run.status} className="size-2.5" />
         <span className="flex-1 text-sm font-semibold text-foreground">{runTitle(run)}</span>
@@ -173,7 +156,6 @@ const MetadataCard: React.FC<{ run: WorkflowRun }> = ({ run }) => {
         <span className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{run.workflow_type}</span>
       </div>
 
-      {/* key fields grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-6 gap-y-2 px-5 py-3 font-mono text-xs">
         <FieldPair label="status">
           <span className="capitalize text-foreground">{run.status}</span>
@@ -196,9 +178,9 @@ const MetadataCard: React.FC<{ run: WorkflowRun }> = ({ run }) => {
         )}
 
         {primaryFields.map(({ key, label }) => {
-          const v = meta[key];
-          if (v === null || v === undefined || v === "") return null;
-          const str = typeof v === "object" ? JSON.stringify(v) : String(v);
+          const value = meta[key];
+          if (value === null || value === undefined || value === "") return null;
+          const str = typeof value === "object" ? JSON.stringify(value) : String(value);
           return (
             <FieldPair key={key} label={label}>
               <TruncatedValue value={str} />
@@ -226,8 +208,6 @@ const FieldPair: React.FC<{ label: string; children: React.ReactNode }> = ({ lab
   </div>
 );
 
-// ── gantt timeline ────────────────────────────────────────────────────────────
-
 const GanttTimeline: React.FC<{
   run: WorkflowRun;
   events: WorkflowRunEvent[];
@@ -245,7 +225,6 @@ const GanttTimeline: React.FC<{
   return (
     <TooltipProvider delay={300}>
       <div className="font-mono text-xs">
-        {/* ruler */}
         <div className="mb-0.5 grid grid-cols-[160px_minmax(0,1fr)] gap-x-3">
           <div />
           <div className="relative h-4">
@@ -254,7 +233,6 @@ const GanttTimeline: React.FC<{
           </div>
         </div>
 
-        {/* outer run bar */}
         <div className="mb-1 grid grid-cols-[160px_minmax(0,1fr)] gap-x-3">
           <div className="truncate pt-0.5 text-foreground">{runTitle(run)}</div>
           <div className="flex h-6 items-center rounded border bg-muted pl-2">
@@ -262,7 +240,6 @@ const GanttTimeline: React.FC<{
           </div>
         </div>
 
-        {/* event rows */}
         <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-x-3 gap-y-[3px]">
           {events.map((ev) => {
             const evTime = new Date(ev.created_at).getTime();
@@ -337,8 +314,6 @@ const GanttTimeline: React.FC<{
   );
 };
 
-// ── message row ───────────────────────────────────────────────────────────────
-
 const ROLE_COLOR: Record<string, string> = {
   user: "text-blue-600",
   assistant: "text-green-600",
@@ -355,8 +330,6 @@ const MessageRow: React.FC<{ msg: WorkflowRunMessage }> = ({ msg }) => (
     </div>
   </div>
 );
-
-// ── collapsible section ───────────────────────────────────────────────────────
 
 const DetailSection: React.FC<{
   title: string;
@@ -376,9 +349,15 @@ const DetailSection: React.FC<{
   </Collapsible>
 );
 
-// ── main component ────────────────────────────────────────────────────────────
-
 const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
+  const { t } = useTranslation();
+  const statusLabels: Record<RunStatus, string> = {
+    pending: t("interactionExtra.workflows.pending"),
+    running: t("interactionExtra.workflows.running"),
+    paused: t("interactionExtra.workflows.paused"),
+    completed: t("interactionExtra.workflows.completed"),
+    failed: t("interactionExtra.workflows.failed"),
+  };
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [selectedRun, setSelectedRun] = useState<WorkflowRun | null>(null);
@@ -455,8 +434,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       {
         id: "run",
         accessorFn: (row) => `${runTitle(row)} ${row.run_id}`,
-        header: "Run",
-        meta: { title: "Run", skeleton: "twoLine" },
+        header: t("interactionExtra.workflows.run"),
+        meta: { title: t("interactionExtra.workflows.run"), skeleton: "twoLine" },
         cell: ({ row }) => {
           const run = row.original;
           return (
@@ -472,8 +451,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       },
       {
         accessorKey: "workflow_type",
-        header: "Type",
-        meta: { title: "Type" },
+        header: t("interactionExtra.workflows.type"),
+        meta: { title: t("interactionExtra.workflows.type") },
         filterFn: "includesString",
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">{row.original.workflow_type}</span>
@@ -482,8 +461,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       {
         id: "status",
         accessorKey: "status",
-        header: "Status",
-        meta: { title: "Status" },
+        header: t("interactionExtra.workflows.status"),
+        meta: { title: t("interactionExtra.workflows.status") },
         filterFn: "equalsString",
         cell: ({ row }) => {
           const run = row.original;
@@ -497,22 +476,19 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
       },
       {
         accessorKey: "created_at",
-        header: "Created",
-        meta: { title: "Created" },
+        header: t("interactionExtra.workflows.created"),
+        meta: { title: t("interactionExtra.workflows.created") },
         cell: ({ row }) => <span className="text-xs text-muted-foreground">{timeAgo(row.original.created_at)}</span>,
       },
     ],
-    [],
+    [t],
   );
 
   return (
     <div className="w-full px-8 py-6">
-      {/* page header */}
       <div className="mb-5">
-        <div className="text-lg font-semibold text-foreground">Workflow Runs</div>
-        <div className="mt-0.5 text-[13px] text-muted-foreground">
-          Durable state tracking for agents and automated workflows
-        </div>
+        <div className="text-lg font-semibold text-foreground">{t("interactionExtra.workflows.title")}</div>
+        <div className="mt-0.5 text-[13px] text-muted-foreground">{t("interactionExtra.workflows.description")}</div>
       </div>
 
       <DataTable
@@ -520,8 +496,12 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
         columns={columns}
         getRowId={(run) => run.run_id}
         isLoading={loadingRuns}
-        loadingMessage="Loading workflow runs…"
-        noDataMessage={<div className="py-6 text-center text-[13px] text-muted-foreground">No workflow runs yet</div>}
+        loadingMessage={t("interactionExtra.workflows.loading")}
+        noDataMessage={
+          <div className="py-6 text-center text-[13px] text-muted-foreground">
+            {t("interactionExtra.workflows.empty")}
+          </div>
+        }
         paginationMode="client"
         pageSizeOptions={[50, 100]}
         filterMode="client"
@@ -537,7 +517,7 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
               table={table}
               searchValue={globalFilter}
               onSearchChange={setGlobalFilter}
-              searchPlaceholder="Search runs…"
+              searchPlaceholder={t("interactionExtra.workflows.search")}
               onRefresh={fetchRuns}
               isRefreshing={loadingRuns}
               onOpenFilters={() => setFiltersOpen(true)}
@@ -546,35 +526,35 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
               table={table}
               open={filtersOpen}
               onOpenChange={setFiltersOpen}
-              title="Filters"
-              description="Narrow down workflow runs"
+              title={t("interactionExtra.workflows.filters")}
+              description={t("interactionExtra.workflows.filtersDescription")}
             >
               {({ get, set }) => (
                 <>
-                  <DataTableFilterField label="Status">
+                  <DataTableFilterField label={t("interactionExtra.workflows.status")}>
                     <Select
-                      items={STATUS_LABELS}
+                      items={statusLabels}
                       value={(get("status") as string) || null}
                       onValueChange={(value: string | null) => set("status", value ?? "")}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All statuses" />
+                        <SelectValue placeholder={t("interactionExtra.workflows.allStatuses")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>All statuses</SelectItem>
+                        <SelectItem value={null}>{t("interactionExtra.workflows.allStatuses")}</SelectItem>
                         {RUN_STATUS_OPTIONS.map((status) => (
                           <SelectItem key={status} value={status}>
-                            {STATUS_LABELS[status]}
+                            {statusLabels[status]}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </DataTableFilterField>
-                  <DataTableFilterField label="Type">
+                  <DataTableFilterField label={t("interactionExtra.workflows.type")}>
                     <Input
                       value={(get("workflow_type") as string) ?? ""}
                       onChange={(event) => set("workflow_type", event.target.value)}
-                      placeholder="Filter by type…"
+                      placeholder={t("interactionExtra.workflows.filterType")}
                     />
                   </DataTableFilterField>
                 </>
@@ -584,7 +564,6 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
         )}
       />
 
-      {/* detail drawer */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent
           showCloseButton={false}
@@ -600,7 +579,6 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
             </div>
           ) : (
             <div className="px-7 py-6">
-              {/* drawer close + refresh */}
               <div className="mb-4 flex items-center justify-between">
                 <Button
                   variant="ghost"
@@ -617,10 +595,8 @@ const WorkflowRuns: React.FC<WorkflowRunsProps> = ({ accessToken }) => {
                 </Button>
               </div>
 
-              {/* metadata card — top */}
               <MetadataCard run={selectedRun} />
 
-              {/* collapsible sections */}
               <div className="divide-y overflow-hidden rounded-lg border">
                 <DetailSection
                   title="Timeline"

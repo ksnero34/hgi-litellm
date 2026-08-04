@@ -1,6 +1,7 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
+import type { TFunction } from "i18next";
 import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import { CredentialItem } from "@/components/networking";
@@ -42,15 +43,16 @@ function CredentialProviderCell({ provider }: { provider: string | undefined }) 
 
 interface CredentialRowActionsProps {
   credential: CredentialItem;
+  t: TFunction;
   onEdit: (credential: CredentialItem) => void;
   onDelete: (credential: CredentialItem) => void;
 }
 
-function CredentialRowActions({ credential, onEdit, onDelete }: CredentialRowActionsProps) {
+function CredentialRowActions({ credential, t, onEdit, onDelete }: CredentialRowActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Open credential actions"
+        aria-label={t("modelManagement.openCredentialActions")}
         data-testid={`credential-actions-${credential.credential_name}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -59,14 +61,14 @@ function CredentialRowActions({ credential, onEdit, onDelete }: CredentialRowAct
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem data-testid="credential-action-edit" onClick={() => onEdit(credential)}>
           <Pencil />
-          Edit
+          {t("modelManagement.edit")}
         </DropdownMenuItem>
         <DropdownMenuItem
           data-testid="credential-action-copy"
-          onClick={() => void copyToClipboard(credential.credential_name, "Credential name copied")}
+          onClick={() => void copyToClipboard(credential.credential_name, t("modelManagement.credentialNameCopied"))}
         >
           <Copy />
-          Copy credential name
+          {t("modelManagement.copyCredentialName")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -75,7 +77,7 @@ function CredentialRowActions({ credential, onEdit, onDelete }: CredentialRowAct
           onClick={() => onDelete(credential)}
         >
           <Trash2 />
-          Delete
+          {t("modelManagement.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -84,12 +86,14 @@ function CredentialRowActions({ credential, onEdit, onDelete }: CredentialRowAct
 
 interface CredentialsTableColumnsDeps {
   canModifyCredentials: boolean;
+  t: TFunction;
   onEdit: (credential: CredentialItem) => void;
   onDelete: (credential: CredentialItem) => void;
 }
 
 export const getCredentialsTableColumns = ({
   canModifyCredentials,
+  t,
   onEdit,
   onDelete,
 }: CredentialsTableColumnsDeps): ColumnDef<CredentialItem>[] => {
@@ -97,8 +101,8 @@ export const getCredentialsTableColumns = ({
     {
       id: "credential_name",
       accessorKey: "credential_name",
-      meta: { title: "Credential Name" },
-      header: ({ column }) => <DataTableSortHeader column={column} title="Credential Name" />,
+      meta: { title: t("modelManagement.credentialName") },
+      header: ({ column }) => <DataTableSortHeader column={column} title={t("modelManagement.credentialName")} />,
       size: 260,
       enableSorting: true,
       cell: ({ row }) => (
@@ -108,8 +112,8 @@ export const getCredentialsTableColumns = ({
     {
       id: "provider",
       accessorKey: "credential_info.custom_llm_provider",
-      meta: { title: "Provider" },
-      header: "Provider",
+      meta: { title: t("modelManagement.providerColumn") },
+      header: t("modelManagement.providerColumn"),
       size: 200,
       enableSorting: false,
       cell: ({ row }) => <CredentialProviderCell provider={row.original.credential_info?.custom_llm_provider} />,
@@ -125,13 +129,13 @@ export const getCredentialsTableColumns = ({
     {
       id: "actions",
       meta: { className: "text-right", headerClassName: "text-right" },
-      header: () => <span className="sr-only">Actions</span>,
+      header: () => <span className="sr-only">{t("modelManagement.actions")}</span>,
       size: 64,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <CredentialRowActions credential={row.original} onEdit={onEdit} onDelete={onDelete} />
+          <CredentialRowActions credential={row.original} t={t} onEdit={onEdit} onDelete={onDelete} />
         </div>
       ),
     },

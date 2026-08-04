@@ -13,6 +13,7 @@ import { useDebouncedCallback } from "@tanstack/react-pacer/debouncer";
 import { ColumnFiltersState, OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
 import { Info } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useModelsInfo } from "../../hooks/models/useModels";
 import { transformModelData } from "../utils/modelDataTransformer";
@@ -46,6 +47,7 @@ const AllModelsTab = ({
   setSelectedModelId,
   setSelectedTeamId,
 }: AllModelsTabProps) => {
+  const { t } = useTranslation();
   const { data: modelCostMapData, isLoading: isLoadingModelCostMap } = useModelCostMap();
   const { accessToken, userId, userRole } = useAuthorized();
   const { data: teams, isLoading: isLoadingTeams } = useTeams();
@@ -187,12 +189,12 @@ const AllModelsTab = ({
 
   const teamOptions = useMemo(
     () => [
-      { value: PERSONAL_TEAM_VALUE, label: "Personal" },
+      { value: PERSONAL_TEAM_VALUE, label: t("toolsModels.models.personal") },
       ...(teams ?? [])
         .filter((team) => team.team_id)
         .map((team) => ({ value: team.team_id, label: team.team_alias ? team.team_alias : team.team_id })),
     ],
-    [teams],
+    [t, teams],
   );
 
   const selectedTeam = useMemo(
@@ -210,7 +212,7 @@ const AllModelsTab = ({
     try {
       setDeleteLoading(true);
       await modelDeleteCall(accessToken, deleteModalModelId);
-      NotificationsManager.success("Model deleted successfully");
+      NotificationsManager.success(t("modelManagement.modelDeleted"));
       queryClient.invalidateQueries({ queryKey: ["models", "list"] });
       refetchModels();
     } catch (error) {
@@ -228,9 +230,7 @@ const AllModelsTab = ({
       try {
         setPausingModelId(modelId);
         await modelPatchUpdateCall(accessToken, { blocked }, modelId);
-        NotificationsManager.success(blocked ? "Model paused" : "Model resumed");
-        // invalidateQueries already schedules a refetch for active observers
-        // on this key — no need to also call refetchModels() (would double-fetch).
+        NotificationsManager.success(t(blocked ? "modelManagement.modelPaused" : "modelManagement.modelResumed"));
         queryClient.invalidateQueries({ queryKey: ["models", "list"] });
       } catch (error) {
         console.error("Error toggling model pause state:", error);
@@ -239,7 +239,7 @@ const AllModelsTab = ({
         setPausingModelId(null);
       }
     },
-    [accessToken, queryClient],
+    [accessToken, queryClient, t],
   );
 
   const handleRefresh = useCallback(() => {
@@ -318,28 +318,28 @@ const AllModelsTab = ({
 
       <DeleteResourceModal
         isOpen={!!deleteModalModelId}
-        title="Delete Model"
-        alertMessage="This action cannot be undone."
-        message="Are you sure you want to delete this model?"
-        resourceInformationTitle="Model Information"
+        title={t("modelManagement.deleteModel")}
+        alertMessage={t("modelManagement.cannotUndo")}
+        message={t("modelManagement.deleteModelConfirm")}
+        resourceInformationTitle={t("modelManagement.modelInformation")}
         resourceInformation={
           modelToDelete
             ? [
                 {
-                  label: "Model Name",
-                  value: modelToDelete.model_name || "Not Set",
+                  label: t("modelManagement.modelName"),
+                  value: modelToDelete.model_name || t("modelManagement.notSet"),
                 },
                 {
-                  label: "LiteLLM Model Name",
-                  value: modelToDelete.litellm_model_name || "Not Set",
+                  label: t("modelManagement.litellmModelName"),
+                  value: modelToDelete.litellm_model_name || t("modelManagement.notSet"),
                 },
                 {
-                  label: "Provider",
-                  value: modelToDelete.provider || "Not Set",
+                  label: t("modelManagement.provider").replace(":", ""),
+                  value: modelToDelete.provider || t("modelManagement.notSet"),
                 },
                 {
-                  label: "Created By",
-                  value: modelToDelete.model_info?.created_by || "Not Set",
+                  label: t("modelManagement.createdBy"),
+                  value: modelToDelete.model_info?.created_by || t("modelManagement.notSet"),
                 },
               ]
             : []

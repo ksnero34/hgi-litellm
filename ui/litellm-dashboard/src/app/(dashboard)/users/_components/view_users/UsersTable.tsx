@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { Users } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { UserInfo } from "@/components/networking";
 import {
@@ -49,21 +50,16 @@ interface UsersTableProps {
   onResetPassword: (userId: string) => void;
 }
 
-const FILTER_LABELS: Record<string, string> = {
-  user_id: "User ID",
-  sso_user_id: "SSO ID",
-  user_role: "Role",
-  team: "Team",
-};
-
 function EmptyState() {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-col items-center gap-1 py-6">
       <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-muted">
         <Users className="size-5 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">No users found</div>
-      <div className="text-sm text-muted-foreground">Try adjusting your search or filters.</div>
+      <div className="text-sm font-medium text-foreground">{t("identityAdmin.users.noUsers")}</div>
+      <div className="text-sm text-muted-foreground">{t("identityAdmin.users.emptyHelp")}</div>
     </div>
   );
 }
@@ -89,7 +85,17 @@ export function UsersTable({
   onDeleteUser,
   onResetPassword,
 }: UsersTableProps) {
+  const { t } = useTranslation();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterLabels = useMemo<Record<string, string>>(
+    () => ({
+      user_id: t("identityAdmin.users.userId"),
+      sso_user_id: t("identityAdmin.users.ssoId"),
+      user_role: t("identityAdmin.team.role"),
+      team: t("identityAdmin.createUser.team"),
+    }),
+    [t],
+  );
 
   const columns = useMemo(() => {
     const columnDeps = {
@@ -98,9 +104,10 @@ export function UsersTable({
       onUserClick,
       onDeleteUser,
       onResetPassword,
+      t,
     };
     return getUsersTableColumns(columnDeps);
-  }, [possibleUIRoles, selectionEnabled, onUserClick, onDeleteUser, onResetPassword]);
+  }, [possibleUIRoles, selectionEnabled, onUserClick, onDeleteUser, onResetPassword, t]);
 
   const roleOptions = useMemo(
     () =>
@@ -149,7 +156,7 @@ export function UsersTable({
       rowSelection={rowSelection}
       onRowSelectionChange={onRowSelectionChange}
       isLoading={isLoading}
-      loadingMessage="Loading users…"
+      loadingMessage={t("identityAdmin.users.loadingTable")}
       noDataMessage={<EmptyState />}
       size="compact"
       toolbar={(table) => (
@@ -158,52 +165,52 @@ export function UsersTable({
             table={table}
             searchValue={searchValue}
             onSearchChange={onSearchChange}
-            searchPlaceholder="Search by email…"
+            searchPlaceholder={t("identityAdmin.users.searchEmail")}
             onOpenFilters={() => setFiltersOpen(true)}
-            filterLabels={FILTER_LABELS}
+            filterLabels={filterLabels}
             formatFilterValue={formatFilterValue}
           />
           <DataTableFilterDrawer
             table={table}
             open={filtersOpen}
             onOpenChange={setFiltersOpen}
-            title="Filters"
-            description="Narrow down your users"
+            title={t("identityAdmin.users.filters")}
+            description={t("identityAdmin.users.filtersDescription")}
           >
             {({ get, set }) => (
               <>
-                <DataTableFilterField label="User ID">
+                <DataTableFilterField label={t("identityAdmin.users.userId")}>
                   <Input
                     value={(get("user_id") as string) ?? ""}
                     onChange={(event) => set("user_id", event.target.value)}
-                    placeholder="Enter user ID…"
+                    placeholder={t("identityAdmin.users.filterUserIdInput")}
                     data-testid="users-filter-user-id"
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label="SSO ID">
+                <DataTableFilterField label={t("identityAdmin.users.ssoId")}>
                   <Input
                     value={(get("sso_user_id") as string) ?? ""}
                     onChange={(event) => set("sso_user_id", event.target.value)}
-                    placeholder="Enter SSO ID…"
+                    placeholder={t("identityAdmin.users.filterSsoIdInput")}
                     data-testid="users-filter-sso-id"
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label="Role">
+                <DataTableFilterField label={t("identityAdmin.team.role")}>
                   <SearchSelect
                     options={roleOptions}
                     value={(get("user_role") as string) || undefined}
                     onValueChange={(value) => set("user_role", value)}
-                    placeholder="Select a role…"
-                    emptyText="No roles found"
+                    placeholder={t("identityAdmin.users.selectRolePlaceholder")}
+                    emptyText={t("identityAdmin.users.noRolesFound")}
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label="Team">
+                <DataTableFilterField label={t("identityAdmin.createUser.team")}>
                   <SearchSelect
                     options={teamOptions}
                     value={(get("team") as string) || undefined}
                     onValueChange={(value) => set("team", value)}
-                    placeholder="Select a team…"
-                    emptyText="No teams found"
+                    placeholder={t("identityAdmin.users.selectTeamPlaceholder")}
+                    emptyText={t("identityAdmin.users.noTeamsFound")}
                   />
                 </DataTableFilterField>
               </>

@@ -16,6 +16,7 @@ import {
   Typography,
 } from "antd";
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import BulkCreateUsers from "./bulk_create_users_button";
 import TeamDropdown from "./common_components/team_dropdown";
 import { getModelDisplayName } from "./key_team_helpers/fetch_available_models_team_key";
@@ -68,6 +69,7 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
   onUserCreated,
   isEmbedded = false,
 }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [uiSettings, setUISettings] = useState<UISettings | null>(null);
   const [form] = Form.useForm();
@@ -175,11 +177,11 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
         setIsInvitationLinkModalVisible(true);
       }
 
-      NotificationsManager.success("API user Created");
+      NotificationsManager.success(t("identityAdmin.createUser.apiUser"));
       form.resetFields();
       localStorage.removeItem("userData" + userID);
     } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || error?.message || "Error creating the user";
+      const errorMessage = error.response?.data?.detail || error?.message || t("identityAdmin.createUser.error");
       NotificationsManager.fromBackend(errorMessage);
       console.error("Error creating the user:", error);
     }
@@ -211,10 +213,10 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
           showIcon
           className="mb-4"
         />
-        <Form.Item label="User Email" name="user_email">
+        <Form.Item label={t("identityAdmin.createUser.email")} name="user_email">
           <TextInput placeholder="" />
         </Form.Item>
-        <Form.Item label="User Role" name="user_role">
+        <Form.Item label={t("identityAdmin.createUser.role")} name="user_role">
           <Select2>
             {possibleUIRoles &&
               Object.entries(possibleUIRoles).map(([role, { ui_label, description }]) => (
@@ -229,20 +231,24 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
               ))}
           </Select2>
         </Form.Item>
-        <Form.Item label="Team" name="team_id">
+        <Form.Item label={t("identityAdmin.createUser.team")} name="team_id">
           <TeamDropdown />
         </Form.Item>
 
-        <Form.Item label="Metadata" name="metadata">
-          <Input.TextArea rows={4} placeholder="Enter metadata as JSON" />
+        <Form.Item label={t("identityAdmin.createUser.metadata")} name="metadata">
+          <Input.TextArea rows={4} placeholder={t("identityAdmin.createUser.metadataPlaceholder")} />
         </Form.Item>
 
-        <Form.Item label="Send invitation email" name="send_invite_email" valuePropName="checked">
+        <Form.Item
+          label={t("identityAdmin.createUser.sendInvitation")}
+          name="send_invite_email"
+          valuePropName="checked"
+        >
           <Checkbox />
         </Form.Item>
 
         <div style={{ textAlign: "right", marginTop: "10px" }}>
-          <Button htmlType="submit">Create User</Button>
+          <Button htmlType="submit">{t("identityAdmin.createUser.create")}</Button>
         </div>
       </Form>
     );
@@ -256,7 +262,7 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
       </Button>
       <BulkCreateUsers accessToken={accessToken} teams={teams} possibleUIRoles={possibleUIRoles} />
       <Modal
-        title="Invite User"
+        title={t("identityAdmin.createUser.invite")}
         open={isModalVisible}
         width={800}
         footer={null}
@@ -264,7 +270,7 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
         onCancel={handleCancel}
       >
         <Space direction="vertical" size="middle">
-          <Text className="mb-1">Create a User who can own keys</Text>
+          <Text className="mb-1">{t("identityAdmin.createUser.description")}</Text>
           <Alert
             message="Email invitations"
             description={
@@ -289,7 +295,7 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
           labelAlign="left"
           initialValues={{ user_role: "internal_user_viewer", send_invite_email: true }}
         >
-          <Form.Item label="User Email" name="user_email">
+          <Form.Item label={t("identityAdmin.createUser.email")} name="user_email">
             <Input />
           </Form.Item>
           <Form.Item
@@ -318,7 +324,7 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
           </Form.Item>
 
           <Form.Item
-            label="Team"
+            label={t("identityAdmin.createUser.team")}
             className="gap-2"
             name="team_id"
             help="If selected, user will be added as a 'user' role to the team."
@@ -327,11 +333,15 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
           </Form.Item>
 
           <Form.Item
-            label="Organization"
+            label={t("identityAdmin.createUser.organization")}
             name="organization_ids"
             help="The user will be added to the selected organization(s)."
           >
-            <Select mode="multiple" placeholder="Select Organization" style={{ width: "100%" }}>
+            <Select
+              mode="multiple"
+              placeholder={t("identityAdmin.createUser.organizationPlaceholder")}
+              style={{ width: "100%" }}
+            >
               {organizations.map((org) => (
                 <Option key={org.organization_id} value={org.organization_id}>
                   {org.organization_alias} ({org.organization_id})
@@ -340,15 +350,19 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
             </Select>
           </Form.Item>
 
-          <Form.Item label="Metadata" name="metadata">
-            <Input.TextArea rows={4} placeholder="Enter metadata as JSON" />
+          <Form.Item label={t("identityAdmin.createUser.metadata")} name="metadata">
+            <Input.TextArea rows={4} placeholder={t("identityAdmin.createUser.metadataPlaceholder")} />
           </Form.Item>
-          <Form.Item label="Send invitation email" name="send_invite_email" valuePropName="checked">
+          <Form.Item
+            label={t("identityAdmin.createUser.sendInvitation")}
+            name="send_invite_email"
+            valuePropName="checked"
+          >
             <Checkbox />
           </Form.Item>
           <Accordion>
             <AccordionHeader>
-              <Text strong>Personal Key Creation</Text>
+              <Text strong>{t("identityAdmin.createUser.personalKeyCreation")}</Text>
             </AccordionHeader>
             <AccordionBody>
               <Form.Item
@@ -364,7 +378,11 @@ export const CreateUserButton: React.FC<CreateuserProps> = ({
                 name="models"
                 help="Models user has access to, outside of team scope."
               >
-                <Select2 mode="multiple" placeholder="Select models" style={{ width: "100%" }}>
+                <Select2
+                  mode="multiple"
+                  placeholder={t("identityAdmin.createUser.modelsPlaceholder")}
+                  style={{ width: "100%" }}
+                >
                   <Select2.Option key="all-proxy-models" value="all-proxy-models">
                     All Proxy Models
                   </Select2.Option>

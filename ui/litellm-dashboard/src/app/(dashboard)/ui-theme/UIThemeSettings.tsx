@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ interface UIThemeSettingsProps {
 }
 
 const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, accessToken }) => {
+  const { t } = useTranslation();
   const { logoUrl, setLogoUrl, faviconUrl, setFaviconUrl } = useTheme();
   const [logoUrlInput, setLogoUrlInput] = useState<string>("");
   const [faviconUrlInput, setFaviconUrlInput] = useState<string>("");
@@ -66,7 +68,7 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
         }),
       });
       if (response.ok) {
-        NotificationsManager.success("Theme settings updated successfully!");
+        NotificationsManager.success(t("operations.theme.updatedSuccess"));
         setLogoUrl(logoUrlInput || null);
         setFaviconUrl(faviconUrlInput || null);
       } else {
@@ -74,7 +76,7 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
       }
     } catch (error) {
       console.error("Error updating theme settings:", error);
-      NotificationsManager.fromBackend("Failed to update theme settings");
+      NotificationsManager.fromBackend(t("operations.theme.updateError"));
     } finally {
       setLoading(false);
     }
@@ -98,13 +100,13 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
         body: JSON.stringify({ logo_url: null, favicon_url: null }),
       });
       if (response.ok) {
-        NotificationsManager.success("Theme settings reset to default!");
+        NotificationsManager.success(t("operations.theme.resetSuccess"));
       } else {
         throw new Error("Failed to reset");
       }
     } catch (error) {
       console.error("Error resetting theme settings:", error);
-      NotificationsManager.fromBackend("Failed to reset theme settings");
+      NotificationsManager.fromBackend(t("operations.theme.resetError"));
     } finally {
       setLoading(false);
     }
@@ -117,16 +119,14 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
   return (
     <div className="w-full mx-auto max-w-4xl px-6 py-8">
       <div className="mb-8">
-        <h1 className="mb-2 text-2xl font-bold">UI Theme Customization</h1>
-        <p className="text-sm text-muted-foreground">
-          Customize your LiteLLM admin dashboard with a custom logo and favicon.
-        </p>
+        <h1 className="mb-2 text-2xl font-bold">{t("operations.theme.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("operations.theme.description")}</p>
       </div>
       <Card>
         <CardContent className="space-y-6">
           <div>
             <Label htmlFor="ui-theme-logo-url" className="mb-2">
-              Custom Logo URL
+              {t("operations.theme.logoUrl")}
             </Label>
             <Input
               id="ui-theme-logo-url"
@@ -137,13 +137,11 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
                 setLogoUrl(event.target.value || null);
               }}
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Enter a URL for your custom logo or leave empty for default
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("operations.theme.logoUrlHelp")}</p>
           </div>
           <div>
             <Label htmlFor="ui-theme-favicon-url" className="mb-2">
-              Custom Favicon URL
+              {t("operations.theme.faviconUrl")}
             </Label>
             <Input
               id="ui-theme-favicon-url"
@@ -154,18 +152,16 @@ const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, acc
                 setFaviconUrl(event.target.value || null);
               }}
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Enter a URL for your custom favicon (.ico, .png, or .svg) or leave empty for default
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("operations.theme.faviconUrlHelpWithFormats")}</p>
           </div>
           <div className="flex gap-3 pt-4">
             <Button onClick={handleSave} disabled={loading}>
               {loading && <UiLoadingSpinner className="size-4" />}
-              Save Changes
+              {t("operations.theme.save")}
             </Button>
             <Button variant="outline" onClick={handleReset} disabled={loading}>
               {loading && <UiLoadingSpinner className="size-4" />}
-              Reset to Default
+              {t("operations.theme.reset")}
             </Button>
           </div>
         </CardContent>

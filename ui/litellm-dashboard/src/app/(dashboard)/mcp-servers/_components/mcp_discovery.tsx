@@ -9,6 +9,7 @@ import { fetchDiscoverableMCPServers } from "@/components/networking";
 import { DiscoverableMCPServer, DiscoverMCPServersResponse } from "@/components/mcp_tools/types";
 import { mcpLogoImg } from "./create_mcp_server";
 import { resolveLogoSrc } from "@/lib/assetPaths";
+import { useTranslation } from "react-i18next";
 
 interface MCPDiscoveryProps {
   isVisible: boolean;
@@ -42,6 +43,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
   onCustomServer,
   accessToken,
 }) => {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<DiscoverableMCPServer[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
           setCategories(data.categories || []);
         })
         .catch((err: Error) => {
-          setError(err.message || "Failed to load MCP servers");
+          setError(err.message || t("toolsModels.mcp.discovery.loadError"));
         })
         .finally(() => {
           setLoading(false);
@@ -108,10 +110,10 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
           <div className="flex items-center justify-between border-b border-border pb-4">
             <div className="flex items-center space-x-3">
               <img src={resolveLogoSrc(mcpLogoImg)} alt="MCP Logo" className="mr-2 size-5 object-contain" />
-              <DialogTitle className="text-xl font-semibold">Add MCP Server</DialogTitle>
+              <DialogTitle className="text-xl font-semibold">{t("toolsModels.mcp.discovery.addServer")}</DialogTitle>
             </div>
             <Button variant="link" size="sm" className="mr-8" onClick={onCustomServer}>
-              + Custom Server
+              {t("toolsModels.mcp.discovery.customServer")}
             </Button>
           </div>
         </DialogHeader>
@@ -128,7 +130,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
                   variant={isSelected ? "default" : "outline"}
                   onClick={() => setSelectedCategory(cat)}
                 >
-                  {cat}
+                  {cat === "All" ? t("toolsModels.mcp.discovery.allCategories") : cat}
                 </Button>
               );
             })}
@@ -140,7 +142,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
               <Search className="size-4 text-muted-foreground" />
             </InputGroupAddon>
             <InputGroupInput
-              placeholder="Search servers..."
+              placeholder={t("toolsModels.mcp.discovery.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -157,16 +159,16 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
 
           {error && (
             <div className="py-8 text-center text-muted-foreground">
-              <p className="text-sm">Failed to load servers: {error}</p>
+              <p className="text-sm">{t("toolsModels.mcp.discovery.loadErrorWithDetail", { error })}</p>
             </div>
           )}
 
           {!loading && !error && filteredServers.length === 0 && (
             <div className="py-8 text-center text-muted-foreground">
               <p className="text-sm">
-                No servers found.{" "}
+                {t("toolsModels.mcp.discovery.noServers")}{" "}
                 <Button variant="link" size="sm" onClick={onCustomServer}>
-                  Add a custom server
+                  {t("toolsModels.mcp.discovery.addCustomServer")}
                 </Button>
               </p>
             </div>
@@ -178,7 +180,7 @@ const MCPDiscovery: React.FC<MCPDiscoveryProps> = ({
             Object.entries(groupedServers).map(([category, categoryServers]) => (
               <div key={category} className="mb-4">
                 <div className="mb-1 border-b border-border py-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                  {category}
+                  {category === "Other" ? t("toolsModels.mcp.discovery.otherCategory") : category}
                 </div>
                 <div className="grid grid-cols-2 gap-x-4">
                   {categoryServers.map((server) => {

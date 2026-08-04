@@ -13,7 +13,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { i18n } from "@/i18n/i18n";
 import { cn } from "@/lib/cva.config";
+import { useTranslation } from "react-i18next";
 
 interface OrganizationBudget {
   max_budget?: number | null;
@@ -25,11 +27,12 @@ const getOrganizationBudget = (organization: Organization): OrganizationBudget =
   (organization.litellm_budget_table ?? {}) as OrganizationBudget;
 
 function OrganizationLimitsCell({ organization }: { organization: Organization }) {
+  const { t } = useTranslation();
   const { tpm_limit, rpm_limit } = getOrganizationBudget(organization);
   return (
     <div className="flex flex-col text-xs text-muted-foreground">
-      <span>TPM: {tpm_limit ? tpm_limit : "Unlimited"}</span>
-      <span>RPM: {rpm_limit ? rpm_limit : "Unlimited"}</span>
+      <span>TPM: {tpm_limit ? tpm_limit : t("identityAdmin.common.unlimited")}</span>
+      <span>RPM: {rpm_limit ? rpm_limit : t("identityAdmin.common.unlimited")}</span>
     </div>
   );
 }
@@ -41,10 +44,11 @@ interface OrganizationRowActionsProps {
 }
 
 function OrganizationRowActions({ organization, onEditClick, onDeleteClick }: OrganizationRowActionsProps) {
+  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Open organization actions"
+        aria-label={t("identityAdmin.organization.openActions")}
         data-testid={`organization-actions-${organization.organization_id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -56,7 +60,7 @@ function OrganizationRowActions({ organization, onEditClick, onDeleteClick }: Or
           onClick={() => onEditClick(organization.organization_id)}
         >
           <Pencil />
-          Edit
+          {t("identityAdmin.organization.edit")}
         </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
@@ -64,11 +68,21 @@ function OrganizationRowActions({ organization, onEditClick, onDeleteClick }: Or
           onClick={() => onDeleteClick(organization.organization_id)}
         >
           <Trash2 />
-          Delete
+          {t("identityAdmin.organization.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+function MembersCell({ count }: { count: number }) {
+  const { t } = useTranslation();
+  return <span className="text-sm">{t("identityAdmin.organization.memberCount", { count })}</span>;
+}
+
+function ActionsHeader() {
+  const { t } = useTranslation();
+  return <span className="sr-only">{t("identityAdmin.organization.actions")}</span>;
 }
 
 export interface OrganizationsTableColumnsDeps {
@@ -88,7 +102,7 @@ export const getOrganizationsTableColumns = ({
     id: "organization_id",
     accessorKey: "organization_id",
     meta: { title: "Organization ID" },
-    header: ({ column }) => <DataTableSortHeader column={column} title="Organization ID" />,
+    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.id")} />,
     size: 220,
     enableSorting: true,
     cell: ({ row }) => (
@@ -104,7 +118,7 @@ export const getOrganizationsTableColumns = ({
     id: "organization_alias",
     accessorKey: "organization_alias",
     meta: { title: "Organization Name" },
-    header: ({ column }) => <DataTableSortHeader column={column} title="Organization Name" />,
+    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.name")} />,
     size: 200,
     enableSorting: true,
     cell: ({ row }) => {
@@ -121,7 +135,9 @@ export const getOrganizationsTableColumns = ({
     accessorKey: "created_at",
     sortingFn: "datetime",
     meta: { title: "Created" },
-    header: ({ column }) => <DataTableSortHeader column={column} title="Created" />,
+    header: ({ column }) => (
+      <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.createdColumn")} />
+    ),
     size: 130,
     enableSorting: true,
     cell: ({ row }) => <DateCell value={row.original.created_at} precision="date" />,
@@ -130,7 +146,7 @@ export const getOrganizationsTableColumns = ({
     id: "spend",
     accessorKey: "spend",
     meta: { title: "Spend (USD)" },
-    header: ({ column }) => <DataTableSortHeader column={column} title="Spend (USD)" />,
+    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.spend")} />,
     size: 120,
     enableSorting: true,
     cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={4} />,
@@ -138,17 +154,22 @@ export const getOrganizationsTableColumns = ({
   {
     id: "max_budget",
     meta: { title: "Budget (USD)" },
-    header: "Budget (USD)",
+    header: i18n.t("identityAdmin.organization.budget"),
     size: 120,
     enableSorting: false,
     cell: ({ row }) => (
-      <MoneyCell value={getOrganizationBudget(row.original).max_budget} decimals={2} emptyText="Unlimited" showZero />
+      <MoneyCell
+        value={getOrganizationBudget(row.original).max_budget}
+        decimals={2}
+        emptyText={i18n.t("identityAdmin.common.unlimited")}
+        showZero
+      />
     ),
   },
   {
     id: "models",
     meta: { title: "Models", skeleton: "chips" },
-    header: "Models",
+    header: i18n.t("identityAdmin.organization.models"),
     size: 260,
     enableSorting: false,
     cell: ({ row }) => <ModelsCell models={row.original.models} />,
@@ -156,7 +177,7 @@ export const getOrganizationsTableColumns = ({
   {
     id: "limits",
     meta: { title: "TPM / RPM Limits" },
-    header: "TPM / RPM Limits",
+    header: i18n.t("identityAdmin.organization.limits"),
     size: 150,
     enableSorting: false,
     cell: ({ row }) => <OrganizationLimitsCell organization={row.original} />,
@@ -164,15 +185,15 @@ export const getOrganizationsTableColumns = ({
   {
     id: "members",
     meta: { title: "Members" },
-    header: "Members",
+    header: i18n.t("identityAdmin.organization.members"),
     size: 100,
     enableSorting: false,
-    cell: ({ row }) => <span className="text-sm">{row.original.members?.length ?? 0} Members</span>,
+    cell: ({ row }) => <MembersCell count={row.original.members?.length ?? 0} />,
   },
   {
     id: "actions",
     meta: { className: "text-right", headerClassName: "text-right" },
-    header: () => <span className="sr-only">Actions</span>,
+    header: () => <ActionsHeader />,
     size: 64,
     enableSorting: false,
     enableHiding: false,

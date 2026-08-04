@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeftOutlined, CopyOutlined, CheckOutlined, LinkOutlined } from "@ant-design/icons";
 import { formatInstallCommand } from "./helpers";
 import { Plugin } from "./types";
@@ -12,6 +13,7 @@ interface SkillDetailProps {
 }
 
 const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("overview");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -32,17 +34,19 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
   const installCommand = formatInstallCommand(skill);
 
   const detailRows = [
-    ...(skill.category ? [{ property: "Category", value: skill.category }] : []),
-    ...(skill.domain ? [{ property: "Domain", value: skill.domain }] : []),
-    ...(skill.namespace ? [{ property: "Namespace", value: skill.namespace }] : []),
-    ...(skill.version ? [{ property: "Version", value: skill.version }] : []),
-    ...(skill.author?.name ? [{ property: "Author", value: skill.author.name }] : []),
-    ...(skill.created_at ? [{ property: "Added", value: new Date(skill.created_at).toLocaleDateString() }] : []),
+    ...(skill.category ? [{ property: t("hubSkills.common.category"), value: skill.category }] : []),
+    ...(skill.domain ? [{ property: t("hubSkills.common.domain"), value: skill.domain }] : []),
+    ...(skill.namespace ? [{ property: t("hubSkills.detail.namespace"), value: skill.namespace }] : []),
+    ...(skill.version ? [{ property: t("hubSkills.common.version"), value: skill.version }] : []),
+    ...(skill.author?.name ? [{ property: t("hubSkills.detail.author"), value: skill.author.name }] : []),
+    ...(skill.created_at
+      ? [{ property: t("hubSkills.detail.added"), value: new Date(skill.created_at).toLocaleDateString() }]
+      : []),
   ];
 
   const tabs = [
-    { key: "overview", label: "Overview" },
-    { key: "usage", label: "How to Use" },
+    { key: "overview", label: t("hubSkills.detail.overview") },
+    { key: "usage", label: t("hubSkills.detail.howToUse") },
   ];
 
   return (
@@ -61,7 +65,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
         }}
       >
         <ArrowLeftOutlined style={{ fontSize: 11 }} />
-        <span>Skills</span>
+        <span>{t("hubSkills.detail.back")}</span>
       </div>
 
       {/* Header */}
@@ -100,13 +104,15 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
         <div style={{ display: "flex", gap: 64 }}>
           {/* Left column */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 400, color: "#202124", margin: "0 0 4px 0" }}>Skill Details</h2>
-            <p style={{ fontSize: 13, color: "#5f6368", margin: "0 0 16px 0" }}>Metadata registered with this skill</p>
+            <h2 style={{ fontSize: 18, fontWeight: 400, color: "#202124", margin: "0 0 4px 0" }}>
+              {t("hubSkills.detail.title")}
+            </h2>
+            <p style={{ fontSize: 13, color: "#5f6368", margin: "0 0 16px 0" }}>{t("hubSkills.detail.subtitle")}</p>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #dadce0" }}>
                   <th style={{ textAlign: "left", padding: "12px 0", color: "#5f6368", fontWeight: 500, width: 160 }}>
-                    Property
+                    {t("hubSkills.detail.property")}
                   </th>
                   <th style={{ textAlign: "left", padding: "12px 0", color: "#5f6368", fontWeight: 500 }}>
                     {skill.name}
@@ -127,7 +133,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
           {/* Right sidebar */}
           <div style={{ width: 240, flexShrink: 0 }}>
             <div style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>Status</div>
+              <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>{t("hubSkills.common.status")}</div>
               <span
                 style={{
                   fontSize: 12,
@@ -138,13 +144,13 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
                   fontWeight: 500,
                 }}
               >
-                {skill.enabled ? "Public" : "Draft"}
+                {skill.enabled ? t("hubSkills.common.public") : t("hubSkills.common.draft")}
               </span>
             </div>
 
             {sourceUrl && (
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>Source</div>
+                <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>{t("hubSkills.common.source")}</div>
                 <a
                   href={sourceUrl}
                   target="_blank"
@@ -166,7 +172,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
 
             {skill.keywords && skill.keywords.length > 0 && (
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 8 }}>Tags</div>
+                <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 8 }}>{t("hubSkills.detail.tags")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {skill.keywords.map((kw) => (
                     <span
@@ -188,7 +194,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
             )}
 
             <div>
-              <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>Skill ID</div>
+              <div style={{ fontSize: 12, color: "#5f6368", marginBottom: 4 }}>{t("hubSkills.detail.skillId")}</div>
               <div style={{ fontSize: 12, fontFamily: "monospace", color: "#3c4043", wordBreak: "break-all" }}>
                 {skill.id}
               </div>
@@ -200,7 +206,9 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
       {/* How to Use tab */}
       {activeTab === "usage" && (
         <div style={{ maxWidth: 640 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 400, color: "#202124", margin: "0 0 8px 0" }}>Using this skill</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 400, color: "#202124", margin: "0 0 8px 0" }}>
+            {t("hubSkills.detail.using")}
+          </h2>
           <p style={{ fontSize: 14, color: "#5f6368", margin: "0 0 24px 0", lineHeight: 1.6 }}>
             Once your proxy is set as a marketplace, enable this skill in Claude Code with one command:
           </p>
@@ -224,7 +232,9 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
                 borderBottom: "1px solid #dadce0",
               }}
             >
-              <span style={{ fontSize: 13, color: "#3c4043", fontWeight: 500 }}>Run in Claude Code</span>
+              <span style={{ fontSize: 13, color: "#3c4043", fontWeight: 500 }}>
+                {t("hubSkills.detail.runClaudeCode")}
+              </span>
               <button
                 onClick={() => copyToClipboard(installCommand, "install")}
                 style={{
@@ -240,7 +250,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
                 }}
               >
                 {copiedKey === "install" ? <CheckOutlined /> : <CopyOutlined />}
-                {copiedKey === "install" ? "Copied" : "Copy"}
+                {copiedKey === "install" ? t("hubSkills.common.copied") : t("hubSkills.common.copy")}
               </button>
             </div>
             <pre
@@ -326,7 +336,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({ skill, onBack }) => {
                 }}
               >
                 {copiedKey === "settings" ? <CheckOutlined /> : <CopyOutlined />}
-                {copiedKey === "settings" ? "Copied" : "Copy"}
+                {copiedKey === "settings" ? t("hubSkills.common.copied") : t("hubSkills.common.copy")}
               </button>
             </div>
             <pre
