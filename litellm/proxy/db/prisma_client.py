@@ -12,7 +12,10 @@ import urllib
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable, Protocol, Union
+from typing import TYPE_CHECKING, Any, Callable, Protocol, Union, cast
+
+if TYPE_CHECKING:
+    from prisma import Prisma
 
 from litellm._logging import verbose_proxy_logger
 from litellm.secret_managers.main import str_to_bool
@@ -239,6 +242,10 @@ class PrismaWrapper:
         self._expected_engine_deaths: set[int] = set()
         self._engine_generation: int = 0
         self.on_engine_replaced: Callable[[], None] | None = None
+
+    @property
+    def original_prisma(self) -> "Prisma":
+        return cast("Prisma", self._original_prisma)
 
     @staticmethod
     def _read_engine(prisma_client: _PrismaClient) -> _PrismaEngine:
@@ -835,15 +842,14 @@ class PrismaManager:
         return dname
 
     @staticmethod
-    def setup_database(use_migrate: bool = False, use_v2_resolver: bool = False) -> bool:
+    def setup_database(use_migrate: bool = False, use_v2_resolver: bool = True) -> bool:
         """
         Set up the database using either prisma migrate or prisma db push
 
         Args:
             use_migrate: Use `prisma migrate deploy` instead of `db push`.
-            use_v2_resolver: Opt into the v2 migration resolver that avoids
-                the diff-and-force recovery behavior (which caused schema
-                thrashing during rolling deploys). Defaults to False.
+            use_v2_resolver: Use the v2 migration resolver that avoids
+                diff-and-force recovery behavior. Defaults to True.
 
         Returns:
             bool: True if setup was successful, False otherwise

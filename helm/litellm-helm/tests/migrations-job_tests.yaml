@@ -104,6 +104,11 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
+            name: PRISMA_SKIP_GENERATE
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
             name: DATABASE_HOST
             value: "test-db"
       - contains:
