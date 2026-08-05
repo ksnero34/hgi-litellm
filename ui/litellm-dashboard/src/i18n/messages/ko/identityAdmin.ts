@@ -329,9 +329,6 @@ export const identityAdminMessages: MessageCatalog = {
     "조직 내에서 자신을 위한 키를 조회하고 생성할 수 있습니다.",
   "identityAdmin.organization.role.internalUserViewer": "내부 사용자 뷰어",
   "identityAdmin.organization.role.internalUserViewerDescription": "조직 내에서 자신의 키를 조회만 할 수 있습니다.",
-  "identityAdmin.organization.enterpriseFeature":
-    "이 기능은 LiteLLM Enterprise 전용이며 사용하려면 유효한 키가 필요합니다. 체험 키는",
-  "identityAdmin.organization.here": "여기",
   "identityAdmin.organization.form.maxBudget": "최대 예산 (USD)",
   "identityAdmin.organization.form.resetBudget": "예산 초기화",
   "identityAdmin.organization.form.tpmLimit": "분당 토큰 제한 (TPM)",

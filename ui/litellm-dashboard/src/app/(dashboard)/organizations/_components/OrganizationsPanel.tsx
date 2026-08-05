@@ -9,6 +9,7 @@ import { organizationDeleteCall } from "@/components/networking";
 import { OrgCreateDialog } from "@/components/organization/org-create/OrgCreateDialog";
 import OrganizationInfoView from "@/components/organization/organization_view";
 import { Button } from "@/components/ui/button";
+import { isAdminRole, isProxyAdminRole } from "@/utils/roles";
 import { useTranslation } from "react-i18next";
 
 import OrganizationsTable from "./OrganizationsTable";
@@ -16,10 +17,9 @@ import OrganizationsTable from "./OrganizationsTable";
 interface OrganizationsPanelProps {
   userRole: string;
   accessToken: string | null;
-  premiumUser: boolean;
 }
 
-const OrganizationsPanel: React.FC<OrganizationsPanelProps> = ({ userRole, accessToken, premiumUser }) => {
+const OrganizationsPanel: React.FC<OrganizationsPanelProps> = ({ userRole, accessToken }) => {
   const { t } = useTranslation();
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [editOrg, setEditOrg] = useState(false);
@@ -38,6 +38,9 @@ const OrganizationsPanel: React.FC<OrganizationsPanelProps> = ({ userRole, acces
   const { data: userModels = [] } = useUserModels();
 
   const searchActive = Boolean(filters.org_id || filters.org_alias);
+  const isProxyAdmin = isProxyAdminRole(userRole);
+  const isOrgAdmin = userRole === "Org Admin" || userRole === "org_admin";
+  const canViewOrganizationDetails = isAdminRole(userRole) || userRole === "Org Admin";
 
   const refetchOrganizations = () => queryClient.invalidateQueries({ queryKey: organizationKeys.lists() });
 
@@ -79,27 +82,9 @@ const OrganizationsPanel: React.FC<OrganizationsPanelProps> = ({ userRole, acces
     setOrgToDelete(null);
   };
 
-  if (!premiumUser) {
-    return (
-      <div className="mx-4 mt-4">
-        <p className="text-sm text-muted-foreground">
-          {t("identityAdmin.organization.enterpriseFeature")}{" "}
-          <a
-            href="https://www.litellm.ai/#pricing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            {t("identityAdmin.organization.here")}
-          </a>
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-4 mt-4 flex flex-col gap-4">
-      {(userRole === "Admin" || userRole === "Org Admin") && (
+      {isProxyAdmin && (
         <Button className="w-fit" onClick={() => setIsOrgModalVisible(true)}>
           + {t("identityAdmin.organization.createNew")}
         </Button>
@@ -113,14 +98,16 @@ const OrganizationsPanel: React.FC<OrganizationsPanelProps> = ({ userRole, acces
             setEditOrg(false);
           }}
           accessToken={accessToken}
-          is_org_admin={true}
-          is_proxy_admin={userRole === "Admin"}
+          is_org_admin={isOrgAdmin}
+          is_proxy_admin={isProxyAdmin}
           userModels={userModels}
           editOrg={editOrg}
         />
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">{t("identityAdmin.organization.clickId")}</p>
+          {canViewOrganizationDetails && (
+            <p className="text-sm text-muted-foreground">{t("identityAdmin.organization.clickId")}</p>
+          )}
           <OrganizationFilters
             filters={filters}
             showFilters={showFilters}

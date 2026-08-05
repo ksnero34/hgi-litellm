@@ -331,9 +331,6 @@ export const identityAdminMessages: MessageCatalog = {
     "Can view and create keys for themselves within the organization.",
   "identityAdmin.organization.role.internalUserViewer": "Internal User Viewer",
   "identityAdmin.organization.role.internalUserViewerDescription": "Can only view their keys within the organization.",
-  "identityAdmin.organization.enterpriseFeature":
-    "This is a LiteLLM Enterprise feature and requires a valid key to use. Get a trial key",
-  "identityAdmin.organization.here": "here",
   "identityAdmin.organization.form.maxBudget": "Max Budget (USD)",
   "identityAdmin.organization.form.resetBudget": "Reset Budget",
   "identityAdmin.organization.form.tpmLimit": "Tokens per minute Limit (TPM)",

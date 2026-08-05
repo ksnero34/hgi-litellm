@@ -69,6 +69,39 @@ describe("OrganizationsTable", () => {
     expect(onOrganizationClick).toHaveBeenCalledWith("org-123");
   });
 
+  it("keeps organization details read-only and non-clickable for ordinary members", async () => {
+    const user = userEvent.setup();
+    const onOrganizationClick = vi.fn();
+    render(
+      <OrganizationsTable
+        {...baseProps}
+        userRole="Internal User"
+        onOrganizationClick={onOrganizationClick}
+        organizations={[makeOrganization({ organization_id: "org-member" })]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /org-member/ })).not.toBeInTheDocument();
+    await user.click(screen.getByText("org-member"));
+    expect(onOrganizationClick).not.toHaveBeenCalled();
+  });
+
+  it("opens organization details for an org admin", async () => {
+    const user = userEvent.setup();
+    const onOrganizationClick = vi.fn();
+    render(
+      <OrganizationsTable
+        {...baseProps}
+        userRole="org_admin"
+        onOrganizationClick={onOrganizationClick}
+        organizations={[makeOrganization({ organization_id: "org-admin" })]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /org-admin/ }));
+    expect(onOrganizationClick).toHaveBeenCalledWith("org-admin");
+  });
+
   it("edits and deletes an organization through the ⋯ actions menu (admin)", async () => {
     const user = userEvent.setup();
     const onEditClick = vi.fn();
@@ -102,6 +135,18 @@ describe("OrganizationsTable", () => {
     );
 
     expect(screen.queryByTestId("organization-actions-org-9")).not.toBeInTheDocument();
+  });
+
+  it("shows the row actions menu for the proxy_admin role alias", () => {
+    render(
+      <OrganizationsTable
+        {...baseProps}
+        userRole="proxy_admin"
+        organizations={[makeOrganization({ organization_id: "org-proxy-admin" })]}
+      />,
+    );
+
+    expect(screen.getByTestId("organization-actions-org-proxy-admin")).toBeInTheDocument();
   });
 
   it("sorts by created_at descending by default", () => {

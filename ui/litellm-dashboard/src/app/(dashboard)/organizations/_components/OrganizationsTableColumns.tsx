@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { i18n } from "@/i18n/i18n";
 import { cn } from "@/lib/cva.config";
+import { isAdminRole, isProxyAdminRole } from "@/utils/roles";
 import { useTranslation } from "react-i18next";
 
 interface OrganizationBudget {
@@ -97,111 +98,122 @@ export const getOrganizationsTableColumns = ({
   onOrganizationClick,
   onEditClick,
   onDeleteClick,
-}: OrganizationsTableColumnsDeps): ColumnDef<Organization>[] => [
-  {
-    id: "organization_id",
-    accessorKey: "organization_id",
-    meta: { title: "Organization ID" },
-    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.id")} />,
-    size: 220,
-    enableSorting: true,
-    cell: ({ row }) => (
-      <IdentityCell
-        title={row.original.organization_id}
-        titleClassName="font-mono text-xs font-normal"
-        className="max-w-56"
-        onClick={() => onOrganizationClick(row.original.organization_id)}
-      />
-    ),
-  },
-  {
-    id: "organization_alias",
-    accessorKey: "organization_alias",
-    meta: { title: "Organization Name" },
-    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.name")} />,
-    size: 200,
-    enableSorting: true,
-    cell: ({ row }) => {
-      const alias = row.original.organization_alias;
-      return (
-        <span className="block max-w-56 truncate text-sm font-medium" title={alias ?? undefined}>
-          {alias || "-"}
-        </span>
-      );
+}: OrganizationsTableColumnsDeps): ColumnDef<Organization>[] => {
+  const canViewOrganizationDetails = isAdminRole(userRole) || userRole === "Org Admin";
+  const canManageOrganization = isProxyAdminRole(userRole);
+
+  return [
+    {
+      id: "organization_id",
+      accessorKey: "organization_id",
+      meta: { title: "Organization ID" },
+      header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.id")} />,
+      size: 220,
+      enableSorting: true,
+      cell: ({ row }) => (
+        <IdentityCell
+          title={row.original.organization_id}
+          titleClassName="font-mono text-xs font-normal"
+          className="max-w-56"
+          onClick={canViewOrganizationDetails ? () => onOrganizationClick(row.original.organization_id) : undefined}
+        />
+      ),
     },
-  },
-  {
-    id: "created_at",
-    accessorKey: "created_at",
-    sortingFn: "datetime",
-    meta: { title: "Created" },
-    header: ({ column }) => (
-      <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.createdColumn")} />
-    ),
-    size: 130,
-    enableSorting: true,
-    cell: ({ row }) => <DateCell value={row.original.created_at} precision="date" />,
-  },
-  {
-    id: "spend",
-    accessorKey: "spend",
-    meta: { title: "Spend (USD)" },
-    header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.spend")} />,
-    size: 120,
-    enableSorting: true,
-    cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={4} />,
-  },
-  {
-    id: "max_budget",
-    meta: { title: "Budget (USD)" },
-    header: i18n.t("identityAdmin.organization.budget"),
-    size: 120,
-    enableSorting: false,
-    cell: ({ row }) => (
-      <MoneyCell
-        value={getOrganizationBudget(row.original).max_budget}
-        decimals={2}
-        emptyText={i18n.t("identityAdmin.common.unlimited")}
-        showZero
-      />
-    ),
-  },
-  {
-    id: "models",
-    meta: { title: "Models", skeleton: "chips" },
-    header: i18n.t("identityAdmin.organization.models"),
-    size: 260,
-    enableSorting: false,
-    cell: ({ row }) => <ModelsCell models={row.original.models} />,
-  },
-  {
-    id: "limits",
-    meta: { title: "TPM / RPM Limits" },
-    header: i18n.t("identityAdmin.organization.limits"),
-    size: 150,
-    enableSorting: false,
-    cell: ({ row }) => <OrganizationLimitsCell organization={row.original} />,
-  },
-  {
-    id: "members",
-    meta: { title: "Members" },
-    header: i18n.t("identityAdmin.organization.members"),
-    size: 100,
-    enableSorting: false,
-    cell: ({ row }) => <MembersCell count={row.original.members?.length ?? 0} />,
-  },
-  {
-    id: "actions",
-    meta: { className: "text-right", headerClassName: "text-right" },
-    header: () => <ActionsHeader />,
-    size: 64,
-    enableSorting: false,
-    enableHiding: false,
-    cell: ({ row }) =>
-      userRole === "Admin" ? (
-        <div className="flex justify-end">
-          <OrganizationRowActions organization={row.original} onEditClick={onEditClick} onDeleteClick={onDeleteClick} />
-        </div>
-      ) : null,
-  },
-];
+    {
+      id: "organization_alias",
+      accessorKey: "organization_alias",
+      meta: { title: "Organization Name" },
+      header: ({ column }) => <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.name")} />,
+      size: 200,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const alias = row.original.organization_alias;
+        return (
+          <span className="block max-w-56 truncate text-sm font-medium" title={alias ?? undefined}>
+            {alias || "-"}
+          </span>
+        );
+      },
+    },
+    {
+      id: "created_at",
+      accessorKey: "created_at",
+      sortingFn: "datetime",
+      meta: { title: "Created" },
+      header: ({ column }) => (
+        <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.createdColumn")} />
+      ),
+      size: 130,
+      enableSorting: true,
+      cell: ({ row }) => <DateCell value={row.original.created_at} precision="date" />,
+    },
+    {
+      id: "spend",
+      accessorKey: "spend",
+      meta: { title: "Spend (USD)" },
+      header: ({ column }) => (
+        <DataTableSortHeader column={column} title={i18n.t("identityAdmin.organization.spend")} />
+      ),
+      size: 120,
+      enableSorting: true,
+      cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={4} />,
+    },
+    {
+      id: "max_budget",
+      meta: { title: "Budget (USD)" },
+      header: i18n.t("identityAdmin.organization.budget"),
+      size: 120,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <MoneyCell
+          value={getOrganizationBudget(row.original).max_budget}
+          decimals={2}
+          emptyText={i18n.t("identityAdmin.common.unlimited")}
+          showZero
+        />
+      ),
+    },
+    {
+      id: "models",
+      meta: { title: "Models", skeleton: "chips" },
+      header: i18n.t("identityAdmin.organization.models"),
+      size: 260,
+      enableSorting: false,
+      cell: ({ row }) => <ModelsCell models={row.original.models} />,
+    },
+    {
+      id: "limits",
+      meta: { title: "TPM / RPM Limits" },
+      header: i18n.t("identityAdmin.organization.limits"),
+      size: 150,
+      enableSorting: false,
+      cell: ({ row }) => <OrganizationLimitsCell organization={row.original} />,
+    },
+    {
+      id: "members",
+      meta: { title: "Members" },
+      header: i18n.t("identityAdmin.organization.members"),
+      size: 100,
+      enableSorting: false,
+      cell: ({ row }) => <MembersCell count={row.original.members?.length ?? 0} />,
+    },
+    {
+      id: "actions",
+      meta: { className: "text-right", headerClassName: "text-right" },
+      header: () => <ActionsHeader />,
+      size: 64,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) =>
+        canManageOrganization ? (
+          <div className="flex justify-end">
+            <OrganizationRowActions
+              organization={row.original}
+              onEditClick={onEditClick}
+              onDeleteClick={onDeleteClick}
+            />
+          </div>
+        ) : null,
+    },
+  ];
+};

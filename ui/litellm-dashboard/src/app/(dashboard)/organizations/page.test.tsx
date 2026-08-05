@@ -6,19 +6,13 @@ vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({
   default: () => ({
     accessToken: "sk-test",
     userRole: "Admin",
-    premiumUser: true,
   }),
 }));
 
 vi.mock("./_components/OrganizationsPanel", () => ({
   __esModule: true,
-  default: (props: { accessToken: string; userRole: string; premiumUser: boolean }) => (
-    <div
-      data-testid="organizations-panel"
-      data-access-token={props.accessToken}
-      data-premium-user={String(props.premiumUser)}
-      data-user-role={props.userRole}
-    />
+  default: (props: { accessToken: string; userRole: string }) => (
+    <div data-testid="organizations-panel" data-access-token={props.accessToken} data-user-role={props.userRole} />
   ),
 }));
 
@@ -30,6 +24,5 @@ describe("OrganizationsPage", () => {
 
     expect(screen.getByTestId("organizations-panel")).toHaveAttribute("data-access-token", "sk-test");
     expect(screen.getByTestId("organizations-panel")).toHaveAttribute("data-user-role", "Admin");
-    expect(screen.getByTestId("organizations-panel")).toHaveAttribute("data-premium-user", "true");
   });
 });
