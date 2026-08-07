@@ -13,10 +13,11 @@ import copy
 import json
 import re
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -33,6 +34,7 @@ from typing import (
 from uuid import uuid4
 
 import aiohttp
+from pydantic import BaseModel
 
 import litellm
 from litellm import get_secret
@@ -86,6 +88,9 @@ class _PresidioServiceError(Exception):
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     _PII_TOKEN_PATTERN = re.compile(r"<[A-Z][A-Z0-9_]*_[0-9]+>")
     _RESTORABLE_INPUT_SCOPES = frozenset({"conversation_history", "current_user_prompt", "current_user_context"})
+    _LOGGING_TEXT_FIELDS = frozenset(
+        ("arguments", "content", "output_text", "reasoning_content", "refusal", "summary", "text")
+    )
     user_api_key_cache = None
     ad_hoc_recognizers = None
 
@@ -325,6 +330,205 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             ),
             None,
         )
+
+    def _blocked_entity_type(
+        self,
+        analyze_results: Union[Sequence[PresidioAnalyzeResponseItem], Mapping[str, object]],
+    ) -> Optional[str]:
+        if not isinstance(analyze_results, list):
+            return None
+        for result in analyze_results:
+            entity_type = result.get("entity_type")
+            if entity_type is None:
+                continue
+            configured_entity_type = self._resolve_configured_entity_type(
+                entity_type,
+                self.pii_entities_config.keys(),
+            )
+            if (
+                configured_entity_type is not None
+                and self.pii_entities_config[configured_entity_type] == PiiAction.BLOCK
+            ):
+                return self._entity_type_value(entity_type)
+        return None
+
+    @classmethod
+    def _mask_detected_entities_for_logging(
+        cls,
+        text: str,
+        analyze_results: Union[Sequence[PresidioAnalyzeResponseItem], Mapping[str, object]],
+    ) -> Tuple[str, Tuple[str, ...]]:
+        if not isinstance(analyze_results, list):
+            return "[REDACTED BY PRESIDIO]", ()
+        spans = tuple(
+            span for result in analyze_results if (span := cls._logging_redaction_span(text, result)) is not None
+        )
+        if not spans:
+            return "[REDACTED BY PRESIDIO]", ()
+        merged_spans = reduce(cls._merge_redaction_span, sorted(spans), ())
+        masked_text = text
+        for start, end, entity_name in reversed(merged_spans):
+            masked_text = f"{masked_text[:start]}<{entity_name}>{masked_text[end:]}"
+        return masked_text, tuple(entity_name for _, _, entity_name in spans)
+
+    @classmethod
+    def _logging_redaction_span(
+        cls,
+        text: str,
+        result: PresidioAnalyzeResponseItem,
+    ) -> Optional[Tuple[int, int, str]]:
+        start = result.get("start")
+        end = result.get("end")
+        entity_type = result.get("entity_type")
+        if not isinstance(start, int) or not isinstance(end, int) or entity_type is None:
+            return None
+        if start < 0 or end <= start or end > len(text):
+            return None
+        return start, end, cls._entity_type_value(entity_type)
+
+    @staticmethod
+    def _merge_redaction_span(
+        merged_spans: Tuple[Tuple[int, int, str], ...],
+        span: Tuple[int, int, str],
+    ) -> Tuple[Tuple[int, int, str], ...]:
+        if not merged_spans or span[0] >= merged_spans[-1][1]:
+            return (*merged_spans, span)
+        previous_start, previous_end, previous_entity = merged_spans[-1]
+        return (*merged_spans[:-1], (previous_start, max(previous_end, span[1]), previous_entity))
+
+    @classmethod
+    def _replace_sensitive_text(cls, value: object, sensitive_text: str, masked_text: str) -> object:
+        if isinstance(value, str):
+            return value.replace(sensitive_text, masked_text)
+        if isinstance(value, dict):
+            for key, nested_value in tuple(value.items()):
+                if key == "litellm_logging_obj":
+                    continue
+                value[key] = cls._replace_sensitive_text(nested_value, sensitive_text, masked_text)
+            return value
+        if isinstance(value, list):
+            for index, nested_value in enumerate(value):
+                value[index] = cls._replace_sensitive_text(nested_value, sensitive_text, masked_text)
+            return value
+        if isinstance(value, tuple):
+            return tuple(cls._replace_sensitive_text(item, sensitive_text, masked_text) for item in value)
+        if isinstance(value, BaseModel):
+            for field_name in type(value).model_fields:
+                nested_value = getattr(value, field_name, None)
+                setattr(value, field_name, cls._replace_sensitive_text(nested_value, sensitive_text, masked_text))
+        return value
+
+    @classmethod
+    def _contains_sensitive_text(cls, value: object, sensitive_text: str) -> bool:
+        if isinstance(value, str):
+            return sensitive_text in value
+        if isinstance(value, dict):
+            return any(cls._contains_sensitive_text(item, sensitive_text) for item in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(cls._contains_sensitive_text(item, sensitive_text) for item in value)
+        if isinstance(value, BaseModel):
+            return any(
+                cls._contains_sensitive_text(getattr(value, field_name, None), sensitive_text)
+                for field_name in type(value).model_fields
+            )
+        return False
+
+    @classmethod
+    def _redact_response_text_fields(cls, value: object, field_name: Optional[str] = None) -> object:
+        if isinstance(value, str):
+            return "[REDACTED BY PRESIDIO]" if field_name in cls._LOGGING_TEXT_FIELDS else value
+        if isinstance(value, dict):
+            for key, nested_value in tuple(value.items()):
+                value[key] = cls._redact_response_text_fields(nested_value, str(key))
+            return value
+        if isinstance(value, list):
+            for index, nested_value in enumerate(value):
+                value[index] = cls._redact_response_text_fields(nested_value, field_name)
+            return value
+        if isinstance(value, tuple):
+            return tuple(cls._redact_response_text_fields(item, field_name) for item in value)
+        if isinstance(value, BaseModel):
+            for model_field_name in type(value).model_fields:
+                nested_value = getattr(value, model_field_name, None)
+                setattr(
+                    value,
+                    model_field_name,
+                    cls._redact_response_text_fields(nested_value, model_field_name),
+                )
+        return value
+
+    @classmethod
+    def _sanitize_blocked_content_for_logging(
+        cls,
+        request_data: Mapping[str, object],
+        sensitive_text: str,
+        masked_text: str,
+        redact_fragmented_responses: bool = True,
+    ) -> None:
+        if not isinstance(request_data, dict):
+            return
+        request_fields = (
+            "additional_args",
+            "messages",
+            "metadata",
+            "litellm_params",
+            "optional_params",
+            "prompt",
+            "input",
+            "instructions",
+            "raw_request_typed_dict",
+        )
+        response_fields = (
+            "complete_response",
+            "complete_streaming_response",
+            "response",
+            "responses",
+            "responses_so_far",
+            "original_response",
+            "async_complete_streaming_response",
+            "standard_logging_object",
+        )
+        for field_name in request_fields:
+            if field_name in request_data:
+                request_data[field_name] = cls._replace_sensitive_text(
+                    request_data[field_name],
+                    sensitive_text,
+                    masked_text,
+                )
+        for field_name in response_fields:
+            if field_name not in request_data:
+                continue
+            response_value = request_data[field_name]
+            request_data[field_name] = (
+                cls._redact_response_text_fields(response_value)
+                if redact_fragmented_responses
+                else cls._replace_sensitive_text(response_value, sensitive_text, masked_text)
+                if cls._contains_sensitive_text(response_value, sensitive_text)
+                else response_value
+            )
+        logging_obj = request_data.get("litellm_logging_obj")
+        model_call_details_value = getattr(logging_obj, "model_call_details", None)
+        if not isinstance(model_call_details_value, dict):
+            return
+        model_call_details = model_call_details_value
+        for field_name in request_fields:
+            if field_name in model_call_details:
+                model_call_details[field_name] = cls._replace_sensitive_text(
+                    model_call_details[field_name],
+                    sensitive_text,
+                    masked_text,
+                )
+        for field_name in response_fields:
+            if field_name not in model_call_details:
+                continue
+            response_value = model_call_details[field_name]
+            model_call_details[field_name] = (
+                cls._redact_response_text_fields(response_value)
+                if redact_fragmented_responses
+                else cls._replace_sensitive_text(response_value, sensitive_text, masked_text)
+                if cls._contains_sensitive_text(response_value, sensitive_text)
+                else response_value
+            )
 
     def _get_presidio_analyze_request_payload(
         self,
@@ -674,30 +878,12 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         """
         Raise an exception if blocked entities are detected
         """
-        if self.pii_entities_config is None:
-            return
-
-        if isinstance(analyze_results, Dict):
-            # if mock testing is enabled, analyze_results is a dict
-            # we don't need to raise an exception in this case
-            return
-
-        for result in analyze_results:
-            entity_type = result.get("entity_type")
-
-            if entity_type:
-                configured_entity_type = self._resolve_configured_entity_type(
-                    entity_type,
-                    self.pii_entities_config.keys(),
-                )
-                if (
-                    configured_entity_type is not None
-                    and self.pii_entities_config[configured_entity_type] == PiiAction.BLOCK
-                ):
-                    raise BlockedPiiEntityError(
-                        entity_type=entity_type,
-                        guardrail_name=self.guardrail_name,
-                    )
+        blocked_entity_type = self._blocked_entity_type(analyze_results)
+        if blocked_entity_type is not None:
+            raise BlockedPiiEntityError(
+                entity_type=blocked_entity_type,
+                guardrail_name=self.guardrail_name,
+            )
 
     async def _check_pii_with_context(
         self,
@@ -753,6 +939,33 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 ####################################################
                 # Blocked Entities check
                 ####################################################
+                if self._blocked_entity_type(analyze_results) is not None:
+                    masked_text, blocked_masked_entities = self._mask_detected_entities_for_logging(
+                        text=text,
+                        analyze_results=analyze_results,
+                    )
+                    for masked_entity in blocked_masked_entities:
+                        masked_entity_count[masked_entity] = masked_entity_count.get(masked_entity, 0) + 1
+                    self._sanitize_blocked_content_for_logging(
+                        request_data=request_data,
+                        sensitive_text=text,
+                        masked_text=masked_text,
+                    )
+                    if isinstance(analyze_results, list):
+                        for result in analyze_results:
+                            start = result.get("start")
+                            end = result.get("end")
+                            entity_type = result.get("entity_type")
+                            if not isinstance(start, int) or not isinstance(end, int) or entity_type is None:
+                                continue
+                            if start < 0 or end <= start or end > len(text):
+                                continue
+                            self._sanitize_blocked_content_for_logging(
+                                request_data=request_data,
+                                sensitive_text=text[start:end],
+                                masked_text=f"<{self._entity_type_value(entity_type)}>",
+                                redact_fragmented_responses=False,
+                            )
                 self.raise_exception_if_blocked_entities_detected(analyze_results=analyze_results)
 
                 # Then anonymize the text using the analysis results
@@ -879,10 +1092,15 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         )
                         task_mappings.append((msg_idx, int(content_idx)))
 
-            responses = await asyncio.gather(*tasks)
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            first_exception: Optional[Exception] = None
 
             # Map responses back to the correct message and content item
             for task_idx, r in enumerate(responses):
+                if isinstance(r, Exception):
+                    if first_exception is None:
+                        first_exception = r
+                    continue
                 mapping = task_mappings[task_idx]
                 msg_idx = cast(int, mapping[0])
                 content_idx_optional = cast(Optional[int], mapping[1])
@@ -893,6 +1111,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     messages[msg_idx]["content"] = r  # replace content with redacted string
                 elif isinstance(content, list) and content_idx_optional is not None:
                     messages[msg_idx]["content"][content_idx_optional]["text"] = r
+
+            if first_exception is not None:
+                raise first_exception
 
             verbose_proxy_logger.debug(f"Presidio PII Masking: Redacted pii message: {data['messages']}")
             data["messages"] = messages

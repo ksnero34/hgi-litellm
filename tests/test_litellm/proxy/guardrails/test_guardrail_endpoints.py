@@ -437,6 +437,20 @@ def test_get_provider_specific_params():
     assert fields["optional_params"]["required"] == True
     assert "fields" in fields["optional_params"]
 
+    from litellm.types.guardrails import PresidioPresidioConfigModelUserInterface
+
+    presidio_fields = _get_fields_from_model(PresidioPresidioConfigModelUserInterface)
+    assert presidio_fields["unreachable_fallback"] == {
+        "description": (
+            "Behavior when Presidio is unreachable. 'fail_open' allows the request to proceed; "
+            "'fail_closed' blocks the request."
+        ),
+        "required": False,
+        "type": "select",
+        "options": ["fail_open", "fail_closed"],
+        "default_value": "fail_open",
+    }
+
     # Check nested fields within optional_params
     nested_fields = fields["optional_params"]["fields"]
     assert "severity_threshold" in nested_fields

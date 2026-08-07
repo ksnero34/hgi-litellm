@@ -1713,6 +1713,175 @@ async def test_check_pii_can_explicitly_fail_closed_when_presidio_is_unavailable
 
 
 @pytest.mark.asyncio
+async def test_blocked_pii_is_masked_in_request_response_and_logging_payloads():
+    class BlockingPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            email = "person@example.com"
+            start = text.index(email)
+            return [
+                {
+                    "entity_type": "EMAIL_ADDRESS",
+                    "start": start,
+                    "end": start + len(email),
+                    "score": 0.99,
+                }
+            ]
+
+    sensitive_text = "Email person@example.com"
+    response = ModelResponse(
+        model="gpt-4o",
+        choices=[Choices(index=0, message=Message(role="assistant", content=sensitive_text))],
+    )
+    logging_obj = MagicMock()
+    logging_obj.model_call_details = {
+        "additional_args": {"complete_input_dict": {"messages": [{"role": "user", "content": sensitive_text}]}},
+        "raw_request_typed_dict": {"raw_request_body": {"messages": [{"content": sensitive_text}]}},
+        "litellm_params": {"metadata": {"raw_request": f"curl --data '{sensitive_text}'"}},
+        "messages": [{"role": "user", "content": sensitive_text}],
+        "original_response": response.model_copy(deep=True),
+        "standard_logging_object": {
+            "messages": [{"role": "user", "content": sensitive_text}],
+            "response": response.model_copy(deep=True),
+        },
+    }
+    request_data = {
+        "messages": [{"role": "user", "content": sensitive_text}],
+        "metadata": {"raw_request": f"curl --data '{sensitive_text}'"},
+        "response": response,
+        "litellm_logging_obj": logging_obj,
+    }
+    presidio = BlockingPresidio(
+        mock_testing=True,
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.BLOCK},
+    )
+
+    with pytest.raises(BlockedPiiEntityError):
+        await presidio.check_pii(
+            text=sensitive_text,
+            output_parse_pii=False,
+            presidio_config=None,
+            request_data=request_data,
+        )
+
+    assert request_data["messages"][0]["content"] == "Email <EMAIL_ADDRESS>"
+    assert request_data["response"].choices[0].message.content == "[REDACTED BY PRESIDIO]"
+    assert "person@example.com" not in str(logging_obj.model_call_details)
+    guardrail_entries = request_data["metadata"]["standard_logging_guardrail_information"]
+    assert guardrail_entries[-1]["guardrail_status"] == "guardrail_intervened"
+    assert guardrail_entries[-1]["masked_entity_count"] == {"EMAIL_ADDRESS": 1}
+
+
+@pytest.mark.asyncio
+async def test_blocked_request_still_masks_pii_detected_in_another_message(mock_user_api_key, mock_cache):
+    class MixedActionPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            detections = []
+            for entity_type, value in (
+                ("CREDIT_CARD", "4111-1111-1111-1111"),
+                ("EMAIL_ADDRESS", "person@example.com"),
+            ):
+                if value in text:
+                    start = text.index(value)
+                    detections.append(
+                        {
+                            "entity_type": entity_type,
+                            "start": start,
+                            "end": start + len(value),
+                            "score": 0.99,
+                        }
+                    )
+            return detections
+
+        async def anonymize_text(
+            self,
+            text,
+            analyze_results,
+            output_parse_pii,
+            masked_entity_count,
+            request_data=None,
+        ):
+            return text.replace("person@example.com", "<EMAIL_ADDRESS>")
+
+    data = {
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "user", "content": "Card 4111-1111-1111-1111"},
+            {"role": "user", "content": "Email person@example.com"},
+        ],
+    }
+    presidio = MixedActionPresidio(
+        mock_testing=True,
+        event_hook="pre_call",
+        default_on=True,
+        pii_entities_config={
+            PiiEntityType.CREDIT_CARD: PiiAction.BLOCK,
+            PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK,
+        },
+    )
+
+    with pytest.raises(BlockedPiiEntityError):
+        await presidio.async_pre_call_hook(
+            user_api_key_dict=mock_user_api_key,
+            cache=mock_cache,
+            data=data,
+            call_type="completion",
+        )
+
+    assert data["messages"][0]["content"] == "Card <CREDIT_CARD>"
+    assert data["messages"][1]["content"] == "Email <EMAIL_ADDRESS>"
+
+
+@pytest.mark.asyncio
+async def test_blocked_pii_split_across_stream_chunks_is_redacted_from_logging_payloads():
+    class BlockingPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            email = "person@example.com"
+            start = text.index(email)
+            return [
+                {
+                    "entity_type": "EMAIL_ADDRESS",
+                    "start": start,
+                    "end": start + len(email),
+                    "score": 0.99,
+                }
+            ]
+
+    sensitive_text = "Email person@example.com"
+    request_data = {
+        "responses": [
+            {"model": "gpt-4o", "choices": [{"delta": {"content": "Email person@"}}]},
+            {"model": "gpt-4o", "choices": [{"delta": {"content": "example.com"}}]},
+        ],
+        "complete_streaming_response": {
+            "model": "gpt-4o",
+            "choices": [{"message": {"content": sensitive_text}}],
+        },
+        "complete_response": {
+            "model": "gpt-4o",
+            "choices": [{"message": {"content": sensitive_text}}],
+        },
+    }
+    presidio = BlockingPresidio(
+        mock_testing=True,
+        pii_entities_config={PiiEntityType.EMAIL_ADDRESS: PiiAction.BLOCK},
+    )
+
+    with pytest.raises(BlockedPiiEntityError):
+        await presidio.check_pii(
+            text=sensitive_text,
+            output_parse_pii=False,
+            presidio_config=None,
+            request_data=request_data,
+        )
+
+    assert request_data["responses"][0]["model"] == "gpt-4o"
+    assert request_data["responses"][0]["choices"][0]["delta"]["content"] == "[REDACTED BY PRESIDIO]"
+    assert request_data["responses"][1]["choices"][0]["delta"]["content"] == "[REDACTED BY PRESIDIO]"
+    assert "person@example.com" not in str(request_data["complete_streaming_response"])
+    assert "person@example.com" not in str(request_data["complete_response"])
+
+
+@pytest.mark.asyncio
 async def test_check_pii_fails_open_when_presidio_anonymizer_is_unavailable():
     class AnalyzerOnlyPresidio(_OPTIONAL_PresidioPIIMasking):
         async def analyze_text(self, text, presidio_config, request_data):

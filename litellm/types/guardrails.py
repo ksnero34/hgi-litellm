@@ -369,6 +369,13 @@ class PresidioPresidioConfigModelUserInterface(BaseModel):
         default=None,
         description="Where to apply Presidio checks: input, output, or both (default).",
     )
+    unreachable_fallback: Literal["fail_open", "fail_closed"] = Field(
+        default="fail_open",
+        description=(
+            "Behavior when Presidio is unreachable. 'fail_open' allows the request to proceed; "
+            "'fail_closed' blocks the request."
+        ),
+    )
 
 
 class PresidioConfigModel(PresidioPresidioConfigModelUserInterface):
