@@ -3735,6 +3735,7 @@ async def generate_key_helper_fn(
     created_by: str | None = None,
     updated_by: str | None = None,
     allowed_routes: list | None = None,
+    allowed_ip_ranges: list[str] | None = None,
     key_type: str | None = None,
     sso_user_id: str | None = None,
     object_permission_id: str | None = None,  # object_permission_id <-> LiteLLM_ObjectPermissionTable
@@ -3876,6 +3877,7 @@ async def generate_key_helper_fn(
             "created_by": created_by,
             "updated_by": updated_by,
             "allowed_routes": allowed_routes or [],
+            "allowed_ip_ranges": allowed_ip_ranges or [],
             "key_type": key_type,
             "object_permission_id": object_permission_id,
             "router_settings": router_settings_json,

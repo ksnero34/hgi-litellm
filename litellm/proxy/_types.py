@@ -1,4 +1,5 @@
 import enum
+import ipaddress
 import json
 import os
 from collections.abc import Callable
@@ -1098,6 +1099,7 @@ class KeyRequestBase(GenerateRequestBase):
     throttle_on_budget_exceeded: bool | None = None
     enforced_params: list[str] | None = None
     allowed_routes: list | None = []
+    allowed_ip_ranges: list[str] | None = None
     allowed_passthrough_routes: list | None = None
     allowed_vector_store_indexes: list[AllowedVectorStoreIndexItem] | None = None
     rpm_limit_type: Literal["guaranteed_throughput", "best_effort_throughput", "dynamic"] | None = (
@@ -1108,6 +1110,23 @@ class KeyRequestBase(GenerateRequestBase):
     )
     router_settings: UpdateRouterConfig | None = None
     access_group_ids: list[str] | None = None
+
+    @field_validator("allowed_ip_ranges")
+    @classmethod
+    def validate_allowed_ip_ranges(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        try:
+            return list(
+                dict.fromkeys(
+                    str(ipaddress.ip_network(value.strip(), strict=False))
+                    if "/" in value
+                    else str(ipaddress.ip_address(value.strip()))
+                    for value in values
+                )
+            )
+        except ValueError as exc:
+            raise ValueError("allowed_ip_ranges entries must be valid IP addresses or CIDR ranges") from exc
 
 
 class LiteLLMKeyType(str, enum.Enum):
@@ -2443,7 +2462,7 @@ class ConfigGeneralSettings(LiteLLMPydanticObjectBase):
     )
     trusted_proxy_ranges: list[str] | None = Field(
         None,
-        description="CIDR ranges of trusted reverse proxies allowed to provide identity headers for header-based auth paths such as enable_oauth2_proxy_auth and custom_ui_sso_sign_in_handler.",
+        description="CIDR ranges of trusted reverse proxies. Requests received from these peers may use X-Forwarded-For for client IP resolution and may provide identity headers for header-based auth paths.",
     )
     store_model_in_db: bool | None = Field(
         None,

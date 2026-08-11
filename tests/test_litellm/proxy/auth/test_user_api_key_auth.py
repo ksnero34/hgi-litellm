@@ -11,7 +11,7 @@ sys.path.insert(
 )  # Adds the parent directory to the system path
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 
 import litellm
 import litellm.proxy.proxy_server
@@ -5212,3 +5212,37 @@ async def test_temp_budget_increase_applied_for_cached_key():
 
     cached_after = await user_api_key_cache.async_get_cache(key=hashed_token)
     assert cached_after.max_budget == 2.0
+
+
+def test_key_ip_allowlist_uses_only_xff_from_trusted_proxy(monkeypatch):
+    from fastapi import Request
+
+    import litellm.proxy.auth.user_api_key_auth as auth_module
+    from litellm.proxy.auth.user_api_key_auth import _enforce_key_ip_allowlist
+
+    monkeypatch.setattr(auth_module, "get_trusted_proxy_cidrs", lambda: ["10.0.0.0/8"])
+    trusted_request = Request(
+        {
+            "type": "http",
+            "headers": [(b"x-forwarded-for", b"198.51.100.23, 10.0.0.9")],
+            "client": ("10.0.0.1", 1234),
+        }
+    )
+    _enforce_key_ip_allowlist(
+        request=trusted_request,
+        valid_token=UserAPIKeyAuth(allowed_ip_ranges=["198.51.100.0/24"]),
+    )
+
+    untrusted_request = Request(
+        {
+            "type": "http",
+            "headers": [(b"x-forwarded-for", b"198.51.100.23")],
+            "client": ("203.0.113.50", 1234),
+        }
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _enforce_key_ip_allowlist(
+            request=untrusted_request,
+            valid_token=UserAPIKeyAuth(allowed_ip_ranges=["198.51.100.0/24"]),
+        )
+    assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN

@@ -130,6 +130,7 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
         budget_duration: str | None = None,
         allowed_cache_controls: list[str] | None = None,
         allowed_routes: list[str] | None = None,
+        allowed_ip_ranges: list[str] | None = None,
         permissions: Mapping[str, object] | None = None,
         org_id: str | None = None,
         created_by: str | None = None,
@@ -161,6 +162,7 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
             "budget_duration": budget_duration,
             "allowed_cache_controls": allowed_cache_controls,
             "allowed_routes": allowed_routes,
+            "allowed_ip_ranges": allowed_ip_ranges,
             "object_permission_id": object_permission_id,
             "access_group_ids": access_group_ids,
             "budget_id": budget_id,
@@ -197,6 +199,7 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
         budget_duration: str | None = None,
         allowed_cache_controls: list[str] | None = None,
         allowed_routes: list[str] | None = None,
+        allowed_ip_ranges: list[str] | None = None,
         permissions: Mapping[str, object] | None = None,
         org_id: str | None = None,
         created_by: str | None = None,
@@ -225,6 +228,7 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
             budget_duration=budget_duration,
             allowed_cache_controls=allowed_cache_controls,
             allowed_routes=allowed_routes,
+            allowed_ip_ranges=allowed_ip_ranges,
             permissions=permissions,
             org_id=org_id,
             created_by=created_by,
@@ -252,6 +256,7 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
         budget_duration: str | None = None,
         allowed_cache_controls: list[str] | None = None,
         allowed_routes: list[str] | None = None,
+        allowed_ip_ranges: list[str] | None = None,
         permissions: Mapping[str, object] | None = None,
         blocked: bool | None = None,
         object_permission_id: str | None = None,
@@ -289,6 +294,8 @@ class VerificationTokenRepository(BaseRepository[LiteLLM_VerificationToken]):
             data["allowed_cache_controls"] = allowed_cache_controls
         if allowed_routes is not None:
             data["allowed_routes"] = allowed_routes
+        if allowed_ip_ranges is not None:
+            data["allowed_ip_ranges"] = allowed_ip_ranges
         if permissions is not None:
             data["permissions"] = json.dumps(permissions)
         if blocked is not None:

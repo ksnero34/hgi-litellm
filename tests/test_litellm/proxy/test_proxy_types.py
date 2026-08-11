@@ -159,3 +159,17 @@ def test_update_key_request_requires_key_or_key_alias():
     by_alias = UpdateKeyRequest(key_alias="my-alias")
     assert by_alias.key is None
     assert by_alias.key_alias == "my-alias"
+
+
+def test_key_request_validates_and_normalizes_allowed_ip_ranges():
+    import pydantic
+
+    from litellm.proxy._types import GenerateKeyRequest
+
+    request = GenerateKeyRequest(
+        allowed_ip_ranges=["203.0.113.9", "10.20.30.40/16", "2001:0db8::1/64", "203.0.113.9"]
+    )
+
+    assert request.allowed_ip_ranges == ["203.0.113.9", "10.20.0.0/16", "2001:db8::/64"]
+    with pytest.raises(pydantic.ValidationError, match="valid IP addresses or CIDR ranges"):
+        GenerateKeyRequest(allowed_ip_ranges=["not-an-ip"])

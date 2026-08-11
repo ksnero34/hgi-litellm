@@ -68,7 +68,11 @@ from litellm.proxy.auth.auth_utils import (
     route_in_additonal_public_routes,
 )
 from litellm.proxy.auth.handle_jwt import JWTAuthManager, JWTHandler
-from litellm.proxy.auth.network import TrustedProxyConfig, resolve_network_context
+from litellm.proxy.auth.network import (
+    TrustedProxyConfig,
+    client_ip_matches_ranges,
+    resolve_network_context,
+)
 from litellm.proxy.auth.oauth2_check import Oauth2Handler
 from litellm.proxy.auth.oauth2_proxy_hook import handle_oauth2_proxy_request
 from litellm.proxy.auth.resolvers import CredentialRef, Principal
@@ -2449,6 +2453,25 @@ def _should_skip_budget_checks(
     return False
 
 
+def _enforce_key_ip_allowlist(request: Request, valid_token: UserAPIKeyAuth) -> None:
+    if not valid_token.allowed_ip_ranges:
+        return
+    trusted_proxy_cidrs = get_trusted_proxy_cidrs()
+    network = resolve_network_context(
+        request,
+        TrustedProxyConfig(
+            use_forwarded_for=bool(trusted_proxy_cidrs),
+            trusted_proxy_cidrs=trusted_proxy_cidrs,
+        ),
+    )
+    if client_ip_matches_ranges(network.client_ip, valid_token.allowed_ip_ranges):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access forbidden: client IP is not allowed for this key.",
+    )
+
+
 def _resolve_request_principal(request: Request, valid_token: UserAPIKeyAuth) -> Principal:
     """Project the resolved identity into one per-request Principal, off the key
     object the builder already fetched, and stamp the request network context
@@ -2523,6 +2546,7 @@ async def user_api_key_auth(
         # admin-only-route / model-access / budget checks) surface as
         # ProxyException consistently with pre-refactor behavior.
         try:
+            _enforce_key_ip_allowlist(request=request, valid_token=user_api_key_auth_obj)
             await _run_centralized_common_checks(
                 user_api_key_auth_obj=user_api_key_auth_obj,
                 request=request,

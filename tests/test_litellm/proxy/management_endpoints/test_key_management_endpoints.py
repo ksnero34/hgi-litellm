@@ -15716,3 +15716,40 @@ async def test_non_admin_team_key_list_rejects_expired_filter():
 
     assert error.value.code == "400"
     assert "only support active keys" in str(error.value.message)
+
+
+@pytest.mark.asyncio
+async def test_generate_key_helper_fn_persists_allowed_ip_ranges(monkeypatch):
+    mock_prisma_client = AsyncMock()
+    mock_prisma_client.jsonify_object = lambda data: data
+    mock_prisma_client.db = MagicMock()
+    mock_prisma_client.db.litellm_objectpermissiontable = MagicMock()
+    mock_prisma_client.db.litellm_objectpermissiontable.create = AsyncMock(
+        return_value=MagicMock(object_permission_id=None)
+    )
+    captured_key_data = {}
+
+    async def insert_data(*args, **kwargs):
+        if kwargs.get("table_name") == "user":
+            return MagicMock(models=[], spend=0)
+        captured_key_data.update(kwargs.get("data", {}))
+        return MagicMock(
+            token="hashed-token",
+            litellm_budget_table=None,
+            object_permission=None,
+            created_at=None,
+            updated_at=None,
+        )
+
+    mock_prisma_client.insert_data = AsyncMock(side_effect=insert_data)
+    monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
+
+    from litellm.proxy.management_endpoints.key_management_endpoints import generate_key_helper_fn
+
+    await generate_key_helper_fn(
+        request_type="key",
+        table_name="key",
+        allowed_ip_ranges=["203.0.113.9", "10.0.0.0/8"],
+    )
+
+    assert captured_key_data["allowed_ip_ranges"] == ["203.0.113.9", "10.0.0.0/8"]

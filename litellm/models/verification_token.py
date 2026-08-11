@@ -35,6 +35,7 @@ class LiteLLM_VerificationToken(LiteLLMPydanticObjectBase):
     budget_reset_at: datetime | None = None
     allowed_cache_controls: list | None = []
     allowed_routes: list | None = []
+    allowed_ip_ranges: list[str] = []
     key_type: str | None = None
     permissions: dict = {}
     model_spend: dict = {}

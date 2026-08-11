@@ -6,6 +6,7 @@ from fastapi import Request
 
 from litellm.proxy.auth.network import (
     TrustedProxyConfig,
+    client_ip_matches_ranges,
     resolve_client_ip,
     resolve_network_context,
 )
@@ -102,3 +103,16 @@ def test_network_context_captures_host_and_proxy_flag():
     assert ctx.client_ip == "203.0.113.9"
     assert ctx.host == "proxy.litellm.ai"
     assert ctx.via_trusted_proxy is True
+
+def test_client_ip_matches_single_addresses_and_cidrs():
+    assert client_ip_matches_ranges("203.0.113.9", ["203.0.113.9"]) is True
+    assert client_ip_matches_ranges("203.0.113.9", ["203.0.113.0/24"]) is True
+    assert client_ip_matches_ranges("2001:db8::7", ["2001:db8::/64"]) is True
+    assert client_ip_matches_ranges("198.51.100.9", ["203.0.113.0/24"]) is False
+
+
+def test_client_ip_matches_ranges_fails_closed_for_invalid_policy_or_client():
+    assert client_ip_matches_ranges(None, ["203.0.113.0/24"]) is False
+    assert client_ip_matches_ranges("not-an-ip", ["203.0.113.0/24"]) is False
+    assert client_ip_matches_ranges("203.0.113.9", ["invalid-range"]) is False
+    assert client_ip_matches_ranges(None, []) is True

@@ -59,6 +59,19 @@ def ip_in_networks(client_ip: str | None, networks: list[TrustedProxyNetwork]) -
     return any(addr in network for network in networks)
 
 
+def client_ip_matches_ranges(client_ip: str | None, allowed_ip_ranges: list[str] | None) -> bool:
+    if not allowed_ip_ranges:
+        return True
+    if client_ip is None:
+        return False
+    try:
+        address = ipaddress.ip_address(client_ip.strip())
+        networks = tuple(ipaddress.ip_network(value, strict=False) for value in allowed_ip_ranges)
+    except ValueError:
+        return False
+    return any(address in network for network in networks)
+
+
 def _is_valid_ip(value: str) -> bool:
     try:
         ipaddress.ip_address(value)

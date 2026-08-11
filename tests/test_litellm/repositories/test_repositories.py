@@ -944,6 +944,7 @@ class TestVerificationTokenRepository:
             budget_duration="monthly",
             allowed_cache_controls=["no-cache"],
             allowed_routes=["/v1/completions"],
+            allowed_ip_ranges=["203.0.113.9", "10.0.0.0/8"],
             permissions={"read": True},
             org_id="org-1",
             created_by="admin",
@@ -952,6 +953,7 @@ class TestVerificationTokenRepository:
             budget_id="budget-1",
         )
         assert token.token == "sk-test123"
+        assert token.allowed_ip_ranges == ["203.0.113.9", "10.0.0.0/8"]
 
     @pytest.mark.asyncio
     async def test_update_token(self, repo):
@@ -1724,12 +1726,14 @@ class TestVerificationTokenRepositoryExtended:
             budget_duration="daily",
             allowed_cache_controls=["cache"],
             allowed_routes=["/v1/chat"],
+            allowed_ip_ranges=["198.51.100.0/24"],
             permissions={"write": True},
             blocked=False,
             object_permission_id="perm-2",
             access_group_ids=["g1", "g2"],
         )
         assert updated.key_name == "Updated"
+        assert updated.allowed_ip_ranges == ["198.51.100.0/24"]
 
     @pytest.mark.asyncio
     async def test_to_model_with_json_fields(self, repo):
