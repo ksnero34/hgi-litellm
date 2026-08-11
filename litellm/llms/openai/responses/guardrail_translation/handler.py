@@ -28,6 +28,8 @@ Output: response.output is List[GenericResponseOutputItem] where each has:
     - text: str
 """
 
+import copy
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
@@ -37,6 +39,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.completion_extras.litellm_responses_transformation.transformation import (
     OpenAiResponsesToChatCompletionStreamIterator,
 )
+from litellm.exceptions import GuardrailRaisedException
 from litellm.llms.base_llm.guardrail_translation.base_translation import BaseTranslation
 from litellm.llms.base_llm.guardrail_translation.utils import effective_skip_system_message_for_guardrail
 from litellm.llms.openai.chat.guardrail_translation.handler import get_guardrail_input_scope
@@ -58,6 +61,9 @@ from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
+    from litellm.responses.litellm_completion_transformation.transformation import (
+        ChatCompletionSession,
+    )
     from litellm.types.llms.openai import ResponseInputParam
     from litellm.types.utils import ResponsesAPIResponse
 
@@ -75,6 +81,12 @@ class OpenAIResponsesHandler(BaseTranslation):
     Methods can be overridden to customize behavior for different message formats.
     """
 
+    def __init__(
+        self,
+        previous_response_loader: Callable[[str], Awaitable["ChatCompletionSession"]] | None = None,
+    ) -> None:
+        self._previous_response_loader = previous_response_loader
+
     def get_structured_messages(self, data: dict) -> list[AllMessageValues] | None:
         """
         Convert Responses API request data to OpenAI-spec structured messages.
@@ -91,6 +103,83 @@ class OpenAIResponsesHandler(BaseTranslation):
         )
         return cast(list[AllMessageValues], messages) if messages else None
 
+    async def _get_previous_response_messages(
+        self,
+        data: dict,
+        litellm_logging_obj: Any | None,
+    ) -> list[AllMessageValues]:
+        previous_response_id = data.get("previous_response_id")
+        if not isinstance(previous_response_id, str) or not previous_response_id:
+            return []
+
+        cached_id = getattr(litellm_logging_obj, "_guardrail_previous_response_id", None)
+        cached_messages = getattr(litellm_logging_obj, "_guardrail_previous_response_messages", None)
+        if cached_id == previous_response_id and isinstance(cached_messages, list):
+            return copy.deepcopy(cached_messages)
+
+        from litellm.responses.litellm_completion_transformation.session_handler import (
+            ResponsesSessionHandler,
+        )
+
+        loader = (
+            self._previous_response_loader
+            or ResponsesSessionHandler.get_chat_completion_message_history_for_previous_response_id
+        )
+        session = await loader(previous_response_id)
+        messages = cast(list[AllMessageValues], session.get("messages") or [])
+        if litellm_logging_obj is not None:
+            setattr(litellm_logging_obj, "_guardrail_previous_response_id", previous_response_id)
+            setattr(litellm_logging_obj, "_guardrail_previous_response_messages", copy.deepcopy(messages))
+        return messages
+
+    async def _process_previous_response_messages(
+        self,
+        data: dict,
+        guardrail_to_apply: "CustomGuardrail",
+        litellm_logging_obj: Any | None,
+    ) -> None:
+        previous_response_id = data.get("previous_response_id")
+        if not isinstance(previous_response_id, str) or not previous_response_id:
+            return
+
+        requires_history = bool(getattr(guardrail_to_apply, "requires_guardrailed_previous_response_history", False))
+        if not requires_history:
+            return
+
+        try:
+            messages = await self._get_previous_response_messages(data, litellm_logging_obj)
+        except Exception as exc:
+            raise GuardrailRaisedException(
+                guardrail_name=guardrail_to_apply.guardrail_name,
+                message="Unable to inspect previous Responses API history",
+            ) from exc
+        if not messages:
+            raise GuardrailRaisedException(
+                guardrail_name=guardrail_to_apply.guardrail_name,
+                message="Unable to inspect previous Responses API history",
+            )
+
+        from litellm.llms.openai.chat.guardrail_translation.handler import (
+            OpenAIChatCompletionsHandler,
+        )
+
+        history_data = {
+            "messages": copy.deepcopy(messages),
+            "model": data.get("model"),
+            "metadata": copy.deepcopy(data.get("metadata") or {}),
+            "litellm_metadata": copy.deepcopy(data.get("litellm_metadata") or {}),
+        }
+        processed = await OpenAIChatCompletionsHandler().process_input_messages(
+            data=history_data,
+            guardrail_to_apply=guardrail_to_apply,
+            litellm_logging_obj=litellm_logging_obj,
+        )
+        if processed.get("messages") != messages:
+            guardrail_to_apply.handle_sensitive_data_detection(
+                request_data=data,
+                detection_info={"source": "previous_response_history"},
+            )
+
     async def process_input_messages(
         self,
         data: dict,
@@ -104,6 +193,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         """
         input_data: str | ResponseInputParam | None = data.get("input")
         tools_to_check: list[ChatCompletionToolParam] = []
+        await self._process_previous_response_messages(data, guardrail_to_apply, litellm_logging_obj)
         if input_data is None:
             return data
 

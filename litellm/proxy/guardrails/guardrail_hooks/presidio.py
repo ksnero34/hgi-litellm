@@ -13,14 +13,16 @@ import copy
 import json
 import re
 import threading
-from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Literal,
     TypedDict,
     cast,
@@ -79,7 +81,16 @@ class _PresidioServiceError(Exception):
     pass
 
 
+@dataclass(slots=True)
+class _StreamingPiiState:
+    pending: str = ""
+    emitted: str = ""
+    template: object | None = None
+
+
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
+    requires_guardrailed_previous_response_history: ClassVar[bool] = True
+    _STREAM_PII_HOLDBACK_CHARS: ClassVar[int] = 128
     _PII_TOKEN_PATTERN = re.compile(r"<[A-Z][A-Z0-9_]*_[0-9]+>")
     _RESTORABLE_INPUT_SCOPES = frozenset({"conversation_history", "current_user_prompt", "current_user_context"})
     _LOGGING_TEXT_FIELDS = frozenset(
@@ -1696,78 +1707,295 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     async def _stream_apply_output_masking(
         self,
-        response: Any,
+        response: AsyncIterable[object],
         request_data: dict,
-    ) -> AsyncGenerator[ModelResponseStream | bytes, None]:
-        """Apply Presidio masking to streaming output (apply_to_output=True path)."""
-        from litellm.llms.base_llm.base_model_iterator import (
-            convert_model_response_to_streaming,
+    ) -> AsyncGenerator[object, None]:
+        states: dict[tuple[object, ...], _StreamingPiiState] = {}
+        async for chunk in response:
+            if isinstance(chunk, bytes):
+                raise _PresidioServiceError("Presidio cannot safely inspect raw streaming bytes")
+            if isinstance(chunk, ModelResponseStream):
+                async for masked_chunk in self._mask_chat_stream_chunk(chunk, states, request_data):
+                    yield masked_chunk
+                continue
+            event_type = self._response_field(chunk, "type")
+            if not isinstance(event_type, str):
+                raise _PresidioServiceError("Presidio received an unsupported streaming event")
+            async for masked_event in self._mask_responses_stream_event(chunk, event_type, states, request_data):
+                yield masked_event
+        async for masked_chunk in self._flush_stream_states(states, request_data):
+            yield masked_chunk
+
+    async def _mask_stream_text(
+        self,
+        key: tuple[object, ...],
+        text: str,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: dict,
+    ) -> str:
+        state = states.setdefault(key, _StreamingPiiState())
+        pending = state.pending + text
+        presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
+        masked = await self.check_pii(
+            text=pending,
+            output_parse_pii=False,
+            presidio_config=presidio_config,
+            request_data=request_data,
         )
-        from litellm.main import stream_chunk_builder
-        from litellm.types.utils import ModelResponse
+        if len(pending) <= self._STREAM_PII_HOLDBACK_CHARS:
+            state.pending = pending
+            return ""
+        suffix = pending[-self._STREAM_PII_HOLDBACK_CHARS :]
+        if not masked.endswith(suffix):
+            state.pending = pending
+            return ""
+        released = masked[: -self._STREAM_PII_HOLDBACK_CHARS]
+        state.pending = suffix
+        state.emitted += released
+        return released
 
-        all_chunks: list[ModelResponseStream] = []
-        passthrough_due_to_unknown_stream_shape = False
-        try:
-            async for chunk in response:
-                if isinstance(chunk, ModelResponseStream):
-                    if passthrough_due_to_unknown_stream_shape:
-                        yield chunk
-                    else:
-                        all_chunks.append(chunk)
-                elif isinstance(chunk, bytes):
-                    yield chunk  # type: ignore[misc]
-                    continue
-                else:
-                    if all_chunks:
-                        # Flush buffered chunks and switch to transparent passthrough for this stream shape.
-                        # NOTE: these buffered chunks are emitted unmasked because this
-                        # stream mixed chunk types and cannot be safely reconstructed.
-                        verbose_proxy_logger.warning(
-                            "Presidio apply_to_output: mixed stream detected (ModelResponseStream + unknown event). "
-                            "Flushing %d buffered chunks without PII masking and switching to transparent passthrough.",
-                            len(all_chunks),
-                        )
-                        for buffered_chunk in all_chunks:
-                            yield buffered_chunk
-                        all_chunks = []
-                    passthrough_due_to_unknown_stream_shape = True
-                    yield chunk
-            if passthrough_due_to_unknown_stream_shape:
-                verbose_proxy_logger.warning(
-                    "Presidio apply_to_output: streaming response contained unknown event objects "
-                    "(e.g. /v1/responses events). Output PII masking was skipped for this response."
-                )
-                return
-            if not all_chunks:
-                verbose_proxy_logger.warning(
-                    "Presidio apply_to_output: streaming response contained no "
-                    "ModelResponseStream chunks (e.g. raw SSE bytes or an empty "
-                    "upstream stream). Output PII masking was skipped for this "
-                    "response."
-                )
-                return
+    async def _flush_stream_state(
+        self,
+        key: tuple[object, ...],
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: dict,
+    ) -> object | None:
+        state = states.pop(key, None)
+        if state is None:
+            return None
+        presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
+        masked = await self.check_pii(
+            text=state.pending,
+            output_parse_pii=False,
+            presidio_config=presidio_config,
+            request_data=request_data,
+        )
+        state.emitted += masked
+        if not masked or state.template is None:
+            return None
+        chunk = copy.deepcopy(state.template)
+        if key[0] == "chat" and isinstance(chunk, ModelResponseStream):
+            self._set_chat_stream_text(chunk, key, masked)
+        else:
+            if self._response_field(chunk, "event_id") is not None:
+                self._set_response_field(chunk, "event_id", f"guardrail-{uuid4()}")
+            self._set_response_field(chunk, "delta", masked)
+        return chunk
 
-            assembled_model_response = stream_chunk_builder(chunks=all_chunks, messages=request_data.get("messages"))
-
-            if not isinstance(assembled_model_response, ModelResponse):
-                for chunk in all_chunks:
-                    yield chunk
-                return
-
-            await self._process_response_for_pii(
-                response=assembled_model_response,
-                request_data=request_data,
-                mode="mask",
-            )
-
-            mock_response_stream = convert_model_response_to_streaming(assembled_model_response)
-            yield mock_response_stream
-
-        except Exception as e:
-            verbose_proxy_logger.error(f"Error masking streaming PII output: {e!s}")
-            for chunk in all_chunks:
+    async def _flush_stream_states(
+        self,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: dict,
+        predicate: Callable[[tuple[object, ...]], bool] | None = None,
+    ) -> AsyncGenerator[object, None]:
+        keys = tuple(states)
+        for key in keys:
+            if predicate is not None and not predicate(key):
+                continue
+            chunk = await self._flush_stream_state(key, states, request_data)
+            if chunk is not None:
                 yield chunk
+
+    @staticmethod
+    def _chat_stream_fields(chunk: ModelResponseStream) -> list[tuple[tuple[object, ...], str]]:
+        fields: list[tuple[tuple[object, ...], str]] = []
+        for choice in chunk.choices:
+            delta = choice.delta
+            choice_index = choice.index
+            for field in ("content", "reasoning_content", "refusal"):
+                value = getattr(delta, field, None)
+                if isinstance(value, str) and value:
+                    fields.append((("chat", choice_index, field), value))
+            function_call = getattr(delta, "function_call", None)
+            arguments = getattr(function_call, "arguments", None)
+            if isinstance(arguments, str) and arguments:
+                fields.append((("chat", choice_index, "function_call"), arguments))
+            for tool_call in getattr(delta, "tool_calls", None) or []:
+                arguments = getattr(getattr(tool_call, "function", None), "arguments", None)
+                if isinstance(arguments, str) and arguments:
+                    tool_index = tool_call.index
+                    fields.append((("chat", choice_index, "tool_call", tool_index), arguments))
+        return fields
+
+    @classmethod
+    def _set_chat_stream_text(cls, chunk: ModelResponseStream, key: tuple[object, ...], text: str) -> None:
+        choice = cls._chat_stream_choice(chunk, cast(int, key[1]))
+        field = cast(str, key[2])
+        if field in {"content", "reasoning_content", "refusal"}:
+            setattr(choice.delta, field, text)
+            return
+        if field == "function_call":
+            function_call = getattr(choice.delta, "function_call", None)
+            if function_call is not None:
+                function_call.arguments = text
+            return
+        tool_index = cast(int, key[3])
+        for tool_call in getattr(choice.delta, "tool_calls", None) or []:
+            if tool_call.index == tool_index:
+                tool_call.function.arguments = text
+                return
+
+    @staticmethod
+    def _chat_stream_choice(chunk: ModelResponseStream, choice_index: int) -> StreamingChoices:
+        return next(choice for choice in chunk.choices if choice.index == choice_index)
+
+    @staticmethod
+    def _clear_chat_stream_text(chunk: ModelResponseStream) -> None:
+        for choice in chunk.choices:
+            delta = choice.delta
+            for field in ("content", "reasoning_content", "refusal"):
+                if isinstance(getattr(delta, field, None), str):
+                    setattr(delta, field, "")
+            function_call = getattr(delta, "function_call", None)
+            if isinstance(getattr(function_call, "arguments", None), str):
+                function_call.arguments = ""
+            for tool_call in getattr(delta, "tool_calls", None) or []:
+                function = getattr(tool_call, "function", None)
+                if isinstance(getattr(function, "arguments", None), str):
+                    function.arguments = ""
+
+    async def _mask_chat_stream_chunk(
+        self,
+        chunk: ModelResponseStream,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: dict,
+    ) -> AsyncGenerator[ModelResponseStream, None]:
+        finished_choices = frozenset(choice.index for choice in chunk.choices if choice.finish_reason is not None)
+        fields = self._chat_stream_fields(chunk)
+        for key, text in fields:
+            self._set_chat_stream_text(chunk, key, await self._mask_stream_text(key, text, states, request_data))
+        for key, _ in fields:
+            template = copy.deepcopy(chunk)
+            self._clear_chat_stream_text(template)
+            for choice in template.choices:
+                choice.finish_reason = None
+            states[key].template = template
+        if finished_choices:
+            async for flushed in self._flush_stream_states(
+                states,
+                request_data,
+                lambda key: len(key) > 1 and key[0] == "chat" and key[1] in finished_choices,
+            ):
+                yield cast(ModelResponseStream, flushed)
+        yield chunk
+
+    @staticmethod
+    def _responses_stream_key(event: object, event_type: str) -> tuple[object, ...]:
+        family = event_type.removesuffix(".delta").removesuffix(".done")
+        return (
+            "responses",
+            family,
+            _OPTIONAL_PresidioPIIMasking._response_field(event, "item_id"),
+            _OPTIONAL_PresidioPIIMasking._response_field(event, "output_index"),
+            _OPTIONAL_PresidioPIIMasking._response_field(event, "content_index"),
+            _OPTIONAL_PresidioPIIMasking._response_field(event, "summary_index"),
+        )
+
+    async def _mask_responses_stream_event(
+        self,
+        event: object,
+        event_type: str,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: dict,
+    ) -> AsyncGenerator[object, None]:
+        delta_types = frozenset(
+            (
+                "response.output_text.delta",
+                "response.refusal.delta",
+                "response.reasoning_summary_text.delta",
+                "response.reasoning_text.delta",
+                "response.function_call_arguments.delta",
+                "response.mcp_call_arguments.delta",
+                "response.code_interpreter_call_code.delta",
+            )
+        )
+        done_fields = {
+            "response.output_text.done": "text",
+            "response.refusal.done": "refusal",
+            "response.reasoning_summary_text.done": "text",
+            "response.reasoning_text.done": "text",
+            "response.function_call_arguments.done": "arguments",
+            "response.mcp_call_arguments.done": "arguments",
+            "response.code_interpreter_call_code.done": "code",
+        }
+        key = self._responses_stream_key(event, event_type)
+        if event_type in delta_types:
+            delta = self._response_field(event, "delta")
+            if not isinstance(delta, str):
+                raise _PresidioServiceError("Presidio received a text delta without text")
+            masked = await self._mask_stream_text(key, delta, states, request_data)
+            self._set_response_field(event, "delta", masked)
+            template = copy.deepcopy(event)
+            self._set_response_field(template, "delta", "")
+            states[key].template = template
+            yield event
+            return
+        if event_type in done_fields:
+            state = states.get(key)
+            flushed = await self._flush_stream_state(key, states, request_data)
+            if flushed is not None:
+                yield flushed
+            if state is not None:
+                self._set_response_field(event, done_fields[event_type], state.emitted)
+            else:
+                state_text = self._response_field(event, done_fields[event_type])
+                if not isinstance(state_text, str):
+                    yield event
+                    return
+                presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
+                masked = await self.check_pii(state_text, False, presidio_config, request_data)
+                self._set_response_field(event, done_fields[event_type], masked)
+            yield event
+            return
+        if event_type in {
+            "response.completed",
+            "response.failed",
+            "response.incomplete",
+            "response.created",
+            "response.in_progress",
+            "response.queued",
+            "response.done",
+        }:
+            async for flushed in self._flush_stream_states(states, request_data):
+                yield flushed
+            nested_response = self._response_field(event, "response")
+            if nested_response is not None:
+                await self._process_responses_api_response_for_pii(nested_response, request_data)
+            yield event
+            return
+        if event_type in {"response.output_item.added", "response.output_item.done"}:
+            item = self._response_field(event, "item")
+            if item is not None:
+                await self._mask_responses_blocks(self._response_field(item, "content"), request_data)
+                await self._mask_responses_blocks(self._response_field(item, "summary"), request_data)
+                for field in ("reasoning_content", "arguments", "input", "output"):
+                    await self._mask_responses_payload_field(item, field, request_data)
+            yield event
+            return
+        if event_type in {
+            "response.content_part.added",
+            "response.content_part.done",
+            "response.reasoning_summary_part.added",
+            "response.reasoning_summary_part.done",
+        }:
+            part = self._response_field(event, "part")
+            if part is not None:
+                await self._mask_responses_text_field(part, "text", request_data)
+                await self._mask_responses_text_field(part, "refusal", request_data)
+            yield event
+            return
+        if event_type == "response.output_text.annotation.added":
+            await self._mask_responses_payload_field(event, "annotation", request_data)
+            yield event
+            return
+        if event_type.startswith("response.") or event_type == "error":
+            for field in ("delta", "text", "arguments", "input", "output", "error"):
+                value = self._response_field(event, field)
+                if value is not None:
+                    raise _PresidioServiceError(f"Presidio does not support text-bearing event {event_type}")
+            yield event
+            return
+        raise _PresidioServiceError(f"Presidio does not support streaming event {event_type}")
 
     @staticmethod
     def _unmask_sse_bytes_chunk(chunk: bytes, pii_tokens: dict[str, str]) -> bytes:

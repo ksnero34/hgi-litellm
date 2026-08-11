@@ -7,7 +7,9 @@ with guardrail transformations.
 
 import os
 import sys
+from types import SimpleNamespace
 from typing import Any, List, Literal, Optional, Tuple
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -17,6 +19,7 @@ from fastapi import HTTPException
 from openai.types.responses import ResponseFunctionToolCall
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
+from litellm.exceptions import GuardrailRaisedException
 from litellm.llms import get_guardrail_translation_mapping
 from litellm.llms.openai.responses.guardrail_translation.handler import (
     OpenAIResponsesHandler,
@@ -53,6 +56,8 @@ class MockGuardrail(CustomGuardrail):
 
 
 class SourceCaptureGuardrail(CustomGuardrail):
+    requires_guardrailed_previous_response_history = True
+
     def __init__(self):
         super().__init__(guardrail_name="source-capture")
         self.captured_inputs: List[GenericGuardrailAPIInputs] = []
@@ -66,6 +71,10 @@ class SourceCaptureGuardrail(CustomGuardrail):
     ) -> GenericGuardrailAPIInputs:
         self.captured_inputs.append(inputs)
         return inputs
+
+
+class HistoryBlockingGuardrail(MockGuardrail):
+    requires_guardrailed_previous_response_history = True
 
 
 class TestOpenAIResponsesHandlerDiscovery:
@@ -105,6 +114,121 @@ class TestOpenAIResponsesHandlerInputProcessing:
 
         assert result["input"] == "Hello world [GUARDRAILED]"
         assert result["model"] == "gpt-4"
+
+    @pytest.mark.asyncio
+    async def test_process_previous_response_history_before_current_input(self):
+        guardrail = SourceCaptureGuardrail()
+        logging_obj = SimpleNamespace()
+        data = {
+            "input": "Current question",
+            "model": "gpt-4",
+            "previous_response_id": "resp_previous",
+        }
+        history = {
+            "messages": [
+                {"role": "user", "content": "Previous question"},
+                {"role": "assistant", "content": "Previous answer"},
+            ],
+            "litellm_session_id": "session-1",
+        }
+        loader = AsyncMock(return_value=history)
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        result = await handler.process_input_messages(data, guardrail, logging_obj)
+
+        assert guardrail.captured_inputs[0]["texts"] == ["Previous question", "Previous answer"]
+        assert guardrail.captured_inputs[1]["texts"] == ["Current question"]
+        assert result["input"] == "Current question"
+        assert result["previous_response_id"] == "resp_previous"
+
+    @pytest.mark.asyncio
+    async def test_previous_response_history_is_loaded_once_per_request(self):
+        logging_obj = SimpleNamespace()
+        loader = AsyncMock(
+            return_value={
+                "messages": [{"role": "user", "content": "Previous question"}],
+                "litellm_session_id": "session-1",
+            }
+        )
+        data = {
+            "input": "Current question",
+            "model": "gpt-4",
+            "previous_response_id": "resp_previous",
+        }
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        await handler.process_input_messages(dict(data), SourceCaptureGuardrail(), logging_obj)
+        await handler.process_input_messages(dict(data), SourceCaptureGuardrail(), logging_obj)
+
+        loader.assert_awaited_once_with("resp_previous")
+
+    @pytest.mark.asyncio
+    async def test_modified_previous_response_history_is_blocked(self):
+        guardrail = HistoryBlockingGuardrail(guardrail_name="history-block")
+        data = {
+            "input": "Current question",
+            "model": "gpt-4",
+            "previous_response_id": "resp_previous",
+        }
+        loader = AsyncMock(
+            return_value={
+                "messages": [{"role": "user", "content": "Previous PII"}],
+                "litellm_session_id": "session-1",
+            }
+        )
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        with pytest.raises(GuardrailRaisedException, match="Sensitive data detected"):
+            await handler.process_input_messages(data, guardrail)
+
+    @pytest.mark.asyncio
+    async def test_missing_previous_response_history_fails_closed(self):
+        guardrail = HistoryBlockingGuardrail(guardrail_name="history-block")
+        data = {
+            "input": "Current question",
+            "model": "gpt-4",
+            "previous_response_id": "resp_missing",
+        }
+        loader = AsyncMock(return_value={"messages": [], "litellm_session_id": None})
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        with pytest.raises(GuardrailRaisedException, match="Unable to inspect previous Responses API history"):
+            await handler.process_input_messages(data, guardrail)
+
+    @pytest.mark.asyncio
+    async def test_previous_response_history_load_failure_fails_closed(self):
+        guardrail = HistoryBlockingGuardrail(guardrail_name="history-block")
+        loader = AsyncMock(side_effect=RuntimeError("database unavailable"))
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        with pytest.raises(GuardrailRaisedException, match="Unable to inspect previous Responses API history"):
+            await handler.process_input_messages(
+                {
+                    "input": "Current question",
+                    "model": "gpt-4",
+                    "previous_response_id": "resp_previous",
+                },
+                guardrail,
+            )
+
+    @pytest.mark.asyncio
+    async def test_previous_response_history_is_checked_without_current_input(self):
+        guardrail = SourceCaptureGuardrail()
+        loader = AsyncMock(
+            return_value={
+                "messages": [{"role": "user", "content": "Previous question"}],
+                "litellm_session_id": "session-1",
+            }
+        )
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+
+        result = await handler.process_input_messages(
+            {"model": "gpt-4", "previous_response_id": "resp_previous"},
+            guardrail,
+        )
+
+        assert guardrail.captured_inputs[0]["texts"] == ["Previous question"]
+        assert "input" not in result
 
     @pytest.mark.asyncio
     async def test_process_input_none(self):

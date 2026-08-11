@@ -2333,11 +2333,9 @@ from litellm.types.utils import ModelResponseStream
 
 
 @pytest.mark.asyncio
-async def test_streaming_with_bytes_chunks_does_not_crash(mock_user_api_key):
+async def test_apply_to_output_streaming_with_bytes_chunks_fails_closed(mock_user_api_key):
     """
-    Regression test: async_post_call_streaming_iterator_hook should
-    gracefully handle raw bytes in the stream instead of crashing with
-    'bytes' object has no attribute 'id'.
+    Raw bytes cannot be inspected as typed streaming output and must fail closed.
     """
     guardrail = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,
@@ -2356,16 +2354,13 @@ async def test_streaming_with_bytes_chunks_does_not_crash(mock_user_api_key):
             system_fingerprint=None,
         )  # proper chunk
 
-    chunks = []
-    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
-        user_api_key_dict=mock_user_api_key,
-        response=mock_stream(),
-        request_data={},
-    ):
-        chunks.append(chunk)
-
-    # Should not crash, should produce at least one valid chunk
-    assert len(chunks) >= 1
+    with pytest.raises(Exception, match="cannot safely inspect raw streaming bytes"):
+        async for _ in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=mock_user_api_key,
+            response=mock_stream(),
+            request_data={},
+        ):
+            pass
 
 
 def test_entity_deny_list_filters_detections():
@@ -3035,10 +3030,9 @@ async def test_anthropic_native_response_non_text_blocks_untouched():
 
 
 @pytest.mark.asyncio
-async def test_streaming_bytes_chunks_are_yielded_not_discarded():
+async def test_apply_to_output_streaming_bytes_chunks_fail_closed():
     """
-    Regression test: bytes chunks (Anthropic native SSE) should be yielded
-    through the streaming hook, not silently discarded.
+    Raw native SSE must not bypass apply_to_output inspection.
     """
 
     guardrail = _OPTIONAL_PresidioPIIMasking(
@@ -3052,16 +3046,13 @@ async def test_streaming_bytes_chunks_are_yielded_not_discarded():
         yield byte_chunk
 
     mock_user_api_key = UserAPIKeyAuth(api_key="test-key")
-    chunks = []
-    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
-        user_api_key_dict=mock_user_api_key,
-        response=mock_stream(),
-        request_data={},
-    ):
-        chunks.append(chunk)
-
-    assert any(isinstance(c, bytes) for c in chunks), "bytes chunks must not be discarded"
-    assert byte_chunk in chunks
+    with pytest.raises(Exception, match="cannot safely inspect raw streaming bytes"):
+        async for _ in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=mock_user_api_key,
+            response=mock_stream(),
+            request_data={},
+        ):
+            pass
 
 
 @pytest.mark.asyncio
@@ -3096,10 +3087,9 @@ async def test_streaming_unmask_path_bytes_passthrough():
 
 
 @pytest.mark.asyncio
-async def test_apply_to_output_streaming_unknown_events_passthrough():
+async def test_apply_to_output_streaming_text_event_without_delta_fails_closed():
     """
-    Regression test: /v1/responses-style event objects (neither bytes nor
-    ModelResponseStream) must be preserved in order and not dropped.
+    Text-bearing Responses events with an invalid shape must fail closed.
     """
     guardrail = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,
@@ -3121,29 +3111,19 @@ async def test_apply_to_output_streaming_unknown_events_passthrough():
             yield event
 
     mock_user_api_key = UserAPIKeyAuth(api_key="test-key")
-    received = []
-    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
-        user_api_key_dict=mock_user_api_key,
-        response=mock_stream(),
-        request_data={},
-    ):
-        received.append(chunk)
-
-    # Preserve exact objects and ordering so clients receive full event lifecycle.
-    assert received == events
-    assert [e.type for e in received] == [
-        "response.created",
-        "response.output_text.delta",
-        "response.completed",
-    ]
+    with pytest.raises(Exception, match="text delta without text"):
+        async for _ in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=mock_user_api_key,
+            response=mock_stream(),
+            request_data={},
+        ):
+            pass
 
 
 @pytest.mark.asyncio
 async def test_apply_to_output_streaming_mixed_chunks_flushes_and_warns():
     """
-    Regression test for mixed stream shape:
-    a buffered ModelResponseStream chunk followed by unknown responses-style
-    events should be preserved, and masking skip should be visible via warnings.
+    Known chat and Responses lifecycle events can coexist without masking bypass.
     """
     guardrail = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,
@@ -3170,24 +3150,14 @@ async def test_apply_to_output_streaming_mixed_chunks_flushes_and_warns():
 
     mock_user_api_key = UserAPIKeyAuth(api_key="test-key")
     received = []
-    with patch("litellm.proxy.guardrails.guardrail_hooks.presidio.verbose_proxy_logger") as mock_logger:
-        async for chunk in guardrail.async_post_call_streaming_iterator_hook(
-            user_api_key_dict=mock_user_api_key,
-            response=mock_stream(),
-            request_data={},
-        ):
-            received.append(chunk)
+    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
+        user_api_key_dict=mock_user_api_key,
+        response=mock_stream(),
+        request_data={},
+    ):
+        received.append(chunk)
 
-        # Preserve original ordering across mixed stream types.
-        assert received == [model_chunk, response_completed]
-
-        # Two warnings are expected:
-        # 1) mixed stream detected + unmasked flush
-        # 2) passthrough mode skipped output masking
-        assert mock_logger.warning.call_count == 2
-        warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
-        assert any("mixed stream detected" in msg for msg in warning_messages)
-        assert any("unknown event objects" in msg for msg in warning_messages)
+    assert received == [model_chunk, response_completed]
 
 
 # ---------------------------------------------------------------------------
@@ -3259,11 +3229,9 @@ async def test_apply_guardrail_masks_on_request():
 
 
 @pytest.mark.asyncio
-async def test_apply_to_output_streaming_bytes_only_logs_warning():
+async def test_apply_to_output_streaming_bytes_only_fails_closed():
     """
-    Regression test: when apply_to_output=True and the stream contains only
-    bytes chunks (Anthropic native SSE), output masking is skipped.
-    A warning must be logged so operators are aware.
+    A bytes-only apply_to_output stream must fail closed.
     """
     guardrail = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,
@@ -3281,24 +3249,308 @@ async def test_apply_to_output_streaming_bytes_only_logs_warning():
 
     mock_user_api_key = UserAPIKeyAuth(api_key="test-key")
 
-    collected = []
-    with patch("litellm.proxy.guardrails.guardrail_hooks.presidio.verbose_proxy_logger") as mock_logger:
-        async for chunk in guardrail.async_post_call_streaming_iterator_hook(
+    with pytest.raises(Exception, match="cannot safely inspect raw streaming bytes"):
+        async for _ in guardrail.async_post_call_streaming_iterator_hook(
             user_api_key_dict=mock_user_api_key,
             response=mock_stream(),
             request_data={},
         ):
-            collected.append(chunk)
+            pass
 
-        # All bytes should be yielded through
-        assert len(collected) == len(byte_chunks)
-        for original, received in zip(byte_chunks, collected):
-            assert original == received
 
-        # Warning must be logged about skipped masking
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Output PII masking was skipped" in warning_msg
+@pytest.mark.asyncio
+async def test_apply_to_output_chat_stream_masks_pii_split_across_chunks():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+    prefix = "x" * 129
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+    chunks = [
+        ModelResponseStream(
+            id="chatcmpl-pii",
+            choices=[{"index": 0, "delta": {"content": prefix + "alice@"}}],
+            created=1,
+            model="gpt-4",
+            object="chat.completion.chunk",
+        ),
+        ModelResponseStream(
+            id="chatcmpl-pii",
+            choices=[{"index": 0, "delta": {"content": "example.com"}}],
+            created=1,
+            model="gpt-4",
+            object="chat.completion.chunk",
+        ),
+        ModelResponseStream(
+            id="chatcmpl-pii",
+            choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            created=1,
+            model="gpt-4",
+            object="chat.completion.chunk",
+        ),
+    ]
+
+    async def mock_stream():
+        for chunk in chunks:
+            yield chunk
+
+    received = []
+    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
+        user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+        response=mock_stream(),
+        request_data={},
+    ):
+        received.append(chunk)
+
+    content = "".join(
+        choice.delta.content or "" for chunk in received for choice in chunk.choices if hasattr(choice.delta, "content")
+    )
+    assert content == prefix + "[EMAIL]"
+    assert "alice@example.com" not in content
+    assert len(received) == 4
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_chat_stream_flushes_text_before_finish_reason():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+
+    async def mock_stream():
+        yield ModelResponseStream(
+            id="chatcmpl-pii",
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {"content": "alice@example.com"},
+                    "finish_reason": "stop",
+                }
+            ],
+            created=1,
+            model="gpt-4",
+            object="chat.completion.chunk",
+        )
+
+    received = [
+        chunk
+        async for chunk in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+            response=mock_stream(),
+            request_data={},
+        )
+    ]
+
+    assert received[0].choices[0].delta.content == "[EMAIL]"
+    assert received[0].choices[0].finish_reason is None
+    assert received[1].choices[0].delta.content == ""
+    assert received[1].choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_responses_stream_masks_each_logical_stream():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+    prefix = "x" * 129
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+    events = [
+        {
+            "type": "response.output_text.delta",
+            "item_id": "item-1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": prefix + "alice@",
+        },
+        {
+            "type": "response.output_text.delta",
+            "item_id": "item-1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "example.com",
+        },
+        {
+            "type": "response.output_text.done",
+            "item_id": "item-1",
+            "output_index": 0,
+            "content_index": 0,
+            "text": prefix + "alice@example.com",
+        },
+    ]
+
+    async def mock_stream():
+        for event in events:
+            yield event
+
+    received = []
+    async for event in guardrail.async_post_call_streaming_iterator_hook(
+        user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+        response=mock_stream(),
+        request_data={},
+    ):
+        received.append(event)
+
+    deltas = "".join(event.get("delta", "") for event in received)
+    assert deltas == prefix + "[EMAIL]"
+    assert received[-1]["text"] == prefix + "[EMAIL]"
+    assert "alice@example.com" not in str(received)
+
+
+def test_presidio_requires_guardrailed_previous_response_history():
+    assert _OPTIONAL_PresidioPIIMasking.requires_guardrailed_previous_response_history is True
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_responses_output_item_done_masks_nested_fields():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("SECRET", "[MASKED]")
+
+    guardrail.check_pii = mock_check_pii
+    event = {
+        "type": "response.output_item.done",
+        "output_index": 0,
+        "item": {
+            "content": [{"type": "output_text", "text": "SECRET content"}],
+            "summary": [{"type": "summary_text", "text": "SECRET summary"}],
+            "reasoning_content": "SECRET reasoning",
+            "arguments": '{"value":"SECRET"}',
+            "input": {"query": "SECRET input"},
+            "output": {"result": "SECRET output"},
+        },
+    }
+
+    async def mock_stream():
+        yield event
+
+    received = []
+    async for chunk in guardrail.async_post_call_streaming_iterator_hook(
+        user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+        response=mock_stream(),
+        request_data={},
+    ):
+        received.append(chunk)
+
+    assert "SECRET" not in str(received)
+    item = received[0]["item"]
+    assert item["content"][0]["text"] == "[MASKED] content"
+    assert item["summary"][0]["text"] == "[MASKED] summary"
+    assert item["arguments"] == '{"value":"[MASKED]"}'
+    assert item["input"]["query"] == "[MASKED] input"
+    assert item["output"]["result"] == "[MASKED] output"
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_response_done_masks_nested_output():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+
+    async def mock_stream():
+        yield {
+            "type": "response.done",
+            "response": {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "alice@example.com"}],
+                    }
+                ]
+            },
+        }
+
+    received = [
+        event
+        async for event in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+            response=mock_stream(),
+            request_data={},
+        )
+    ]
+
+    assert received[0]["response"]["output"][0]["content"][0]["text"] == "[EMAIL]"
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_responses_annotation_masks_nested_text():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+
+    async def mock_stream():
+        yield {
+            "type": "response.output_text.annotation.added",
+            "annotation": {"type": "text_annotation", "text": "Contact alice@example.com"},
+        }
+
+    received = [
+        event
+        async for event in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+            response=mock_stream(),
+            request_data={},
+        )
+    ]
+
+    assert received[0]["annotation"]["text"] == "Contact [EMAIL]"
+
+
+@pytest.mark.asyncio
+async def test_apply_to_output_responses_code_delta_masks_split_pii():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, apply_to_output=True)
+
+    async def mock_check_pii(text, output_parse_pii, presidio_config, request_data):
+        return text.replace("alice@example.com", "[EMAIL]")
+
+    guardrail.check_pii = mock_check_pii
+
+    async def mock_stream():
+        yield {
+            "type": "response.code_interpreter_call_code.delta",
+            "event_id": "event-1",
+            "item_id": "code-1",
+            "output_index": 0,
+            "delta": "alice@",
+        }
+        yield {
+            "type": "response.code_interpreter_call_code.delta",
+            "event_id": "event-2",
+            "item_id": "code-1",
+            "output_index": 0,
+            "delta": "example.com",
+        }
+        yield {
+            "type": "response.code_interpreter_call_code.done",
+            "item_id": "code-1",
+            "output_index": 0,
+            "code": "alice@example.com",
+        }
+
+    received = [
+        event
+        async for event in guardrail.async_post_call_streaming_iterator_hook(
+            user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+            response=mock_stream(),
+            request_data={},
+        )
+    ]
+
+    assert "".join(event.get("delta", "") for event in received) == "[EMAIL]"
+    delta_event_ids = [event["event_id"] for event in received if "delta" in event]
+    assert len(delta_event_ids) == len(set(delta_event_ids))
+    assert received[-1]["code"] == "[EMAIL]"
 
 
 @pytest.mark.asyncio
