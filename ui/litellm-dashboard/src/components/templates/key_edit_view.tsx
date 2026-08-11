@@ -13,6 +13,7 @@ import AgentSelector from "../agent_management/AgentSelector";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import BudgetDurationDropdown from "../common_components/budget_duration_dropdown";
 import KeyLifecycleSettings from "../common_components/KeyLifecycleSettings";
+import PassThroughRoutesSelector from "../common_components/PassThroughRoutesSelector";
 import RateLimitTypeFormItem from "../common_components/RateLimitTypeFormItem";
 import OrganizationDropdown from "../common_components/OrganizationDropdown";
 import { formatMetadataForDisplay, stripTagsFromMetadata } from "../key_info_utils";
@@ -642,6 +643,27 @@ export function KeyEditView({
         name="access_group_ids"
       >
         <AccessGroupSelector placeholder={t("gateway.keyEdit.selectAccessGroups")} />
+      </Form.Item>
+
+      <Form.Item
+        label={t("gateway.keyEdit.passThroughRoutes")}
+        name="allowed_passthrough_routes"
+        tooltip={!premiumUser ? t("gateway.keyEdit.passThroughRoutesPremium") : undefined}
+      >
+        <PassThroughRoutesSelector
+          accessToken={accessToken || ""}
+          placeholder={
+            !premiumUser
+              ? t("gateway.keyEdit.passThroughRoutesPremium")
+              : Array.isArray(keyData.metadata?.allowed_passthrough_routes) &&
+                  keyData.metadata.allowed_passthrough_routes.length > 0
+                ? t("gateway.keyEdit.passThroughRoutesCurrent", {
+                    routes: keyData.metadata.allowed_passthrough_routes.join(", "),
+                  })
+                : t("gateway.keyEdit.passThroughRoutesPlaceholder")
+          }
+          disabled={!premiumUser}
+        />
       </Form.Item>
 
       <Form.Item label={t("gateway.keyEdit.vectorStores")} name="vector_stores">

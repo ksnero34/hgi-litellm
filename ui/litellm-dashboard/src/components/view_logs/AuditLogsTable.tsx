@@ -2,7 +2,7 @@
 
 import { ColumnFiltersState, OnChangeFn, PaginationState } from "@tanstack/react-table";
 import { ScrollText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -15,7 +15,14 @@ import { StatusBadge, type StatusTone } from "@/components/shared/table_cells";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { AUDIT_TABLE_NAME_DISPLAY, AuditLogEntry, getAuditLogsTableColumns } from "./AuditLogsTableColumns";
+import { AuditLogEntry, getAuditLogSuccess, getAuditLogsTableColumns } from "./AuditLogsTableColumns";
+import {
+  AUDIT_ACTION_FILTER_VALUES,
+  AUDIT_ACTION_TONE,
+  AUDIT_TABLE_FILTER_VALUES,
+  getAuditActionLabel,
+  getAuditTableNameLabel,
+} from "./auditLogLabels";
 
 interface AuditLogsTableProps {
   data: AuditLogEntry[];
@@ -32,46 +39,37 @@ interface AuditLogsTableProps {
 
 const ALL_VALUE = "all";
 
-const ACTION_TONE: Record<string, StatusTone> = {
-  created: "success",
-  updated: "info",
-  deleted: "error",
-  rotated: "warning",
+const SUCCESS_VALUE_TO_LABEL_KEY: Record<"true" | "false", string> = {
+  true: "observabilityExtra.audit.success.success",
+  false: "observabilityExtra.audit.success.failure",
 };
 
-const AUDIT_ACTION_LABEL_KEYS: Record<string, string> = {
-  created: "observabilityExtra.audit.action.created",
-  updated: "observabilityExtra.audit.action.updated",
-  deleted: "observabilityExtra.audit.action.deleted",
-  rotated: "observabilityExtra.audit.action.rotated",
-};
-
-const AUDIT_TABLE_LABEL_KEYS: Record<string, string> = {
-  LiteLLM_VerificationToken: "observabilityExtra.audit.tableName.keys",
-  LiteLLM_TeamTable: "observabilityExtra.audit.tableName.teams",
-  LiteLLM_UserTable: "observabilityExtra.audit.tableName.users",
-  LiteLLM_OrganizationTable: "observabilityExtra.audit.tableName.organizations",
-  LiteLLM_ProxyModelTable: "observabilityExtra.audit.tableName.models",
+const getSuccessTone = (success: boolean | null): StatusTone => {
+  if (success === true) {
+    return "success";
+  }
+  if (success === false) {
+    return "error";
+  }
+  return "neutral";
 };
 
 function AuditLogsEmptyState({ filtered }: { filtered: boolean }) {
   const { t } = useTranslation();
+  const title = filtered
+    ? t("observabilityExtra.audit.empty.noMatchingTitle")
+    : t("observabilityExtra.audit.empty.noLogsTitle");
+  const description = filtered
+    ? t("observabilityExtra.audit.empty.noMatchingDescription")
+    : t("observabilityExtra.audit.empty.noLogsDescription");
 
   return (
     <div className="flex flex-col items-center gap-1 py-6">
       <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-muted">
         <ScrollText className="size-5 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">
-        {filtered
-          ? t("observabilityExtra.audit.empty.noMatchingTitle")
-          : t("observabilityExtra.audit.empty.noLogsTitle")}
-      </div>
-      <div className="max-w-xs text-center text-sm text-muted-foreground">
-        {filtered
-          ? t("observabilityExtra.audit.empty.noMatchingDescription")
-          : t("observabilityExtra.audit.empty.noLogsDescription")}
-      </div>
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      <div className="max-w-xs text-center text-sm text-muted-foreground">{description}</div>
     </div>
   );
 }
@@ -88,33 +86,49 @@ export function AuditLogsTable({
   onRefresh,
   onViewLog,
 }: AuditLogsTableProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const getActionLabel = useCallback((action: string): string => getAuditActionLabel(t, action), [t]);
+  const getTableLabel = useCallback((tableName: string): string => getAuditTableNameLabel(t, tableName), [t]);
 
-  const getAuditActionLabel = (action: string): string => {
-    const key = AUDIT_ACTION_LABEL_KEYS[action];
-    return key ? t(key) : action;
-  };
-
-  const getAuditTableNameLabel = (tableName: string): string => {
-    const key = AUDIT_TABLE_LABEL_KEYS[tableName];
-    return key ? t(key) : AUDIT_TABLE_NAME_DISPLAY[tableName] ?? tableName;
-  };
+  const getSuccessLabel = useCallback(
+    (success: boolean | null): string => {
+      if (success === true) {
+        return t("observabilityExtra.audit.success.success");
+      }
+      if (success === false) {
+        return t("observabilityExtra.audit.success.failure");
+      }
+      return t("observabilityExtra.audit.success.unknown");
+    },
+    [t],
+  );
 
   const columns = useMemo(
     () =>
-      getAuditLogsTableColumns({ onViewLog }).map((column) => {
-        if (column.id === "updated_at") {
-          return { ...column, header: t("observabilityExtra.audit.timestamp") };
-        }
+      getAuditLogsTableColumns({
+        onViewLog,
+        labels: {
+          timestamp: t("observabilityExtra.audit.timestamp"),
+          action: t("observabilityExtra.audit.actionLabel"),
+          resourceType: t("observabilityExtra.audit.resourceType"),
+          success: t("observabilityExtra.audit.successLabel"),
+          successSuccess: t("observabilityExtra.audit.success.success"),
+          successFailure: t("observabilityExtra.audit.success.failure"),
+          successUnknown: t("observabilityExtra.audit.success.unknown"),
+          resourceId: t("observabilityExtra.audit.resourceId"),
+          actor: t("observabilityExtra.audit.actor"),
+          apiKeyHash: t("observabilityExtra.audit.apiKeyHash"),
+          getTableNameLabel: getTableLabel,
+        },
+      }).map((column) => {
         if (column.id === "action") {
           return {
             ...column,
-            header: t("observabilityExtra.audit.actionLabel"),
             cell: ({ row }: { row: { original: AuditLogEntry } }) => (
               <StatusBadge
-                tone={ACTION_TONE[row.original.action] ?? "neutral"}
-                label={getAuditActionLabel(row.original.action)}
+                tone={(AUDIT_ACTION_TONE[row.original.action] ?? "neutral") as StatusTone}
+                label={getActionLabel(row.original.action)}
               />
             ),
           };
@@ -122,63 +136,65 @@ export function AuditLogsTable({
         if (column.id === "table_name") {
           return {
             ...column,
-            header: t("observabilityExtra.audit.table"),
             cell: ({ row }: { row: { original: AuditLogEntry } }) => (
-              <span className="text-sm">{getAuditTableNameLabel(row.original.table_name)}</span>
+              <span className="text-sm">{getTableLabel(row.original.table_name)}</span>
             ),
           };
         }
-        if (column.id === "object_id") {
-          return { ...column, header: t("observabilityExtra.audit.objectId") };
-        }
-        if (column.id === "changed_by") {
-          return { ...column, header: t("observabilityExtra.audit.changedBy") };
-        }
-        if (column.id === "changed_by_api_key") {
-          return { ...column, header: t("observabilityExtra.audit.apiKeyHash") };
+        if (column.id === "success") {
+          return {
+            ...column,
+            cell: ({ row }: { row: { original: AuditLogEntry } }) => {
+              const success = getAuditLogSuccess(row.original);
+              return <StatusBadge tone={getSuccessTone(success)} label={getSuccessLabel(success)} />;
+            },
+          };
         }
         return column;
       }),
-    [i18n.resolvedLanguage, onViewLog, t],
+    [getActionLabel, getSuccessLabel, getTableLabel, onViewLog, t],
   );
 
   const actionOptions = useMemo(
-    () => [
-      { label: t("observabilityExtra.audit.action.created"), value: "created" },
-      { label: t("observabilityExtra.audit.action.updated"), value: "updated" },
-      { label: t("observabilityExtra.audit.action.deleted"), value: "deleted" },
-      { label: t("observabilityExtra.audit.action.rotated"), value: "rotated" },
-    ],
-    [i18n.resolvedLanguage, t],
+    () => AUDIT_ACTION_FILTER_VALUES.map((value) => ({ label: getActionLabel(value), value })),
+    [getActionLabel],
   );
 
   const tableOptions = useMemo(
+    () => AUDIT_TABLE_FILTER_VALUES.map((value) => ({ label: getTableLabel(value), value })),
+    [getTableLabel],
+  );
+
+  const successOptions = useMemo(
     () => [
-      { label: getAuditTableNameLabel("LiteLLM_VerificationToken"), value: "LiteLLM_VerificationToken" },
-      { label: getAuditTableNameLabel("LiteLLM_TeamTable"), value: "LiteLLM_TeamTable" },
-      { label: getAuditTableNameLabel("LiteLLM_UserTable"), value: "LiteLLM_UserTable" },
-      { label: getAuditTableNameLabel("LiteLLM_OrganizationTable"), value: "LiteLLM_OrganizationTable" },
-      { label: getAuditTableNameLabel("LiteLLM_ProxyModelTable"), value: "LiteLLM_ProxyModelTable" },
+      { label: t("observabilityExtra.audit.success.success"), value: "true" },
+      { label: t("observabilityExtra.audit.success.failure"), value: "false" },
     ],
-    [i18n.resolvedLanguage, t],
+    [t],
   );
 
   const filterLabels = useMemo(
     () => ({
-      object_id: t("observabilityExtra.audit.objectId"),
-      changed_by: t("observabilityExtra.audit.changedBy"),
+      object_id: t("observabilityExtra.audit.resourceId"),
+      changed_by: t("observabilityExtra.audit.actor"),
       team_id: t("observabilityExtra.audit.teamId"),
       key_hash: t("observabilityExtra.audit.keyHash"),
       action: t("observabilityExtra.audit.actionLabel"),
-      table_name: t("observabilityExtra.audit.table"),
+      table_name: t("observabilityExtra.audit.resourceType"),
+      success: t("observabilityExtra.audit.successLabel"),
+      start_date: t("observabilityExtra.audit.startDate"),
+      end_date: t("observabilityExtra.audit.endDate"),
     }),
-    [i18n.resolvedLanguage, t],
+    [t],
   );
 
   const formatFilterValue = (columnId: string, value: unknown): string => {
     const raw = String(value);
-    if (columnId === "action") return getAuditActionLabel(raw);
-    if (columnId === "table_name") return getAuditTableNameLabel(raw);
+    if (columnId === "action") return getActionLabel(raw);
+    if (columnId === "table_name") return getTableLabel(raw);
+    if (columnId === "success" && (raw === "true" || raw === "false")) {
+      return t(SUCCESS_VALUE_TO_LABEL_KEY[raw]);
+    }
     return raw;
   };
 
@@ -218,18 +234,18 @@ export function AuditLogsTable({
           >
             {({ get, set }) => (
               <>
-                <DataTableFilterField label={t("observabilityExtra.audit.objectId")}>
+                <DataTableFilterField label={t("observabilityExtra.audit.resourceId")}>
                   <Input
                     value={(get("object_id") as string) ?? ""}
                     onChange={(event) => set("object_id", event.target.value)}
-                    placeholder={t("observabilityExtra.audit.enterObjectId")}
+                    placeholder={t("observabilityExtra.audit.enterResourceId")}
                   />
                 </DataTableFilterField>
-                <DataTableFilterField label={t("observabilityExtra.audit.changedBy")}>
+                <DataTableFilterField label={t("observabilityExtra.audit.actor")}>
                   <Input
                     value={(get("changed_by") as string) ?? ""}
                     onChange={(event) => set("changed_by", event.target.value)}
-                    placeholder={t("observabilityExtra.audit.enterUserId")}
+                    placeholder={t("observabilityExtra.audit.enterActor")}
                   />
                 </DataTableFilterField>
                 <DataTableFilterField label={t("observabilityExtra.audit.teamId")}>
@@ -264,16 +280,16 @@ export function AuditLogsTable({
                     </SelectContent>
                   </Select>
                 </DataTableFilterField>
-                <DataTableFilterField label={t("observabilityExtra.audit.table")}>
+                <DataTableFilterField label={t("observabilityExtra.audit.resourceType")}>
                   <Select
                     value={(get("table_name") as string) ?? ALL_VALUE}
                     onValueChange={(value) => set("table_name", value === ALL_VALUE ? undefined : value)}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder={t("observabilityExtra.audit.allTables")} />
+                      <SelectValue placeholder={t("observabilityExtra.audit.allResourceTypes")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL_VALUE}>{t("observabilityExtra.audit.allTables")}</SelectItem>
+                      <SelectItem value={ALL_VALUE}>{t("observabilityExtra.audit.allResourceTypes")}</SelectItem>
                       {tableOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -281,6 +297,40 @@ export function AuditLogsTable({
                       ))}
                     </SelectContent>
                   </Select>
+                </DataTableFilterField>
+                <DataTableFilterField label={t("observabilityExtra.audit.successLabel")}>
+                  <Select
+                    value={(get("success") as string) ?? ALL_VALUE}
+                    onValueChange={(value) => set("success", value === ALL_VALUE ? undefined : value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={t("observabilityExtra.audit.allResults")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_VALUE}>{t("observabilityExtra.audit.allResults")}</SelectItem>
+                      {successOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </DataTableFilterField>
+                <DataTableFilterField label={t("observabilityExtra.audit.startDate")}>
+                  <Input
+                    type="date"
+                    value={(get("start_date") as string) ?? ""}
+                    onChange={(event) => set("start_date", event.target.value)}
+                    aria-label={t("observabilityExtra.audit.startDate")}
+                  />
+                </DataTableFilterField>
+                <DataTableFilterField label={t("observabilityExtra.audit.endDate")}>
+                  <Input
+                    type="date"
+                    value={(get("end_date") as string) ?? ""}
+                    onChange={(event) => set("end_date", event.target.value)}
+                    aria-label={t("observabilityExtra.audit.endDate")}
+                  />
                 </DataTableFilterField>
               </>
             )}

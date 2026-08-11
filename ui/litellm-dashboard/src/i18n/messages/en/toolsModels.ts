@@ -171,6 +171,7 @@ export const toolsModelsMessages: MessageCatalog = {
   "toolsModels.mcp.authBasic": "Basic Auth",
   "toolsModels.mcp.authOAuth": "OAuth",
   "toolsModels.mcp.authTokenExchange": "OAuth Token Exchange (OBO)",
+  "toolsModels.mcp.authIdJag": "ID-JAG (Okta Cross App Access)",
   "toolsModels.mcp.authAwsSigv4": "AWS SigV4 (Bedrock AgentCore MCPs)",
   "toolsModels.mcp.authTruePassthrough": "True Passthrough (no LiteLLM auth)",
   "toolsModels.mcp.authDelegate": "OAuth Delegate (client-supplied upstream token)",

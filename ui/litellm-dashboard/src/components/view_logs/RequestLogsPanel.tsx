@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { AutoRouterModelGroupsProvider } from "@/components/shared/table_cells";
 import { internalUserRoles } from "../../utils/roles";
 import type { KeyResponse } from "../key_team_helpers/key_list";
-import { keyInfoV1Call } from "../networking";
+import { keyInfoV1Call, uiSpendLogsCall } from "../networking";
 import KeyInfoView from "../templates/key_info_view";
 import type { LogEntry } from "./columns";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
@@ -18,8 +18,10 @@ import {
   formatLogsWindow,
   getLogsWindowEndBound,
   LOG_FILTER_IDS,
+  type PaginatedResponse,
   useLogFilterLogic,
 } from "./log_filter_logic";
+import { useLogDetailRouting } from "./logDetailRouting";
 import { LogDetailsDrawer } from "./LogDetailsDrawer";
 import { LiveTailBanner, LogsTableToolbar } from "./LogsTableToolbar";
 import { RequestLogsTable } from "./RequestLogsTable";
@@ -54,8 +56,15 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
 
   const [selectedKeyIdInfoView, setSelectedKeyIdInfoView] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  const {
+    logId: urlLogId,
+    sessionId: urlSessionId,
+    openLog,
+    openSession,
+    selectLog,
+    close: closeUrlLog,
+  } = useLogDetailRouting();
 
   const [isLiveTail, setIsLiveTail] = useState<boolean>(() => {
     const storedValue = sessionStorage.getItem("isLiveTail");
@@ -93,7 +102,7 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
   );
 
   const keyInfoQueryOptions: UseQueryOptions<KeyResponse | null> = {
-    queryKey: ["requestLogsKeyInfo", selectedKeyIdInfoView, accessToken],
+    queryKey: ["requestLogsKeyInfo", selectedKeyIdInfoView],
     queryFn: async () => {
       if (selectedKeyIdInfoView === null) return null;
       const keyData = await keyInfoV1Call(accessToken, selectedKeyIdInfoView);
@@ -107,6 +116,43 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
   };
 
   const { data: selectedKeyInfo } = useQuery(keyInfoQueryOptions);
+
+  const urlLogQueryOptions: UseQueryOptions<LogEntry | null> = {
+    queryKey: ["logs", "byId", urlLogId],
+    queryFn: async () => {
+      if (urlLogId === null) return null;
+      const window = formatLogsWindow(startTime, endTime, isCustomDate);
+      const response: PaginatedResponse = await uiSpendLogsCall({
+        accessToken,
+        start_date: window.start_date,
+        end_date: window.end_date,
+        page: 1,
+        page_size: 1,
+        params: { request_id: urlLogId },
+      });
+      return response.data.find((log) => log.request_id === urlLogId) ?? null;
+    },
+    enabled: urlLogId !== null && selectedLog?.request_id !== urlLogId,
+    staleTime: Infinity,
+  };
+
+  const { data: urlLog } = useQuery(urlLogQueryOptions);
+
+  const displayLog = useMemo<LogEntry | null>(() => {
+    if (urlLogId === null) return null;
+    if (selectedLog?.request_id === urlLogId) return selectedLog;
+    return filteredLogs.data.find((log) => log.request_id === urlLogId) ?? urlLog ?? null;
+  }, [urlLogId, selectedLog, filteredLogs.data, urlLog]);
+
+  const displaySessionId = useMemo<string | null>(() => {
+    if (urlSessionId !== null) return urlSessionId;
+    if (displayLog?.session_id !== undefined && (displayLog.session_total_count || 1) > 1) {
+      return displayLog.session_id;
+    }
+    return null;
+  }, [urlSessionId, displayLog]);
+
+  const isDrawerOpen = displayLog !== null || displaySessionId !== null;
 
   const rows = useMemo<LogEntry[]>(() => {
     const searchedLogs = filteredLogs.data;
@@ -188,22 +234,34 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
     resetToFirstPage();
   }, [resetToFirstPage]);
 
-  const handleRowClick = useCallback((log: LogEntry) => {
-    const isMultiCallSession = log.session_id !== undefined && (log.session_total_count || 1) > 1;
-    setSelectedSessionId(isMultiCallSession ? log.session_id ?? null : null);
-    setSelectedLog(log);
-    setIsDrawerOpen(true);
-  }, []);
+  const handleRowClick = useCallback(
+    (log: LogEntry) => {
+      setSelectedLog(log);
+      if (log.session_id && (log.session_total_count || 1) > 1) {
+        openSession(log.session_id, log.request_id);
+      } else {
+        openLog(log.request_id);
+      }
+    },
+    [openLog, openSession],
+  );
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
       if (!sessionId) return;
       const log = rows.find((candidate) => candidate.session_id === sessionId) ?? null;
-      setSelectedSessionId(sessionId);
       setSelectedLog(log);
-      setIsDrawerOpen(true);
+      openSession(sessionId, log?.request_id ?? null);
     },
-    [rows],
+    [rows, openSession],
+  );
+
+  const handleSelectLog = useCallback(
+    (log: LogEntry) => {
+      setSelectedLog(log);
+      selectLog(log.request_id, displaySessionId);
+    },
+    [selectLog, displaySessionId],
   );
 
   const handleKeyHashClick = useCallback((keyHash: string) => {
@@ -269,15 +327,12 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
 
       <LogDetailsDrawer
         open={isDrawerOpen}
-        onClose={() => {
-          setIsDrawerOpen(false);
-          setSelectedSessionId(null);
-        }}
-        logEntry={selectedLog}
-        sessionId={selectedSessionId}
+        onClose={closeUrlLog}
+        logEntry={displayLog}
+        sessionId={displaySessionId}
         accessToken={accessToken}
         allLogs={rows}
-        onSelectLog={setSelectedLog}
+        onSelectLog={handleSelectLog}
         startTime={moment(startTime).utc().format("YYYY-MM-DD HH:mm:ss")}
       />
     </AutoRouterModelGroupsProvider>

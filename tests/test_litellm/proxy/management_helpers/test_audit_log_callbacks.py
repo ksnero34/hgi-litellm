@@ -177,7 +177,7 @@ class TestCreateAuditLogForUpdateWithCallbacks:
             mock_logger.async_log_audit_log_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_no_dispatch_when_not_premium(self):
+    async def test_dispatch_does_not_require_premium(self):
         mock_logger = MagicMock(spec=CustomLogger)
         mock_logger.async_log_audit_log_event = AsyncMock()
         litellm.audit_log_callbacks = [mock_logger]
@@ -190,10 +190,10 @@ class TestCreateAuditLogForUpdateWithCallbacks:
             await create_audit_log_for_update(audit_log)
             await asyncio.sleep(0.1)
 
-            mock_logger.async_log_audit_log_event.assert_not_called()
+            mock_logger.async_log_audit_log_event.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_no_dispatch_when_store_audit_logs_false(self):
+    async def test_hgi_audit_dispatch_cannot_be_disabled_at_runtime(self):
         mock_logger = MagicMock(spec=CustomLogger)
         mock_logger.async_log_audit_log_event = AsyncMock()
         litellm.audit_log_callbacks = [mock_logger]
@@ -203,7 +203,7 @@ class TestCreateAuditLogForUpdateWithCallbacks:
             await create_audit_log_for_update(audit_log)
             await asyncio.sleep(0.1)
 
-            mock_logger.async_log_audit_log_event.assert_not_called()
+            mock_logger.async_log_audit_log_event.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_dispatches_even_when_prisma_client_is_none(self):

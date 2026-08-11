@@ -227,7 +227,15 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
     return unfurlWildcardModelsInList(selected, userModels);
   }, [selectedModelsInForm, teamData, userModels]);
 
-  const canEditTeam = is_team_admin || is_proxy_admin || is_org_admin || isOrgAdminForTeam;
+  const isTeamAdminFromTeamData = useMemo(
+    () =>
+      teamData?.team_info?.members_with_roles?.some(
+        (member) => member.user_id != null && member.user_id === userId && member.role === "admin",
+      ) ?? false,
+    [teamData, userId],
+  );
+
+  const canEditTeam = is_team_admin || is_proxy_admin || is_org_admin || isOrgAdminForTeam || isTeamAdminFromTeamData;
   const visibleTabs = useMemo(() => getTeamInfoVisibleTabs(canEditTeam), [canEditTeam]);
   const defaultTabKey = useMemo(() => getTeamInfoDefaultTab(editTeam, canEditTeam), [editTeam, canEditTeam]);
 
@@ -1372,25 +1380,24 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                       />
                     </Form.Item>
 
-                    <Form.Item label="Allowed Pass Through Routes" name="allowed_passthrough_routes">
-                      <Tooltip
-                        title={
-                          !premiumUser
-                            ? t("access.teams.restrictions.passThroughRoutes")
-                            : !is_proxy_admin
-                              ? "Only proxy admins can set allowed pass through routes"
-                              : ""
-                        }
-                        placement="top"
-                      >
-                        <PassThroughRoutesSelector
-                          onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
-                          value={form.getFieldValue("allowed_passthrough_routes")}
-                          accessToken={accessToken || ""}
-                          placeholder="Select pass through routes"
-                          disabled={!premiumUser || !is_proxy_admin}
-                        />
-                      </Tooltip>
+                    <Form.Item
+                      label={t("access.teams.form.passThroughRoutes")}
+                      name="allowed_passthrough_routes"
+                      tooltip={
+                        !premiumUser
+                          ? t("access.teams.restrictions.passThroughRoutes")
+                          : !is_proxy_admin
+                            ? t("access.teams.form.passThroughRoutesAdminOnly")
+                            : undefined
+                      }
+                    >
+                      <PassThroughRoutesSelector
+                        onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
+                        value={form.getFieldValue("allowed_passthrough_routes")}
+                        accessToken={accessToken || ""}
+                        placeholder={t("access.teams.form.passThroughRoutesPlaceholder")}
+                        disabled={!premiumUser || !is_proxy_admin}
+                      />
                     </Form.Item>
 
                     <Form.Item label="MCP Servers / Access Groups" name="mcp_servers_and_groups">

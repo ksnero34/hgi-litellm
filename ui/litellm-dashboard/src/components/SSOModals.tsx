@@ -425,16 +425,14 @@ const SSOModals: React.FC<SSOModalsProps> = ({
         ? t(field.placeholderKey, { defaultValue: field.defaultPlaceholder ?? "" })
         : field.defaultPlaceholder;
 
-      const control =
-        field.type === "checkbox" ? (
-          <Checkbox />
-        ) : field.type === "textarea" ? (
-          <Input.TextArea rows={4} placeholder={placeholder} />
-        ) : field.type === "password" || field.name.includes("client") ? (
-          <Input.Password />
-        ) : (
-          <TextInput placeholder={placeholder} />
-        );
+      let control: React.ReactNode = <TextInput placeholder={placeholder} />;
+      if (field.type === "checkbox") {
+        control = <Checkbox />;
+      } else if (field.type === "textarea") {
+        control = <Input.TextArea rows={4} placeholder={placeholder} />;
+      } else if (field.type === "password" || field.name.includes("client")) {
+        control = <Input.Password />;
+      }
 
       return (
         <Form.Item

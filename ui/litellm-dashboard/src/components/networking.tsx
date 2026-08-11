@@ -1025,6 +1025,7 @@ export interface UserInfoV2Response {
   updated_at: string | null;
   sso_user_id: string | null;
   teams: string[];
+  object_permission?: ObjectPermission | null;
 }
 
 /**
@@ -1602,6 +1603,7 @@ export const modelInfoCall = async (
   teamId?: string,
   sortBy?: string,
   sortOrder?: string,
+  excludeAutoRouters?: boolean,
 ) => {
   /**
    * Get all models on proxy
@@ -1626,6 +1628,9 @@ export const modelInfoCall = async (
     }
     if (sortOrder && sortOrder.trim()) {
       params.append("sortOrder", sortOrder.trim());
+    }
+    if (excludeAutoRouters) {
+      params.append("exclude_auto_routers", "true");
     }
     if (params.toString()) {
       url += `?${params.toString()}`;
@@ -2119,42 +2124,6 @@ export const adminGlobalActivity = async (
       accessToken,
       query: startTime && endTime ? { start_date: startTime, end_date: endTime } : undefined,
     });
-    return data;
-  } catch (error) {
-    console.error("Failed to fetch spend data:", error);
-    throw error;
-  }
-};
-
-export const adminGlobalCacheActivity = async (
-  accessToken: string,
-  startTime: string | undefined,
-  endTime: string | undefined,
-) => {
-  try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/global/activity/cache_hits` : `/global/activity/cache_hits`;
-
-    if (startTime && endTime) {
-      url += `?start_date=${startTime}&end_date=${endTime}`;
-    }
-
-    const requestOptions = {
-      method: "GET",
-      headers: {
-        [globalLitellmHeaderName]: `Bearer ${accessToken}`,
-      },
-    };
-
-    const response = await fetch(url, requestOptions);
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      const errorMessage = deriveErrorMessage(errorData);
-      handleError(errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    const data = await response.json();
     return data;
   } catch (error) {
     console.error("Failed to fetch spend data:", error);
@@ -4814,9 +4783,12 @@ export const fetchDiscoverableMCPServers = async (accessToken: string) => {
   }
 };
 
-export const fetchMCPServers = async (accessToken: string, teamId?: string | null) => {
+export const fetchMCPServers = async (accessToken: string, teamId?: string | null, connectedAppView?: boolean) => {
   try {
-    return await apiClient.get(`/v1/mcp/server`, { accessToken, query: { team_id: teamId || undefined } });
+    return await apiClient.get(`/v1/mcp/server`, {
+      accessToken,
+      query: { team_id: teamId || undefined, connected_app_view: connectedAppView || undefined },
+    });
   } catch (error) {
     console.error("Failed to fetch MCP servers:", error);
     throw error;
@@ -6409,13 +6381,19 @@ export const updateSSOSettings = async (accessToken: string, settings: Record<st
 };
 
 interface UiAuditLogsParams {
+  actor?: string;
   action?: string;
+  resource_type?: string;
+  resource_id?: string;
   table_name?: string;
   object_id?: string;
   changed_by?: string;
   changed_by_api_key?: string;
   object_team_id?: string;
   object_key_hash?: string;
+  start_date?: string;
+  end_date?: string;
+  success?: boolean;
   sort_by?: string;
   sort_order?: "asc" | "desc";
 }
@@ -6434,38 +6412,21 @@ export const uiAuditLogsCall = async ({
   params = {},
 }: UiAuditLogsCallOptions) => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/audit` : `/audit`;
-
-    const queryParams = new URLSearchParams();
-    queryParams.append("page", page.toString());
-    queryParams.append("page_size", page_size.toString());
-
-    for (const [key, value] of Object.entries(params)) {
-      if (value != null && value !== "") {
-        queryParams.append(key, String(value));
-      }
-    }
-
-    url += `?${queryParams.toString()}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        [globalLitellmHeaderName]: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
+    return await apiClient.get(`/audit`, {
+      accessToken,
+      query: { page, page_size, ...params },
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      const errorMessage = deriveErrorMessage(errorData);
-      handleError(errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    return await response.json();
   } catch (error) {
     console.error("Failed to fetch audit logs:", error);
+    throw error;
+  }
+};
+
+export const uiAuditLogByIdCall = async ({ accessToken, auditId }: { accessToken: string; auditId: string }) => {
+  try {
+    return await apiClient.get(`/audit/${auditId}`, { accessToken });
+  } catch (error) {
+    console.error("Failed to fetch audit log:", error);
     throw error;
   }
 };

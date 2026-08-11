@@ -200,7 +200,7 @@ export function useLogFilterLogic({
   };
 
   const allTeamsQueryOptions: UseQueryOptions<Team[], Error> = {
-    queryKey: ["allTeamsForLogFilters", accessToken],
+    queryKey: ["allTeamsForLogFilters"],
     queryFn: async () => {
       if (!accessToken) return [];
       const teamsData = await fetchAllTeams(accessToken);

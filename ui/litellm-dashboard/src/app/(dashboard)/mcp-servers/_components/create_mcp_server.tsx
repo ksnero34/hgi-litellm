@@ -26,6 +26,7 @@ import OAuthFormFields from "./OAuthFormFields";
 import TruePassthroughWarning from "./TruePassthroughWarning";
 import PassthroughAuthorizeSection from "./PassthroughAuthorizeSection";
 import TokenExchangeFormFields from "./TokenExchangeFormFields";
+import IdJagFormFields from "./IdJagFormFields";
 import MCPServerCostConfig from "./mcp_server_cost_config";
 import MCPConnectionStatus from "./mcp_connection_status";
 import MCPToolConfiguration from "./mcp_tool_configuration";
@@ -62,6 +63,7 @@ const AUTH_TYPES_REQUIRING_CREDENTIALS = [
   ...AUTH_TYPES_REQUIRING_AUTH_VALUE,
   AUTH_TYPE.OAUTH2,
   AUTH_TYPE.OAUTH2_TOKEN_EXCHANGE,
+  AUTH_TYPE.OAUTH2_ID_JAG,
   AUTH_TYPE.AWS_SIGV4,
   AUTH_TYPE.TRUE_PASSTHROUGH,
   AUTH_TYPE.OAUTH_DELEGATE,
@@ -142,6 +144,7 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
   const shouldShowAuthValueField = authType ? AUTH_TYPES_REQUIRING_AUTH_VALUE.includes(authType) : false;
   const isOAuthAuthType = authType === AUTH_TYPE.OAUTH2;
   const isTokenExchangeAuthType = authType === AUTH_TYPE.OAUTH2_TOKEN_EXCHANGE;
+  const isIdJagAuthType = authType === AUTH_TYPE.OAUTH2_ID_JAG;
   const isAwsSigV4AuthType = authType === AUTH_TYPE.AWS_SIGV4;
   const isM2MFlow = isOAuthAuthType && formValues.oauth_flow_type === OAUTH_FLOW.M2M;
 
@@ -608,7 +611,6 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
             const browserHeldToken = {
               access_token: oauthTokenResponse.access_token,
               expires_in: oauthTokenResponse.expires_in,
-              refresh_token: oauthTokenResponse.refresh_token,
               token_type: oauthTokenResponse.token_type,
             };
             setToken(response.server_id, browserHeldToken, userID);
@@ -1074,6 +1076,7 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
                             placeholder={t("toolsModels.mcp.authPlaceholder")}
                             className="rounded-lg"
                             size="large"
+                            virtual={false}
                           >
                             <Select.Option value="none">{t("toolsModels.mcp.authNone")}</Select.Option>
                             <Select.Option value="api_key">{t("toolsModels.mcp.authApiKey")}</Select.Option>
@@ -1084,6 +1087,7 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
                             <Select.Option value="oauth2_token_exchange">
                               {t("toolsModels.mcp.authTokenExchange")}
                             </Select.Option>
+                            <Select.Option value="oauth2_id_jag">{t("toolsModels.mcp.authIdJag")}</Select.Option>
                             <Select.Option value="aws_sigv4">{t("toolsModels.mcp.authAwsSigv4")}</Select.Option>
                             <Select.Option value="true_passthrough">
                               {t("toolsModels.mcp.authTruePassthrough")}
@@ -1149,6 +1153,8 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
                         )}
 
                         {isTokenExchangeAuthType && <TokenExchangeFormFields />}
+
+                        {isIdJagAuthType && <IdJagFormFields />}
                       </>
                     ),
                   },

@@ -36,6 +36,7 @@ import PassthroughAuthorizeSection from "./PassthroughAuthorizeSection";
 import MCPToolConfiguration from "./mcp_tool_configuration";
 import StdioConfiguration from "./StdioConfiguration";
 import TokenExchangeFormFields from "./TokenExchangeFormFields";
+import IdJagFormFields from "./IdJagFormFields";
 import OAuthFormFields from "./OAuthFormFields";
 import MCPLogoSelector from "./MCPLogoSelector";
 import EnvVarsSection from "./EnvVarsSection";
@@ -65,6 +66,7 @@ const AUTH_TYPES_REQUIRING_CREDENTIALS = [
   ...AUTH_TYPES_REQUIRING_AUTH_VALUE,
   AUTH_TYPE.OAUTH2,
   AUTH_TYPE.OAUTH2_TOKEN_EXCHANGE,
+  AUTH_TYPE.OAUTH2_ID_JAG,
   AUTH_TYPE.AWS_SIGV4,
   AUTH_TYPE.TRUE_PASSTHROUGH,
   AUTH_TYPE.OAUTH_DELEGATE,
@@ -105,6 +107,7 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
   const shouldShowAuthValueField = authType ? AUTH_TYPES_REQUIRING_AUTH_VALUE.includes(authType) : false;
   const isOAuthAuthType = authType === AUTH_TYPE.OAUTH2;
   const isTokenExchangeAuthType = authType === AUTH_TYPE.OAUTH2_TOKEN_EXCHANGE;
+  const isIdJagAuthType = authType === AUTH_TYPE.OAUTH2_ID_JAG;
   const isAwsSigV4AuthType = authType === AUTH_TYPE.AWS_SIGV4;
   const oauthFlowTypeValue = Form.useWatch("oauth_flow_type", form) as string | undefined;
   const isM2MFlow = isOAuthAuthType && oauthFlowTypeValue === OAUTH_FLOW.M2M;
@@ -217,7 +220,6 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
         const browserHeldToken = {
           access_token: token.access_token,
           expires_in: token.expires_in,
-          refresh_token: token.refresh_token,
           token_type: token.token_type,
         };
         setToken(mcpServer.server_id, browserHeldToken, userID);
@@ -972,7 +974,6 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
             const browserHeldToken = {
               access_token: oauthTokenResponse.access_token,
               expires_in: oauthTokenResponse.expires_in,
-              refresh_token: oauthTokenResponse.refresh_token,
               token_type: oauthTokenResponse.token_type,
             };
             setToken(mcpServer.server_id, browserHeldToken, userID);
@@ -1111,7 +1112,7 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
             {!isStdioTransport && (
               <>
                 <Form.Item label={t("toolsModels.mcp.authentication")} name="auth_type" rules={[{ required: true }]}>
-                  <Select>
+                  <Select virtual={false}>
                     <Select.Option value="none">{t("toolsModels.mcp.authNone")}</Select.Option>
                     <Select.Option value="api_key">{t("toolsModels.mcp.authApiKey")}</Select.Option>
                     <Select.Option value="bearer_token">{t("toolsModels.mcp.authBearer")}</Select.Option>
@@ -1121,6 +1122,7 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
                     <Select.Option value="oauth2_token_exchange">
                       {t("toolsModels.mcp.authTokenExchange")}
                     </Select.Option>
+                    <Select.Option value="oauth2_id_jag">{t("toolsModels.mcp.authIdJag")}</Select.Option>
                     <Select.Option value="aws_sigv4">{t("toolsModels.mcp.authAwsSigv4")}</Select.Option>
                     <Select.Option value="true_passthrough">{t("toolsModels.mcp.authTruePassthrough")}</Select.Option>
                     <Select.Option value="oauth_delegate">{t("toolsModels.mcp.authDelegate")}</Select.Option>
@@ -1253,6 +1255,8 @@ const MCPServerEdit: React.FC<MCPServerEditProps> = ({
             )}
 
             {!isStdioTransport && isTokenExchangeAuthType && <TokenExchangeFormFields isEditing />}
+
+            {!isStdioTransport && isIdJagAuthType && <IdJagFormFields isEditing />}
 
             {!isStdioTransport && isAwsSigV4AuthType && (
               <>

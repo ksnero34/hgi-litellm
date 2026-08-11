@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
-  "base_ref": "72a4a55f43ea7266de589f005d0d33624fe5d555",
+  "base_ref": "884376644d463a1fc05c846e61c361ff1369a1cc",
   "generated_paths": [
+    "litellm/proxy/_experimental/out",
     "ui/litellm-dashboard/src/lib/http/schema.d.ts"
   ],
   "groups": [
@@ -328,7 +329,11 @@
         "ui/litellm-dashboard/src/components/ToolPolicies/",
         "ui/litellm-dashboard/src/components/routing_groups/",
         "ui/litellm-dashboard/src/components/view_logs/AuditLogsPanel.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/AuditLogsPanel.test.tsx",
         "ui/litellm-dashboard/src/components/view_logs/AuditLogsTable.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/AuditLogsTable.test.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/AuditLogsTableColumns.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/auditLogLabels.ts",
         "ui/litellm-dashboard/src/components/view_logs/RequestLogsFilters.tsx",
         "ui/litellm-dashboard/src/components/view_logs/RequestLogsPanel.tsx",
         "ui/litellm-dashboard/src/components/view_logs/RequestLogsTable.tsx",
@@ -428,6 +433,22 @@
         "ui/litellm-dashboard/src/components/view_logs/filter_options.ts",
         "ui/litellm-dashboard/src/components/view_logs/log_filter_logic.test.tsx",
         "ui/litellm-dashboard/src/components/view_logs/log_filter_logic.tsx"
+      ],
+      "remove_paths": []
+    },
+    {
+      "name": "oss-audit-logs",
+      "commit": "feat(hgi): expose OSS management audit logs",
+      "paths": [
+        "litellm/__init__.py",
+        "litellm/proxy/management_endpoints/audit_logging_endpoints.py",
+        "litellm/proxy/management_endpoints/organization_endpoints.py",
+        "litellm/proxy/management_helpers/audit_logs.py",
+        "tests/test_litellm/proxy/hooks/test_key_management_event_hooks.py",
+        "tests/test_litellm/proxy/management_endpoints/test_audit_logging_endpoints.py",
+        "tests/test_litellm/proxy/management_endpoints/test_organization_endpoints.py",
+        "tests/test_litellm/proxy/management_helpers/test_audit_log_callbacks.py",
+        "tests/test_litellm/proxy/management_helpers/test_audit_logs.py"
       ],
       "remove_paths": []
     },

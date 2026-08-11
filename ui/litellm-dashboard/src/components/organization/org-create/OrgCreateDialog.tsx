@@ -84,7 +84,7 @@ export const OrgCreateDialog = ({
           <DialogTitle>{t("identityAdmin.organization.create")}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={onSubmit}>
+        <form onSubmit={onSubmit} noValidate>
           <FieldGroup>
             <FormField control={form.control} name="organization_alias" label={t("identityAdmin.organization.name")}>
               {({ ref, ...field }) => <Input {...field} ref={ref} />}
@@ -102,7 +102,7 @@ export const OrgCreateDialog = ({
             </FormField>
 
             <FormField control={form.control} name="max_budget" label={t("identityAdmin.organization.form.maxBudget")}>
-              {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={0.01} min={0} />}
+              {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step="any" min={0} />}
             </FormField>
 
             <FormField

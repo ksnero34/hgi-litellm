@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import litellm
 from litellm._logging import verbose_proxy_logger
@@ -30,7 +30,7 @@ class KeyManagementEventHooks:
         data: GenerateKeyRequest,
         response: GenerateKeyResponse,
         user_api_key_dict: UserAPIKeyAuth,
-        litellm_changed_by: Optional[str] = None,
+        litellm_changed_by: str | None = None,
     ):
         """
         Hook that runs after a successful /key/generate request
@@ -56,24 +56,23 @@ class KeyManagementEventHooks:
         # Enterprise Feature - Audit Logging. Enable with litellm.store_audit_logs = True
         if litellm.store_audit_logs is True:
             _updated_values = response.model_dump_json(exclude={"key", "token"}, exclude_none=True)
-            asyncio.create_task(
-                create_audit_log_for_update(
-                    request_data=LiteLLM_AuditLogs(
-                        id=str(uuid.uuid4()),
-                        updated_at=datetime.now(timezone.utc),
-                        changed_by=get_audit_log_changed_by(
-                            litellm_changed_by=litellm_changed_by,
-                            user_api_key_dict=user_api_key_dict,
-                            litellm_proxy_admin_name=litellm_proxy_admin_name,
-                        ),
-                        changed_by_api_key=user_api_key_dict.token or "",
-                        table_name=LitellmTableNames.KEY_TABLE_NAME,
-                        object_id=response.token_id or "",
-                        action="created",
-                        updated_values=_updated_values,
-                        before_value=None,
-                    )
-                )
+            await create_audit_log_for_update(
+                request_data=LiteLLM_AuditLogs(
+                    id=str(uuid.uuid4()),
+                    updated_at=datetime.now(timezone.utc),
+                    changed_by=get_audit_log_changed_by(
+                        litellm_changed_by=litellm_changed_by,
+                        user_api_key_dict=user_api_key_dict,
+                        litellm_proxy_admin_name=litellm_proxy_admin_name,
+                    ),
+                    changed_by_api_key=user_api_key_dict.token or "",
+                    table_name=LitellmTableNames.KEY_TABLE_NAME,
+                    object_id=response.token_id or "",
+                    action="created",
+                    updated_values=_updated_values,
+                    before_value=None,
+                ),
+                mandatory=True,
             )
 
         # Store the generated key in the secret manager - non-blocking, independent operation
@@ -92,7 +91,7 @@ class KeyManagementEventHooks:
         existing_key_row: Any,
         response: Any,
         user_api_key_dict: UserAPIKeyAuth,
-        litellm_changed_by: Optional[str] = None,
+        litellm_changed_by: str | None = None,
     ):
         """
         Post /key/update processing hook
@@ -113,33 +112,32 @@ class KeyManagementEventHooks:
             _before_value = existing_key_row.json(exclude_none=True)
             _before_value = json.dumps(_before_value, default=str)
 
-            asyncio.create_task(
-                create_audit_log_for_update(
-                    request_data=LiteLLM_AuditLogs(
-                        id=str(uuid.uuid4()),
-                        updated_at=datetime.now(timezone.utc),
-                        changed_by=get_audit_log_changed_by(
-                            litellm_changed_by=litellm_changed_by,
-                            user_api_key_dict=user_api_key_dict,
-                            litellm_proxy_admin_name=litellm_proxy_admin_name,
-                        ),
-                        changed_by_api_key=user_api_key_dict.token or "",
-                        table_name=LitellmTableNames.KEY_TABLE_NAME,
-                        object_id=_hash_token_if_needed(data.key),
-                        action="updated",
-                        updated_values=_updated_values,
-                        before_value=_before_value,
-                    )
-                )
+            await create_audit_log_for_update(
+                request_data=LiteLLM_AuditLogs(
+                    id=str(uuid.uuid4()),
+                    updated_at=datetime.now(timezone.utc),
+                    changed_by=get_audit_log_changed_by(
+                        litellm_changed_by=litellm_changed_by,
+                        user_api_key_dict=user_api_key_dict,
+                        litellm_proxy_admin_name=litellm_proxy_admin_name,
+                    ),
+                    changed_by_api_key=user_api_key_dict.token or "",
+                    table_name=LitellmTableNames.KEY_TABLE_NAME,
+                    object_id=_hash_token_if_needed(data.key),
+                    action="updated",
+                    updated_values=_updated_values,
+                    before_value=_before_value,
+                ),
+                mandatory=True,
             )
 
     @staticmethod
     async def async_key_rotated_hook(
-        data: Optional[RegenerateKeyRequest],
+        data: RegenerateKeyRequest | None,
         existing_key_row: LiteLLM_VerificationToken,
         response: GenerateKeyResponse,
         user_api_key_dict: UserAPIKeyAuth,
-        litellm_changed_by: Optional[str] = None,
+        litellm_changed_by: str | None = None,
     ):
         from litellm.proxy.management_helpers.audit_logs import (
             create_audit_log_for_update,
@@ -181,33 +179,32 @@ class KeyManagementEventHooks:
 
         # store the audit log
         if litellm.store_audit_logs is True and existing_key_row.token is not None:
-            asyncio.create_task(
-                create_audit_log_for_update(
-                    request_data=LiteLLM_AuditLogs(
-                        id=str(uuid.uuid4()),
-                        updated_at=datetime.now(timezone.utc),
-                        changed_by=get_audit_log_changed_by(
-                            litellm_changed_by=litellm_changed_by,
-                            user_api_key_dict=user_api_key_dict,
-                            litellm_proxy_admin_name=litellm_proxy_admin_name,
-                        ),
-                        changed_by_api_key=user_api_key_dict.token,
-                        table_name=LitellmTableNames.KEY_TABLE_NAME,
-                        object_id=existing_key_row.token,
-                        action="rotated",
-                        updated_values=response.model_dump_json(exclude={"key", "token"}, exclude_none=True),
-                        before_value=existing_key_row.model_dump_json(exclude_none=True),
-                    )
-                )
+            await create_audit_log_for_update(
+                request_data=LiteLLM_AuditLogs(
+                    id=str(uuid.uuid4()),
+                    updated_at=datetime.now(timezone.utc),
+                    changed_by=get_audit_log_changed_by(
+                        litellm_changed_by=litellm_changed_by,
+                        user_api_key_dict=user_api_key_dict,
+                        litellm_proxy_admin_name=litellm_proxy_admin_name,
+                    ),
+                    changed_by_api_key=user_api_key_dict.token,
+                    table_name=LitellmTableNames.KEY_TABLE_NAME,
+                    object_id=existing_key_row.token,
+                    action="rotated",
+                    updated_values=response.model_dump_json(exclude={"key", "token"}, exclude_none=True),
+                    before_value=existing_key_row.model_dump_json(exclude_none=True),
+                ),
+                mandatory=True,
             )
 
     @staticmethod
     async def async_key_deleted_hook(
         data: KeyRequest,
-        keys_being_deleted: List[LiteLLM_VerificationToken],
+        keys_being_deleted: list[LiteLLM_VerificationToken],
         response: dict,
         user_api_key_dict: UserAPIKeyAuth,
-        litellm_changed_by: Optional[str] = None,
+        litellm_changed_by: str | None = None,
     ):
         """
         Post /key/delete processing hook
@@ -230,31 +227,29 @@ class KeyManagementEventHooks:
                     continue
                 _key_row = key.model_dump_json(exclude_none=True)
 
-                asyncio.create_task(
-                    create_audit_log_for_update(
-                        request_data=LiteLLM_AuditLogs(
-                            id=str(uuid.uuid4()),
-                            updated_at=datetime.now(timezone.utc),
-                            changed_by=get_audit_log_changed_by(
-                                litellm_changed_by=litellm_changed_by,
-                                user_api_key_dict=user_api_key_dict,
-                                litellm_proxy_admin_name=litellm_proxy_admin_name,
-                            ),
-                            changed_by_api_key=user_api_key_dict.token,
-                            table_name=LitellmTableNames.KEY_TABLE_NAME,
-                            object_id=key.token,
-                            action="deleted",
-                            updated_values="{}",
-                            before_value=_key_row,
-                        )
-                    )
+                await create_audit_log_for_update(
+                    request_data=LiteLLM_AuditLogs(
+                        id=str(uuid.uuid4()),
+                        updated_at=datetime.now(timezone.utc),
+                        changed_by=get_audit_log_changed_by(
+                            litellm_changed_by=litellm_changed_by,
+                            user_api_key_dict=user_api_key_dict,
+                            litellm_proxy_admin_name=litellm_proxy_admin_name,
+                        ),
+                        changed_by_api_key=user_api_key_dict.token,
+                        table_name=LitellmTableNames.KEY_TABLE_NAME,
+                        object_id=key.token,
+                        action="deleted",
+                        updated_values="{}",
+                        before_value=_key_row,
+                    ),
+                    mandatory=True,
                 )
         # delete the keys from the secret manager
         await KeyManagementEventHooks._delete_virtual_keys_from_secret_manager(keys_being_deleted=keys_being_deleted)
-        pass
 
     @staticmethod
-    async def _store_virtual_key_in_secret_manager(secret_name: str, secret_token: str, team_id: Optional[str] = None):
+    async def _store_virtual_key_in_secret_manager(secret_name: str, secret_token: str, team_id: str | None = None):
         """
         Store a virtual key in the secret manager
 
@@ -290,7 +285,7 @@ class KeyManagementEventHooks:
         current_secret_name: str,
         new_secret_name: str,
         new_secret_value: str,
-        team_id: Optional[str] = None,
+        team_id: str | None = None,
     ):
         """
         Update a virtual key in the secret manager
@@ -326,7 +321,7 @@ class KeyManagementEventHooks:
 
     @staticmethod
     async def _delete_virtual_keys_from_secret_manager(
-        keys_being_deleted: List[LiteLLM_VerificationToken],
+        keys_being_deleted: list[LiteLLM_VerificationToken],
     ):
         """
         Deletes virtual keys from the secret manager
@@ -341,7 +336,7 @@ class KeyManagementEventHooks:
                 )
 
                 if isinstance(litellm.secret_manager_client, BaseSecretManager):
-                    team_settings_cache: Dict[Optional[str], Optional[dict]] = {}
+                    team_settings_cache: dict[str | None, dict | None] = {}
                     for key in keys_being_deleted:
                         if key.key_alias is not None:
                             team_id = getattr(key, "team_id", None)
@@ -361,8 +356,8 @@ class KeyManagementEventHooks:
 
     @staticmethod
     async def _get_secret_manager_optional_params(
-        team_id: Optional[str],
-    ) -> Optional[dict]:
+        team_id: str | None,
+    ) -> dict | None:
         if team_id is None:
             return None
 
@@ -511,7 +506,7 @@ class KeyManagementEventHooks:
             )
 
     @staticmethod
-    async def _send_key_rotated_email(response: dict, existing_key_alias: Optional[str]):
+    async def _send_key_rotated_email(response: dict, existing_key_alias: str | None):
         """
         Send key rotated email if email sending is enabled.
 

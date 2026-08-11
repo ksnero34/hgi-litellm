@@ -451,7 +451,7 @@ class TestKeyUpdatedAuditLogObjectId:
 
         captured = []
 
-        async def capture_audit_log(request_data):
+        async def capture_audit_log(request_data, **kwargs):
             captured.append(request_data)
 
         existing_key_row = LiteLLM_VerificationToken(
@@ -504,3 +504,129 @@ class TestKeyUpdatedAuditLogObjectId:
         audit_row = await self._run_updated_hook_and_capture_audit_log(request_key=hashed_key)
 
         assert audit_row.object_id == hashed_key
+
+
+class TestOSSAuditMutationCoverage:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("user_id,key_type", [("user-1", None), (None, "service_account")])
+    async def test_user_and_service_key_creation_emit_one_safe_audit(self, user_id, key_type):
+        import asyncio
+
+        captured = []
+
+        async def capture(request_data, **kwargs):
+            captured.append(request_data)
+
+        data = MagicMock(send_invite_email=False, key_alias="alias", team_id="team-1")
+        response = MagicMock(token_id="hashed-token", key="sk-plaintext")
+        response.model_dump_json.return_value = (
+            '{"token_id":"hashed-token","user_id":%s,"key_type":%s}'
+            % (
+                f'"{user_id}"' if user_id is not None else "null",
+                f'"{key_type}"' if key_type is not None else "null",
+            )
+        )
+        with (
+            patch("litellm.store_audit_logs", True),
+            patch("litellm.proxy.management_helpers.audit_logs.create_audit_log_for_update", new=capture),
+            patch.object(KeyManagementEventHooks, "_store_virtual_key_in_secret_manager", new=AsyncMock()),
+        ):
+            await KeyManagementEventHooks.async_key_generated_hook(
+                data=data,
+                response=response,
+                user_api_key_dict=MagicMock(user_id="admin", token="hashed-actor"),
+            )
+            await asyncio.sleep(0)
+
+        assert len(captured) == 1
+        assert captured[0].action == "created"
+        assert captured[0].object_id == "hashed-token"
+        assert "sk-plaintext" not in str(captured[0].updated_values)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("user_id", ["user-1", None])
+    async def test_user_and_service_key_delete_emit_one_audit_per_resource(self, user_id):
+        import asyncio
+
+        captured = []
+
+        async def capture(request_data, **kwargs):
+            captured.append(request_data)
+
+        key_row = MagicMock(token="hashed-token", user_id=user_id)
+        key_row.model_dump_json.return_value = '{"token":"hashed-token","key_alias":"alias"}'
+        with (
+            patch("litellm.store_audit_logs", True),
+            patch("litellm.proxy.management_helpers.audit_logs.create_audit_log_for_update", new=capture),
+            patch.object(KeyManagementEventHooks, "_delete_virtual_keys_from_secret_manager", new=AsyncMock()),
+        ):
+            await KeyManagementEventHooks.async_key_deleted_hook(
+                data=MagicMock(keys=["hashed-token"]),
+                keys_being_deleted=[key_row],
+                response={},
+                user_api_key_dict=MagicMock(user_id="admin", token="hashed-actor"),
+            )
+            await asyncio.sleep(0)
+
+        assert len(captured) == 1
+        assert captured[0].action == "deleted"
+        assert captured[0].object_id == "hashed-token"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("user_id", ["user-1", None])
+    async def test_user_and_service_key_update_emit_one_audit(self, user_id):
+        import asyncio
+
+        captured = []
+
+        async def capture(request_data, **kwargs):
+            captured.append(request_data)
+
+        existing = MagicMock(token="hashed-token", user_id=user_id)
+        existing.json.return_value = {"token": "hashed-token", "user_id": user_id, "blocked": False}
+        with (
+            patch("litellm.store_audit_logs", True),
+            patch("litellm.proxy.management_helpers.audit_logs.create_audit_log_for_update", new=capture),
+        ):
+            await KeyManagementEventHooks.async_key_updated_hook(
+                data=MagicMock(key="hashed-token", json=MagicMock(return_value={"blocked": True})),
+                existing_key_row=existing,
+                response=MagicMock(),
+                user_api_key_dict=MagicMock(user_id="admin", token="hashed-actor"),
+            )
+            await asyncio.sleep(0)
+
+        assert len(captured) == 1
+        assert captured[0].action == "updated"
+
+    @pytest.mark.asyncio
+    async def test_rotation_never_places_plaintext_key_in_audit_values(self):
+        import asyncio
+
+        captured = []
+
+        async def capture(request_data, **kwargs):
+            captured.append(request_data)
+
+        existing = MagicMock(token="old-hash", key_alias="alias", team_id="team-1")
+        existing.model_dump_json.return_value = '{"token":"old-hash","key_alias":"alias"}'
+        response = MagicMock(key="sk-new-plaintext", token_id="new-hash", key_alias="alias")
+        response.model_dump_json.return_value = '{"token_id":"new-hash","key_alias":"alias"}'
+        with (
+            patch("litellm.store_audit_logs", True),
+            patch("litellm.proxy.management_helpers.audit_logs.create_audit_log_for_update", new=capture),
+            patch.object(KeyManagementEventHooks, "_rotate_virtual_key_in_secret_manager", new=AsyncMock()),
+            patch.object(KeyManagementEventHooks, "_send_key_rotated_email", new=AsyncMock()),
+        ):
+            await KeyManagementEventHooks.async_key_rotated_hook(
+                data=MagicMock(key_alias="alias"),
+                existing_key_row=existing,
+                response=response,
+                user_api_key_dict=MagicMock(user_id="admin", token="hashed-actor"),
+            )
+            await asyncio.sleep(0)
+
+        assert len(captured) == 1
+        assert captured[0].action == "rotated"
+        assert "sk-new-plaintext" not in str(captured[0].updated_values)
+        assert "sk-new-plaintext" not in str(captured[0].before_value)

@@ -16,7 +16,7 @@ const ROWS: AuditLogEntry[] = [
     table_name: "LiteLLM_TeamTable",
     object_id: "team-obj-123",
     before_value: {},
-    updated_values: { foo: "bar" },
+    updated_values: { foo: "bar", success: true },
   },
   {
     id: "log-2",
@@ -26,8 +26,41 @@ const ROWS: AuditLogEntry[] = [
     action: "deleted",
     table_name: "LiteLLM_UserTable",
     object_id: "user-obj-456",
-    before_value: { a: 1 },
+    before_value: { a: 1, success: false },
     updated_values: {},
+  },
+  {
+    id: "log-3",
+    updated_at: "2026-07-20T10:00:00Z",
+    changed_by: "admin-user",
+    changed_by_api_key: "sk-hash-ghi",
+    action: "blocked",
+    table_name: "CorporatePersonalKeyRegistry",
+    object_id: "personal-key-1",
+    before_value: { success: true },
+    updated_values: { success: true },
+  },
+  {
+    id: "log-4",
+    updated_at: "2026-07-20T09:00:00Z",
+    changed_by: "admin-user",
+    changed_by_api_key: "sk-hash-jkl",
+    action: "unblocked",
+    table_name: "LiteLLM_TeamMembership",
+    object_id: "team-1",
+    before_value: { success: true },
+    updated_values: { success: true },
+  },
+  {
+    id: "log-5",
+    updated_at: "2026-07-20T08:00:00Z",
+    changed_by: "admin-user",
+    changed_by_api_key: "sk-hash-mno",
+    action: "creation_rejected",
+    table_name: "LiteLLM_OrganizationMembership",
+    object_id: "org-1:user-1",
+    before_value: { success: false },
+    updated_values: { success: false },
   },
 ];
 
@@ -55,16 +88,20 @@ describe("AuditLogsTable", () => {
   it("renders each audit column with the migrated shared cells", () => {
     renderTable();
 
-    // Action -> StatusBadge with a capitalized label
     expect(screen.getByText("Created")).toBeInTheDocument();
     expect(screen.getByText("Deleted")).toBeInTheDocument();
-    // Table name -> display mapping
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Unblocked")).toBeInTheDocument();
+    expect(screen.getByText("Creation Rejected")).toBeInTheDocument();
     expect(screen.getByText("Teams")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
-    // Changed By -> DefaultProxyAdminTag (default_user_id becomes a labeled tag; other ids stay raw)
+    expect(screen.getByText("Personal Key Registry")).toBeInTheDocument();
+    expect(screen.getByText("Team Memberships")).toBeInTheDocument();
+    expect(screen.getByText("Organization Memberships")).toBeInTheDocument();
+    expect(screen.getAllByText("Success").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Failure").length).toBeGreaterThan(0);
     expect(screen.getByText("Default Proxy Admin")).toBeInTheDocument();
     expect(screen.getByText("user-42")).toBeInTheDocument();
-    // Object ID + API key hash
     expect(screen.getByText("team-obj-123")).toBeInTheDocument();
     expect(screen.getByText("sk-hash-abc")).toBeInTheDocument();
   });
@@ -121,12 +158,22 @@ describe("AuditLogsTable", () => {
   });
 
   it("renders active filter chips with human-readable labels", () => {
-    const filters: ColumnFiltersState = [{ id: "action", value: "created" }];
+    const filters: ColumnFiltersState = [
+      { id: "action", value: "creation_rejected" },
+      { id: "table_name", value: "CorporatePersonalKeyRegistry" },
+      { id: "success", value: "true" },
+    ];
     renderTable({ columnFilters: filters });
 
     const chip = screen.getByTestId("filter-chip-action");
     expect(chip).toHaveTextContent("Action:");
-    expect(chip).toHaveTextContent("Created");
+    expect(chip).toHaveTextContent("Creation Rejected");
+    const resourceChip = screen.getByTestId("filter-chip-table_name");
+    expect(resourceChip).toHaveTextContent("Resource Type:");
+    expect(resourceChip).toHaveTextContent("Personal Key Registry");
+    const successChip = screen.getByTestId("filter-chip-success");
+    expect(successChip).toHaveTextContent("Result:");
+    expect(successChip).toHaveTextContent("Success");
   });
 
   it("commits a text filter through the filter drawer and reports it to the parent", async () => {
@@ -135,12 +182,35 @@ describe("AuditLogsTable", () => {
     renderTable({ onColumnFiltersChange });
 
     await user.click(screen.getByTestId("datatable-filters-trigger"));
-    await user.type(await screen.findByPlaceholderText("Enter object ID…"), "obj-9");
+    await user.type(await screen.findByPlaceholderText("Enter resource ID…"), "obj-9");
     await user.click(screen.getByTestId("filter-drawer-apply"));
 
     expect(onColumnFiltersChange).toHaveBeenCalledTimes(1);
     const arg = onColumnFiltersChange.mock.calls[0][0];
     const committed = typeof arg === "function" ? arg([]) : arg;
     expect(committed).toEqual([{ id: "object_id", value: "obj-9" }]);
+  });
+
+  it("commits success and date filters through the filter drawer", async () => {
+    const user = userEvent.setup();
+    const onColumnFiltersChange = vi.fn();
+    renderTable({ onColumnFiltersChange });
+
+    await user.click(screen.getByTestId("datatable-filters-trigger"));
+    const filterComboboxes = await screen.findAllByRole("combobox");
+    await user.click(filterComboboxes[2]);
+    const failureOptions = await screen.findAllByText("Failure");
+    await user.click(failureOptions.at(-1)!);
+    await user.type(screen.getByLabelText("Start Date"), "2026-07-01");
+    await user.type(screen.getByLabelText("End Date"), "2026-07-31");
+    await user.click(screen.getByTestId("filter-drawer-apply"));
+
+    const arg = onColumnFiltersChange.mock.calls[0][0];
+    const committed = typeof arg === "function" ? arg([]) : arg;
+    expect(committed).toEqual([
+      { id: "success", value: "false" },
+      { id: "start_date", value: "2026-07-01" },
+      { id: "end_date", value: "2026-07-31" },
+    ]);
   });
 });

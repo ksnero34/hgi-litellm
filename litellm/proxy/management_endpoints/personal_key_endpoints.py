@@ -331,6 +331,7 @@ async def _audit(
     logical_key_id: str,
     action: str,
     result: str,
+    success: bool,
 ) -> None:
     audit_data: LiteLLM_AuditLogCreateInput = {
         "id": str(uuid.uuid4()),
@@ -346,6 +347,7 @@ async def _audit(
                 "owner_type": "user",
                 "key_purpose": "personal_llm",
                 "result": result,
+                "success": success,
             }
         ),
     }
@@ -502,7 +504,7 @@ async def create_personal_key(
                     "updated_by": actor_user_id,
                 }
             )
-            await _audit(tx, actor_user_id, target_user_id, logical_key_id, "created", "success")
+            await _audit(tx, actor_user_id, target_user_id, logical_key_id, "created", "success", True)
     except HTTPException as error:
         if error.status_code == status.HTTP_409_CONFLICT:
             existing = await database.corporatepersonalkeyregistry.find_unique(where={"user_id": target_user_id})
@@ -515,6 +517,7 @@ async def create_personal_key(
                         str(existing.logical_key_id),
                         "creation_rejected",
                         "duplicate",
+                        False,
                     )
                 except PrismaError as audit_error:
                     verbose_proxy_logger.error("Failed to audit rejected personal key creation: %s", audit_error)
@@ -530,6 +533,7 @@ async def create_personal_key(
                     str(existing.logical_key_id),
                     "creation_rejected",
                     "duplicate",
+                    False,
                 )
             except PrismaError as audit_error:
                 verbose_proxy_logger.error("Failed to audit rejected personal key creation: %s", audit_error)
@@ -648,7 +652,7 @@ async def rotate_personal_key(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Rotated personal key is missing",
             )
-        await _audit(tx, actor_user_id, target_user_id, logical_key_id, "rotated", "success")
+        await _audit(tx, actor_user_id, target_user_id, logical_key_id, "rotated", "success", True)
     await _invalidate_personal_key_cache((old_hash, *ancestor_hashes))
     view = _view_from_rows(registry, token_row)
     return PersonalKeyRotateResponse(
@@ -685,7 +689,7 @@ async def delete_personal_key(
             data={"blocked": True, "updated_by": actor_user_id},
         )
         await tx.corporatepersonalkeyregistry.delete(where={"user_id": target_user_id})
-        await _audit(tx, actor_user_id, target_user_id, logical_key_id, "deleted", "success")
+        await _audit(tx, actor_user_id, target_user_id, logical_key_id, "deleted", "success", True)
     await _invalidate_personal_key_cache((token_hash, *ancestor_hashes))
     return PersonalKeyDeleteResponse(deleted=True, logical_key_id=logical_key_id)
 

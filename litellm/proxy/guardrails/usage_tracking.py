@@ -6,7 +6,7 @@ insert into SpendLogGuardrailIndex when spend logs are written.
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from litellm._logging import verbose_proxy_logger
 from litellm.proxy.db.db_spend_update_writer import LOGGING_ONLY_GUARDRAILS_PENDING
@@ -19,7 +19,7 @@ from litellm.repositories.table_repositories import (
 )
 
 
-def _guardrail_status_to_action(status: Optional[str]) -> str:
+def _guardrail_status_to_action(status: str | None) -> str:
     """Map StandardLogging guardrail_status to blocked/passed/flagged."""
     if not status:
         return "passed"

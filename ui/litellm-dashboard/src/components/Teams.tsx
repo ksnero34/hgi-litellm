@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button as UIButton } from "@/components/ui/button";
 import { teamsTableKeys } from "@/app/(dashboard)/hooks/teams/useTeams";
+import { useTeamDetailRouting } from "@/app/(dashboard)/teams/detailNavigation";
 import { TeamsTable } from "./TeamsPage/TeamsTable";
 import AccessGroupSelector from "./common_components/AccessGroupSelector";
 import PassThroughRoutesSelector from "./common_components/PassThroughRoutesSelector";
@@ -137,7 +138,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
   const [editModalVisible, setEditModalVisible] = useState(false);
 
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const { teamId: selectedTeamId, openTeam, close: closeTeamDetail } = useTeamDetailRouting();
   const [editTeam, setEditTeam] = useState<boolean>(false);
 
   const [isTeamModalVisible, setIsTeamModalVisible] = useState(false);
@@ -496,12 +497,12 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
             userID={userID}
             onSelectTeam={(team) => {
               setSelectedTeam(team);
-              setSelectedTeamId(team.team_id);
+              openTeam(team.team_id);
               setEditTeam(false);
             }}
             onEditTeam={(team) => {
               setSelectedTeam(team);
-              setSelectedTeamId(team.team_id);
+              openTeam(team.team_id);
               setEditTeam(true);
             }}
             onDeleteTeam={handleDelete}
@@ -578,11 +579,11 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
           }}
           onClose={() => {
             setSelectedTeam(null);
-            setSelectedTeamId(null);
+            closeTeamDetail();
             setEditTeam(false);
           }}
           accessToken={accessToken}
-          is_team_admin={is_team_admin(selectedTeam)}
+          is_team_admin={is_team_admin(selectedTeam?.team_id === selectedTeamId ? selectedTeam : null)}
           is_proxy_admin={userRole == "Admin"}
           userModels={userModels}
           editTeam={editTeam}
@@ -1025,28 +1026,24 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     />
                   </Form.Item>
                   <Form.Item
-                    label={t("access.teams.form.passThroughRoutes")}
+                    label="Allowed Pass Through Routes"
                     name="allowed_passthrough_routes"
                     className="mt-8"
+                    tooltip={
+                      !premiumUser
+                        ? "Premium feature - Upgrade to set allowed pass through routes"
+                        : !isProxyAdminRole(userRole || "")
+                          ? "Only proxy admins can set allowed pass through routes"
+                          : undefined
+                    }
                   >
-                    <Tooltip
-                      title={
-                        !premiumUser
-                          ? t("access.teams.form.passThroughRoutesPremium")
-                          : !isProxyAdminRole(userRole || "")
-                            ? t("access.teams.form.passThroughRoutesAdminOnly")
-                            : ""
-                      }
-                      placement="top"
-                    >
-                      <PassThroughRoutesSelector
-                        onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
-                        value={form.getFieldValue("allowed_passthrough_routes")}
-                        accessToken={accessToken || ""}
-                        placeholder={t("access.teams.form.passThroughRoutesPlaceholder")}
-                        disabled={!premiumUser || !isProxyAdminRole(userRole || "")}
-                      />
-                    </Tooltip>
+                    <PassThroughRoutesSelector
+                      onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
+                      value={form.getFieldValue("allowed_passthrough_routes")}
+                      accessToken={accessToken || ""}
+                      placeholder={t("access.teams.form.passThroughRoutesPlaceholder")}
+                      disabled={!premiumUser || !isProxyAdminRole(userRole || "")}
+                    />
                   </Form.Item>
                 </AccordionBody>
               </Accordion>

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -15,6 +16,7 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
     _reject_session_generic_key_read,
 )
 from litellm.proxy.management_endpoints.personal_key_endpoints import (
+    _audit,
     _count_active_personal_keys,
     _delete_deprecated_personal_keys,
     _invalidate_personal_key_cache,
@@ -40,6 +42,29 @@ def test_personal_key_request_rejects_policy_fields():
     ):
         with pytest.raises(ValidationError):
             PersonalKeyCreateRequest.model_validate({field: value})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "result", "success"),
+    [("created", "success", True), ("creation_rejected", "duplicate", False)],
+)
+async def test_personal_key_audit_stores_explicit_success(action: str, result: str, success: bool):
+    audit_table = SimpleNamespace(create=AsyncMock())
+
+    await _audit(
+        SimpleNamespace(litellm_auditlog=audit_table),
+        "actor-1",
+        "user-1",
+        "logical-key-1",
+        action,
+        result,
+        success,
+    )
+
+    stored = audit_table.create.await_args.kwargs["data"]
+    assert stored["action"] == action
+    assert json.loads(stored["updated_values"])["success"] is success
 
 
 @pytest.mark.parametrize("requested_alias", [None, "", "   "])
@@ -136,6 +161,8 @@ async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeyp
     create_data = verification_tokens.create.await_args.kwargs["data"]
     assert create_data["key_alias"] == "oidc-sub-123"
     assert response.key_alias == "oidc-sub-123"
+    audit_data = transaction.litellm_auditlog.create.await_args.kwargs["data"]
+    assert '"success": true' in audit_data["updated_values"]
     verification_tokens.update_many.assert_awaited_once_with(
         where={"token": {"in": ["managed-personal-hash"]}},
         data={"blocked": True, "updated_by": "user-1"},

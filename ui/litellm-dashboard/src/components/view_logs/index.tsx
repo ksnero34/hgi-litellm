@@ -40,6 +40,8 @@ interface SpendLogsTableProps {
   premiumUser: boolean;
 }
 
+const AUDIT_READER_ROLES = new Set(["Admin", "proxy_admin", "Admin Viewer", "proxy_admin_viewer"]);
+
 interface ScopedRequestLogsPanelProps {
   accessToken: string;
   token: string;
@@ -142,7 +144,7 @@ function ScopedRequestLogsPanel({ accessToken, token, userRole, userID }: Scoped
   );
 
   const keyInfoQueryOptions: UseQueryOptions<KeyResponse | null> = {
-    queryKey: ["scopedRequestLogsKeyInfo", selectedKeyIdInfoView, accessToken],
+    queryKey: ["scopedRequestLogsKeyInfo", selectedKeyIdInfoView],
     queryFn: async () => {
       if (selectedKeyIdInfoView === null) return null;
       const keyData = await keyInfoV1Call(accessToken, selectedKeyIdInfoView);
@@ -384,6 +386,21 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("request logs");
   const isScopedUser = internalUserRoles.includes(userRole ?? "");
+  const canViewAuditLogs = userRole !== null && AUDIT_READER_ROLES.has(userRole);
+  const handleTabChange = useCallback(
+    (index: number) => {
+      if (index === 0) {
+        setActiveTab("request logs");
+        return;
+      }
+      if (canViewAuditLogs && index === 1) {
+        setActiveTab("audit logs");
+        return;
+      }
+      setActiveTab("other");
+    },
+    [canViewAuditLogs],
+  );
 
   if (!accessToken || !token || !userRole || !userID) {
     return (
@@ -403,41 +420,67 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
 
   return (
     <div className="w-full p-6 overflow-x-hidden box-border">
-      <TabGroup defaultIndex={0} onIndexChange={(index) => setActiveTab(index === 0 ? "request logs" : "audit logs")}>
-        <TabList>
-          <Tab>{t("observability.logs.request_logs_tab", { defaultValue: "Request Logs" })}</Tab>
-          <Tab>Audit Logs</Tab>
-          <Tab>{t("observability.logs.deleted_keys_tab", { defaultValue: "Deleted Keys" })}</Tab>
-          <Tab>{t("observability.logs.deleted_teams_tab", { defaultValue: "Deleted Teams" })}</Tab>
-        </TabList>
-        <TabPanels>
-          <TabPanel>
-            <RequestLogsPanel
-              accessToken={accessToken}
-              token={token}
-              userRole={userRole}
-              userID={userID}
-              isActive={activeTab === "request logs"}
-            />
-          </TabPanel>
-          <TabPanel>
-            <AuditLogsPanel
-              userID={userID}
-              userRole={userRole}
-              token={token}
-              accessToken={accessToken}
-              isActive={activeTab === "audit logs"}
-              premiumUser={premiumUser}
-            />
-          </TabPanel>
-          <TabPanel>
-            <DeletedKeysPage />
-          </TabPanel>
-          <TabPanel>
-            <DeletedTeamsPage />
-          </TabPanel>
-        </TabPanels>
-      </TabGroup>
+      {canViewAuditLogs ? (
+        <TabGroup defaultIndex={0} onIndexChange={handleTabChange}>
+          <TabList>
+            <Tab>{t("observability.logs.request_logs_tab", { defaultValue: "Request Logs" })}</Tab>
+            <Tab>{t("observabilityExtra.audit.title")}</Tab>
+            <Tab>{t("observability.logs.deleted_keys_tab", { defaultValue: "Deleted Keys" })}</Tab>
+            <Tab>{t("observability.logs.deleted_teams_tab", { defaultValue: "Deleted Teams" })}</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>
+              <RequestLogsPanel
+                accessToken={accessToken}
+                token={token}
+                userRole={userRole}
+                userID={userID}
+                isActive={activeTab === "request logs"}
+              />
+            </TabPanel>
+            <TabPanel>
+              <AuditLogsPanel
+                userID={userID}
+                userRole={userRole}
+                token={token}
+                accessToken={accessToken}
+                isActive={activeTab === "audit logs"}
+              />
+            </TabPanel>
+            <TabPanel>
+              <DeletedKeysPage />
+            </TabPanel>
+            <TabPanel>
+              <DeletedTeamsPage />
+            </TabPanel>
+          </TabPanels>
+        </TabGroup>
+      ) : (
+        <TabGroup defaultIndex={0} onIndexChange={handleTabChange}>
+          <TabList>
+            <Tab>{t("observability.logs.request_logs_tab", { defaultValue: "Request Logs" })}</Tab>
+            <Tab>{t("observability.logs.deleted_keys_tab", { defaultValue: "Deleted Keys" })}</Tab>
+            <Tab>{t("observability.logs.deleted_teams_tab", { defaultValue: "Deleted Teams" })}</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>
+              <RequestLogsPanel
+                accessToken={accessToken}
+                token={token}
+                userRole={userRole}
+                userID={userID}
+                isActive={activeTab === "request logs"}
+              />
+            </TabPanel>
+            <TabPanel>
+              <DeletedKeysPage />
+            </TabPanel>
+            <TabPanel>
+              <DeletedTeamsPage />
+            </TabPanel>
+          </TabPanels>
+        </TabGroup>
+      )}
     </div>
   );
 }

@@ -161,7 +161,7 @@ const TeamsField = ({ control }: { control: SettingsControl }) => {
                   {...budgetField}
                   ref={ref}
                   type="number"
-                  step={0.01}
+                  step="any"
                   min={0}
                   placeholder={t("identityAdmin.defaultUserSettings.optional")}
                 />
@@ -294,7 +294,7 @@ const SettingsForm = ({ initialValues, roleOptions, updateSettings, onCancel, on
   const onSubmit = form.handleSubmit((values) => mutation.mutate(values));
 
   return (
-    <form onSubmit={onSubmit}>
+    <form onSubmit={onSubmit} noValidate>
       <FieldGroup>
         <FormField
           control={form.control}
@@ -331,7 +331,7 @@ const SettingsForm = ({ initialValues, roleOptions, updateSettings, onCancel, on
           label={t("identityAdmin.defaultUserSettings.maxBudget")}
           description={t("identityAdmin.defaultUserSettings.maxBudgetDescription")}
         >
-          {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step={0.01} min={0} />}
+          {({ ref, ...field }) => <Input {...field} ref={ref} type="number" step="any" min={0} />}
         </FormField>
 
         <FormField

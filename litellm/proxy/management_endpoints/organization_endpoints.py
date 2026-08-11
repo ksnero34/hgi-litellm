@@ -27,6 +27,7 @@ from pydantic import TypeAdapter
 
 from litellm._logging import verbose_proxy_logger
 from litellm._uuid import uuid
+from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.proxy._types import *
 from litellm.proxy.auth.auth_checks import can_user_call_model, get_user_object
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
@@ -77,6 +78,29 @@ if TYPE_CHECKING:
     from prisma.models import LiteLLM_UserTable as PrismaUserTable
 
 router = APIRouter()
+
+
+async def _create_organization_audit_log(
+    object_id: str,
+    action: AUDIT_ACTIONS,
+    user_api_key_dict: UserAPIKeyAuth,
+    table_name: LitellmTableNames,
+    before_value: object | None,
+    after_value: object | None,
+) -> None:
+    from litellm.proxy.management_helpers.audit_logs import create_object_audit_log
+    from litellm.proxy.proxy_server import litellm_proxy_admin_name
+
+    await create_object_audit_log(
+        object_id=object_id,
+        action=action,
+        litellm_changed_by=None,
+        user_api_key_dict=user_api_key_dict,
+        litellm_proxy_admin_name=litellm_proxy_admin_name,
+        table_name=table_name,
+        before_value=safe_dumps(dict(before_value)) if isinstance(before_value, Mapping) else None,
+        after_value=safe_dumps(dict(after_value)) if isinstance(after_value, Mapping) else None,
+    )
 
 
 class _UserTableClient(Protocol):
@@ -506,6 +530,15 @@ async def new_organization(
         include={"litellm_budget_table": True},
     )
 
+    await _create_organization_audit_log(
+        object_id=response.organization_id,
+        action="created",
+        user_api_key_dict=user_api_key_dict,
+        table_name=LitellmTableNames.ORGANIZATION_TABLE_NAME,
+        before_value=None,
+        after_value=response.model_dump(exclude_none=True),
+    )
+
     return response
 
 
@@ -559,7 +592,7 @@ async def get_organization_daily_activity(
                 if org_id not in admin_org_ids:
                     raise HTTPException(
                         status_code=403,
-                        detail={"error": "User is not org_admin for Organization= {}.".format(org_id)},
+                        detail={"error": f"User is not org_admin for Organization= {org_id}."},
                     )
 
     # Fetch organization aliases for metadata
@@ -718,6 +751,15 @@ async def update_organization(
         where={"organization_id": data.organization_id},
         data=updated_organization_row,
         include={"members": True, "teams": True, "litellm_budget_table": True},
+    )
+
+    await _create_organization_audit_log(
+        object_id=data.organization_id,
+        action="updated",
+        user_api_key_dict=user_api_key_dict,
+        table_name=LitellmTableNames.ORGANIZATION_TABLE_NAME,
+        before_value=existing_organization_row.model_dump(exclude_none=True),
+        after_value=response.model_dump(exclude_none=True),
     )
 
     return response
@@ -899,6 +941,15 @@ async def update_organization_v2(
             include={"members": True, "teams": True, "litellm_budget_table": True},
         )
 
+    await _create_organization_audit_log(
+        object_id=organization_id,
+        action="updated",
+        user_api_key_dict=user_api_key_dict,
+        table_name=LitellmTableNames.ORGANIZATION_TABLE_NAME,
+        before_value=existing_organization_row.model_dump(exclude_none=True),
+        after_value=response.model_dump(exclude_none=True),
+    )
+
     return response
 
 
@@ -954,6 +1005,14 @@ async def delete_organization(
                 detail={"error": f"Organization={organization_id} not found"},
             )
         deleted_orgs.append(deleted_org)
+        await _create_organization_audit_log(
+            object_id=organization_id,
+            action="deleted",
+            user_api_key_dict=user_api_key_dict,
+            table_name=LitellmTableNames.ORGANIZATION_TABLE_NAME,
+            before_value=deleted_org.model_dump(exclude_none=True),
+            after_value=None,
+        )
 
     return deleted_orgs
 
@@ -1252,6 +1311,15 @@ async def organization_member_add(
             updated_users.append(updated_user)
             updated_organization_memberships.append(updated_organization_membership)
 
+            await _create_organization_audit_log(
+                object_id=f"{data.organization_id}:{updated_organization_membership.user_id}",
+                action="created",
+                user_api_key_dict=user_api_key_dict,
+                table_name=LitellmTableNames.ORGANIZATION_MEMBERSHIP_TABLE_NAME,
+                before_value=None,
+                after_value=updated_organization_membership.model_dump(exclude_none=True),
+            )
+
         return OrganizationAddMemberResponse(
             organization_id=data.organization_id,
             updated_users=updated_users,
@@ -1261,7 +1329,7 @@ async def organization_member_add(
         verbose_proxy_logger.exception(f"Error adding member to organization: {e}")
         if isinstance(e, HTTPException):
             raise ProxyException(
-                message=getattr(e, "detail", f"Authentication Error({str(e)})"),
+                message=getattr(e, "detail", f"Authentication Error({e!s})"),
                 type=ProxyErrorTypes.auth_error,
                 param=getattr(e, "param", "None"),
                 code=getattr(e, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR),
@@ -1442,6 +1510,14 @@ async def organization_member_update(
         final_organization_membership_pydantic = LiteLLM_OrganizationMembershipTable.model_validate(
             final_organization_membership.model_dump(exclude_none=True)
         )
+        await _create_organization_audit_log(
+            object_id=f"{data.organization_id}:{data.user_id}",
+            action="updated",
+            user_api_key_dict=user_api_key_dict,
+            table_name=LitellmTableNames.ORGANIZATION_MEMBERSHIP_TABLE_NAME,
+            before_value=existing_organization_membership.model_dump(exclude_none=True),
+            after_value=final_organization_membership_pydantic.model_dump(exclude_none=True),
+        )
         return final_organization_membership_pydantic
     except Exception as e:
         verbose_proxy_logger.exception(f"Error updating member in organization: {e}")
@@ -1490,6 +1566,15 @@ async def organization_member_delete(
                 }
             }
         )
+        if member_to_delete is not None:
+            await _create_organization_audit_log(
+                object_id=f"{data.organization_id}:{data.user_id}",
+                action="deleted",
+                user_api_key_dict=user_api_key_dict,
+                table_name=LitellmTableNames.ORGANIZATION_MEMBERSHIP_TABLE_NAME,
+                before_value=member_to_delete.model_dump(exclude_none=True),
+                after_value=None,
+            )
         return member_to_delete
 
     except Exception as e:

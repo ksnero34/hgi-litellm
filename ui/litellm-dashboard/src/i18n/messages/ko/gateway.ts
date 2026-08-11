@@ -126,6 +126,12 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.createKey.policiesTooltip": "이 키에 가드레일 정책을 적용합니다",
   "gateway.createKey.policiesHelp": "적용할 정책을 선택하거나 입력하세요",
   "gateway.createKey.policiesPlaceholder": "정책 선택 또는 입력",
+  "gateway.createKey.passThroughRoutes": "허용된 패스스루 경로",
+  "gateway.createKey.passThroughRoutesTooltip":
+    "이 키가 호출할 수 있는 패스스루 경로를 제한합니다. 비워 두면 기본 동작을 따릅니다.",
+  "gateway.createKey.passThroughRoutesHelp": "이 키가 사용할 수 있는 패스스루 경로를 선택하세요",
+  "gateway.createKey.passThroughRoutesPremium": "패스스루 경로 선택(선택 사항)",
+  "gateway.createKey.passThroughRoutesPlaceholder": "패스스루 경로 선택(선택 사항)",
   "gateway.createKey.yes": "예",
   "gateway.createKey.no": "아니요",
   "gateway.createKey.create": "키 만들기",
@@ -139,6 +145,10 @@ export const gatewayMessages: MessageCatalog = {
     "이 키에 허용할 라우트를 쉼표로 구분해 입력하세요. 비워 두면 모든 라우트를 허용합니다.",
   "gateway.keyEdit.allowedRoutesPlaceholder":
     "허용 라우트를 입력하세요(쉼표 구분). 특수값: llm_api_routes, management_routes. 예: llm_api_routes, /chat/completions, /keys/*. 비워 두면 전체 허용",
+  "gateway.keyEdit.passThroughRoutes": "허용된 패스스루 경로",
+  "gateway.keyEdit.passThroughRoutesPremium": "패스스루 경로 선택(선택 사항)",
+  "gateway.keyEdit.passThroughRoutesCurrent": "현재 경로: {{routes}}",
+  "gateway.keyEdit.passThroughRoutesPlaceholder": "패스스루 경로 선택(선택 사항)",
   "gateway.keyEdit.maxBudget": "Max Budget (USD)",
   "gateway.keyEdit.numericPlaceholder": "숫자를 입력하세요",
   "gateway.keyEdit.resetBudget": "예산 재설정",

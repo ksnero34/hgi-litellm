@@ -11,6 +11,8 @@
 	install-helm-unittest check-circular-imports check-import-safety pre-commit \
 	lint-install lint-fetch-base bootstrap
 
+LINT_BASE ?= $(shell python3 -c 'import json; print(json.load(open("customizations/manifest.json"))["base_ref"])')
+
 # Default target
 help:
 	@echo "Available commands:"
@@ -75,7 +77,7 @@ install-dev:
 bootstrap:
 	$(UV) sync --inexact --frozen --extra proxy --group proxy-dev --group e2e-dev
 	$(UV_RUN) python scripts/prisma_generate_if_needed.py
-	cd ui/litellm-dashboard && npm ci --no-audit --no-fund
+	cd ui/litellm-dashboard && npm install --no-audit --no-fund
 	@main_root=$$(git worktree list --porcelain | head -1 | sed 's/^worktree //'); \
 	if [ "$$main_root" != "$$(git rev-parse --show-toplevel)" ] && [ -f "$$main_root/.env" ] && [ ! -f .env ]; then \
 		cp "$$main_root/.env" .env && echo "bootstrap: copied .env from $$main_root"; \
@@ -118,7 +120,7 @@ format-check: install-dev
 # Single fetch of the PR base so the delta-based gates below share one network round
 # trip instead of each re-fetching when chained from `lint`.
 lint-fetch-base:
-	git fetch origin litellm_internal_staging
+	git rev-parse --verify $(LINT_BASE)^{commit}
 
 # Mirror test-linting.yml's lint job environment: the proxy-dev group plus a generated
 # Prisma client, so basedpyright resolves the same modules CI does (without the generated
@@ -133,7 +135,7 @@ lint-install:
 # only the litellm Python files changed vs the base are checked, so a pre-existing
 # format issue elsewhere doesn't block an unrelated commit.
 lint-format-check-changed: $(LINT_DEP_INSTALL) $(LINT_DEP_BASE)
-	@files=$$(git diff --name-only --diff-filter=ACMR origin/litellm_internal_staging...HEAD -- 'litellm/**/*.py' | grep -v '^litellm/enterprise/' || true); \
+	@files=$$(git diff --name-only --diff-filter=ACMR $(LINT_BASE)...HEAD -- 'litellm/**/*.py' | grep -v '^litellm/enterprise/' || true); \
 	if [ -z "$$files" ]; then \
 		echo "No changed litellm Python files to format-check."; \
 	else \
@@ -176,8 +178,10 @@ lint-ruff-FULL-dev: install-dev
 	if [ -n "$$files" ]; then echo "$$files" | xargs $(UV_RUN) ruff check; \
 	else echo "No changed .py files to check."; fi
 
+lint-basedpyright lint-basedpyright-budget-update: export NODE_OPTIONS := --max-old-space-size=12288
+
 lint-basedpyright: $(LINT_DEP_INSTALL) $(LINT_DEP_BASE)
-	($(UV_RUN) basedpyright --outputjson || true) | $(UV_RUN) python scripts/type_check_gate.py --base origin/litellm_internal_staging
+	($(UV_RUN) basedpyright --outputjson || true) | $(UV_RUN) python scripts/type_check_gate.py --base $(LINT_BASE)
 
 lint-e2e-basedpyright: $(LINT_E2E_DEP_INSTALL)
 	$(UV_RUN) basedpyright tests/e2e
@@ -185,7 +189,7 @@ lint-e2e-basedpyright: $(LINT_E2E_DEP_INSTALL)
 # Type-discipline budget (mutable collections / casts / type guards / kwargs /
 # unexplained suppressions), the test-linting.yml step `make lint` used to omit.
 lint-type-discipline: $(LINT_DEP_INSTALL) $(LINT_DEP_BASE)
-	$(UV_RUN) python scripts/type_discipline_gate.py --base origin/litellm_internal_staging
+	$(UV_RUN) python scripts/type_discipline_gate.py --base $(LINT_BASE)
 
 # --update lowers each limit by what this branch fixed since its branch point, so
 # it needs the base ref fetched to resolve the merge-base.
@@ -200,7 +204,7 @@ lint-ruff-budget: install-dev
 # Strict gate, invoked the same way CI does in test-linting.yml so a local pass
 # means the CI check will pass too.
 lint-gate: $(LINT_DEP_INSTALL) $(LINT_DEP_BASE)
-	$(UV_RUN) python scripts/ruff_strict_gate.py --base origin/litellm_internal_staging
+	$(UV_RUN) python scripts/ruff_strict_gate.py --base $(LINT_BASE)
 
 lint-ruff-budget-update: install-dev lint-fetch-base
 	$(UV_RUN) python scripts/ruff_strict_gate.py --update
@@ -237,7 +241,7 @@ lint-dev: lint-format-changed check-circular-imports check-import-safety
 # test-linting.yml (Python), test-litellm-ui-build.yml's frontend-lint (dashboard), and
 # check-ui-api-types.yml (API-type drift), skipping any whose files you didn't stage.
 # Not auto-installed as a git hook so it never slows an unrelated human commit.
-pre-commit:
+pre-commit: bootstrap
 	./scripts/pre_commit_lint.sh
 
 # Testing targets

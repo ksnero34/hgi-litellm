@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ColumnFiltersState, OnChangeFn, PaginationState } from "@tanstack/react-table";
-import { resolveLogoSrc } from "@/lib/assetPaths";
+import moment from "moment";
 import { uiAuditLogsCall } from "../networking";
 import { AuditLogEntry } from "./AuditLogsTableColumns";
 import { AuditLogsTable } from "./AuditLogsTable";
@@ -14,13 +14,20 @@ interface AuditLogsProps {
   userRole: string | null;
   userID: string | null;
   isActive: boolean;
-  premiumUser: boolean;
 }
 
-const asset_logos_folder = "/ui/assets/";
-const auditLogsPreviewImg = `${asset_logos_folder}audit-logs-preview.png`;
-
 const PAGE_SIZE = 50;
+const AUDIT_READER_ROLES = new Set(["Admin", "proxy_admin", "Admin Viewer", "proxy_admin_viewer"]);
+
+const parseSuccessFilter = (value: string | undefined): boolean | undefined => {
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return undefined;
+};
 
 interface AuditLogsResponse {
   audit_logs: AuditLogEntry[];
@@ -30,14 +37,7 @@ interface AuditLogsResponse {
   total_pages: number;
 }
 
-export default function AuditLogsPanel({
-  userID,
-  userRole,
-  token,
-  accessToken,
-  isActive,
-  premiumUser,
-}: AuditLogsProps) {
+export default function AuditLogsPanel({ userID, userRole, token, accessToken, isActive }: AuditLogsProps) {
   const { t } = useTranslation();
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -49,7 +49,8 @@ export default function AuditLogsPanel({
     return typeof entry?.value === "string" && entry.value.trim() ? entry.value.trim() : undefined;
   };
 
-  const canQueryAuditLogs = !!accessToken && !!token && !!userRole && !!userID && isActive && premiumUser;
+  const canReadAuditLogs = userRole !== null && AUDIT_READER_ROLES.has(userRole);
+  const canQueryAuditLogs = !!accessToken && !!token && !!userRole && !!userID && isActive && canReadAuditLogs;
 
   const query = useQuery<AuditLogsResponse>({
     queryKey: ["audit_logs", pagination.pageIndex, pagination.pageSize, columnFilters],
@@ -57,6 +58,9 @@ export default function AuditLogsPanel({
       if (!accessToken) {
         return { audit_logs: [], total: 0, page: 1, page_size: pagination.pageSize, total_pages: 0 };
       }
+      const startDateFilter = getFilterValue("start_date");
+      const endDateFilter = getFilterValue("end_date");
+      const success = parseSuccessFilter(getFilterValue("success"));
       return uiAuditLogsCall({
         accessToken,
         page: pagination.pageIndex + 1,
@@ -68,7 +72,13 @@ export default function AuditLogsPanel({
           object_team_id: getFilterValue("team_id"),
           action: getFilterValue("action"),
           table_name: getFilterValue("table_name"),
-          sort_by: "updated_at",
+          start_date: startDateFilter
+            ? moment.utc(startDateFilter, "YYYY-MM-DD").startOf("day").format("YYYY-MM-DD HH:mm:ss")
+            : undefined,
+          end_date: endDateFilter
+            ? moment.utc(endDateFilter, "YYYY-MM-DD").endOf("day").format("YYYY-MM-DD HH:mm:ss")
+            : undefined,
+          success,
           sort_order: "desc",
         },
       });
@@ -76,6 +86,10 @@ export default function AuditLogsPanel({
     enabled: canQueryAuditLogs,
     placeholderData: keepPreviousData,
   });
+
+  const refreshAuditLogs = useCallback(() => {
+    void query.refetch();
+  }, [query]);
 
   const handleColumnFiltersChange = useCallback<OnChangeFn<ColumnFiltersState>>((updaterOrValue) => {
     setColumnFilters(updaterOrValue);
@@ -87,32 +101,10 @@ export default function AuditLogsPanel({
     setDrawerOpen(true);
   }, []);
 
-  if (!premiumUser) {
+  if (!canReadAuditLogs) {
     return (
-      <div style={{ textAlign: "center", marginTop: "20px" }}>
-        <h1 style={{ display: "block", marginBottom: "10px" }}>
-          {t("observabilityExtra.audit.enterpriseFeatureTitle")}
-        </h1>
-        <p style={{ display: "block", marginBottom: "10px" }}>
-          {t("observabilityExtra.audit.enterpriseFeatureDescription")}
-        </p>
-        <p style={{ display: "block", marginBottom: "20px", fontStyle: "italic" }}>
-          {t("observabilityExtra.audit.enterpriseFeaturePreview")}
-        </p>
-        <img
-          src={resolveLogoSrc(auditLogsPreviewImg)}
-          alt={t("observabilityExtra.audit.enterpriseFeaturePreviewAlt")}
-          style={{
-            maxWidth: "100%",
-            maxHeight: "700px",
-            borderRadius: "8px",
-            boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
-            margin: "0 auto",
-          }}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
-        />
+      <div className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
+        {t("observabilityExtra.audit.accessDenied")}
       </div>
     );
   }
@@ -123,6 +115,14 @@ export default function AuditLogsPanel({
         <h1 className="text-xl font-semibold">{t("observabilityExtra.audit.title")}</h1>
       </div>
 
+      {query.isError ? (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {t("observabilityExtra.audit.loadError", {
+            error: query.error instanceof Error ? query.error.message : t("observabilityExtra.audit.unknownError"),
+          })}
+        </div>
+      ) : null}
+
       <AuditLogsTable
         data={query.data?.audit_logs ?? []}
         rowCount={query.data?.total ?? 0}
@@ -132,11 +132,16 @@ export default function AuditLogsPanel({
         onPaginationChange={setPagination}
         columnFilters={columnFilters}
         onColumnFiltersChange={handleColumnFiltersChange}
-        onRefresh={() => query.refetch()}
+        onRefresh={refreshAuditLogs}
         onViewLog={handleViewLog}
       />
 
-      <AuditLogDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} log={selectedLog} />
+      <AuditLogDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        log={selectedLog}
+        accessToken={accessToken}
+      />
     </>
   );
 }

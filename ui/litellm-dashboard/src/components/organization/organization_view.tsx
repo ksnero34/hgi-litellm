@@ -4,12 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useVisitedTabs } from "@/hooks/useVisitedTabs";
 import { MoneyCell } from "@/components/shared/table_cells";
 import CopyButton from "@/components/shared/CopyButton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
+import { teamDetailHref } from "@/utils/entityLinks";
 import { createTeamAliasMap } from "@/utils/teamUtils";
+import { BadgeLink } from "@/components/shared/BadgeLink";
 import type { ColumnsType } from "antd/es/table";
 import { ArrowLeft } from "lucide-react";
 import React, { useMemo, useState } from "react";
@@ -237,13 +238,9 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                 <p className="text-sm text-muted-foreground">{t("identityAdmin.organization.models")}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {orgData.models.length === 0 ? (
-                    <Badge variant="secondary">{t("identityAdmin.organization.allProxyModels")}</Badge>
+                    <BadgeLink>{t("identityAdmin.organization.allProxyModels")}</BadgeLink>
                   ) : (
-                    orgData.models.map((model, index) => (
-                      <Badge key={index} variant="secondary">
-                        {model}
-                      </Badge>
-                    ))
+                    orgData.models.map((model, index) => <BadgeLink key={index}>{model}</BadgeLink>)
                   )}
                 </div>
               </CardContent>
@@ -254,9 +251,9 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                 <p className="text-sm text-muted-foreground">{t("identityAdmin.organization.teams")}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {orgData.teams?.map((team, index) => (
-                    <Badge key={index} variant="secondary">
+                    <BadgeLink key={index} href={teamDetailHref(team.team_id)}>
                       {teamAliasMap[team.team_id] || team.team_id}
-                    </Badge>
+                    </BadgeLink>
                   ))}
                 </div>
               </CardContent>
@@ -330,9 +327,7 @@ const OrganizationInfoView: React.FC<OrganizationInfoProps> = ({
                     <p className="font-medium text-foreground">{t("identityAdmin.organization.models")}</p>
                     <div className="mt-1 flex flex-wrap gap-2">
                       {orgData.models.map((model, index) => (
-                        <Badge key={index} variant="secondary">
-                          {model}
-                        </Badge>
+                        <BadgeLink key={index}>{model}</BadgeLink>
                       ))}
                     </div>
                   </div>

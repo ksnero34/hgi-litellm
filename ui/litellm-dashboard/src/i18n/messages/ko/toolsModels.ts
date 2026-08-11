@@ -165,6 +165,7 @@ export const toolsModelsMessages: MessageCatalog = {
   "toolsModels.mcp.authBasic": "기본 인증",
   "toolsModels.mcp.authOAuth": "OAuth",
   "toolsModels.mcp.authTokenExchange": "OAuth 토큰 교환(OBO)",
+  "toolsModels.mcp.authIdJag": "ID-JAG(Okta Cross App Access)",
   "toolsModels.mcp.authAwsSigv4": "AWS SigV4(Bedrock AgentCore MCP)",
   "toolsModels.mcp.authTruePassthrough": "True Passthrough(LiteLLM 인증 없음)",
   "toolsModels.mcp.authDelegate": "OAuth Delegate(클라이언트 제공 업스트림 토큰)",

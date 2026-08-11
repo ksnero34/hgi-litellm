@@ -125,6 +125,12 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.createKey.policiesTooltip": "Apply guardrail policies to this key",
   "gateway.createKey.policiesHelp": "Select or enter policies to apply",
   "gateway.createKey.policiesPlaceholder": "Select or enter policies",
+  "gateway.createKey.passThroughRoutes": "Allowed Pass Through Routes",
+  "gateway.createKey.passThroughRoutesTooltip":
+    "Restrict which pass through routes this key can call. Leave empty to inherit the default behavior.",
+  "gateway.createKey.passThroughRoutesHelp": "Select pass through routes this key may use",
+  "gateway.createKey.passThroughRoutesPremium": "Select pass through routes (optional)",
+  "gateway.createKey.passThroughRoutesPlaceholder": "Select pass through routes (optional)",
   "gateway.createKey.yes": "Yes",
   "gateway.createKey.no": "No",
   "gateway.createKey.create": "Create Key",
@@ -138,6 +144,10 @@ export const gatewayMessages: MessageCatalog = {
     "List allowed routes for this key, separated by commas. Use route names, patterns, or leave empty to allow all routes.",
   "gateway.keyEdit.allowedRoutesPlaceholder":
     "Enter allowed routes (comma-separated). Special values: llm_api_routes, management_routes. Examples: llm_api_routes, /chat/completions, /keys/*. Leave empty to allow all routes",
+  "gateway.keyEdit.passThroughRoutes": "Allowed Pass Through Routes",
+  "gateway.keyEdit.passThroughRoutesPremium": "Select pass through routes (optional)",
+  "gateway.keyEdit.passThroughRoutesCurrent": "Current routes: {{routes}}",
+  "gateway.keyEdit.passThroughRoutesPlaceholder": "Select pass through routes (optional)",
   "gateway.keyEdit.maxBudget": "Max Budget (USD)",
   "gateway.keyEdit.numericPlaceholder": "Enter a numerical value",
   "gateway.keyEdit.resetBudget": "Reset Budget",

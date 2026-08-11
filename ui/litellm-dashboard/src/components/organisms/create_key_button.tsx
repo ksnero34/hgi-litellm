@@ -21,6 +21,7 @@ import BudgetDurationDropdown from "../common_components/budget_duration_dropdow
 import SchemaFormFields from "../common_components/check_openapi_schema";
 import KeyLifecycleSettings from "../common_components/KeyLifecycleSettings";
 import ModelAliasManager from "../common_components/ModelAliasManager";
+import PassThroughRoutesSelector from "../common_components/PassThroughRoutesSelector";
 import RateLimitTypeFormItem from "../common_components/RateLimitTypeFormItem";
 import RouterSettingsAccordion, { RouterSettingsAccordionValue } from "../common_components/RouterSettingsAccordion";
 import TeamDropdown from "../common_components/team_dropdown";
@@ -168,6 +169,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const { t } = useTranslation();
   const { accessToken, userId: userID, userRole } = useAuthorized();
   const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
+  const canConfigurePassThroughRoutes = true;
   const { data: organizations, isLoading: isOrganizationsLoading } = useOrganizations();
   const { data: projects, isLoading: isProjectsLoading } = useProjects();
   const { data: uiSettingsData } = useUISettings();
@@ -1298,6 +1300,41 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     help="Select access groups to assign to this key"
                   >
                     <AccessGroupSelector placeholder="Select access groups (optional)" />
+                  </Form.Item>
+                  <Form.Item
+                    label={
+                      <span>
+                        {t("gateway.createKey.passThroughRoutes")}{" "}
+                        <Tooltip title={t("gateway.createKey.passThroughRoutesTooltip")}>
+                          <a
+                            href="https://docs.litellm.ai/docs/proxy/pass_through"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                          </a>
+                        </Tooltip>
+                      </span>
+                    }
+                    name="allowed_passthrough_routes"
+                    className="mt-4"
+                    help={
+                      canConfigurePassThroughRoutes
+                        ? t("gateway.createKey.passThroughRoutesHelp")
+                        : t("gateway.createKey.passThroughRoutesPremium")
+                    }
+                  >
+                    <PassThroughRoutesSelector
+                      accessToken={accessToken}
+                      placeholder={
+                        !canConfigurePassThroughRoutes
+                          ? t("gateway.createKey.passThroughRoutesPremium")
+                          : t("gateway.createKey.passThroughRoutesPlaceholder")
+                      }
+                      disabled={!canConfigurePassThroughRoutes}
+                      teamId={selectedCreateKeyTeam ? selectedCreateKeyTeam.team_id : null}
+                    />
                   </Form.Item>
                   <Form.Item
                     label={

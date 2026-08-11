@@ -37,12 +37,26 @@ const defaultProps = {
 };
 
 describe("SpendLogsTable", () => {
-  it("renders the four log tabs", () => {
+  it("renders the admin log tabs including audit logs for admin readers", () => {
     renderWithProviders(<SpendLogsTable {...defaultProps} />);
 
     for (const label of ["Request Logs", "Audit Logs", "Deleted Keys", "Deleted Teams"]) {
       expect(screen.getByRole("tab", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("hides the audit logs tab for org admins", () => {
+    renderWithProviders(<SpendLogsTable {...defaultProps} userRole="org_admin" />);
+
+    expect(screen.queryByRole("tab", { name: "Audit Logs" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Request Logs" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Deleted Keys" })).toBeInTheDocument();
+  });
+
+  it("shows the audit logs tab for admin viewers", () => {
+    renderWithProviders(<SpendLogsTable {...defaultProps} userRole="Admin Viewer" />);
+
+    expect(screen.getByRole("tab", { name: "Audit Logs" })).toBeInTheDocument();
   });
 
   it("marks only the visible tab's panel active so background tabs do not query", async () => {

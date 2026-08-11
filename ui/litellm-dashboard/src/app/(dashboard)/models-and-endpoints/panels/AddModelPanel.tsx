@@ -3,7 +3,7 @@
 import { Form } from "antd";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import AddModelTab from "@/components/add_model/add_model_tab";
+import AddModelForm from "@/components/add_model/AddModelForm";
 import { handleAddModelSubmit } from "@/components/add_model/handle_add_model_submit";
 import { Providers, getPlaceholder, getProviderModels } from "@/components/provider_info_helpers";
 import NotificationsManager from "@/components/molecules/notifications_manager";
@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 
 export default function AddModelPanel() {
   const { t } = useTranslation();
-  const { accessToken, userRole } = useAuthorized();
+  const { accessToken } = useAuthorized();
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const { data: modelCostMapData } = useModelCostMap();
@@ -41,7 +41,7 @@ export default function AddModelPanel() {
   };
 
   return (
-    <AddModelTab
+    <AddModelForm
       form={form}
       handleOk={handleOk}
       selectedProvider={selectedProvider}
@@ -54,8 +54,6 @@ export default function AddModelPanel() {
       setShowAdvancedSettings={setShowAdvancedSettings}
       teams={teams ?? null}
       credentials={credentialsResponse?.credentials || []}
-      accessToken={accessToken}
-      userRole={userRole}
     />
   );
 }

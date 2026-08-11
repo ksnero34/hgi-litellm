@@ -3,14 +3,17 @@
  *
  */
 
-import React, { useState } from "react";
+import { Plus, Wallet } from "lucide-react";
+import React, { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { ToolbarSeparator } from "@/components/shared/ToolbarSeparator";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
 import NotificationsManager from "@/components/molecules/notifications_manager";
-import { useBudgets, useDeleteBudget, budgetItem } from "@/app/(dashboard)/hooks/budgets/useBudgets";
+import { useBudgetList, useDeleteBudget, budgetItem } from "@/app/(dashboard)/hooks/budgets/useBudgets";
 import BudgetModal from "./budget_modal";
 import BudgetTable from "./BudgetTable";
 import EditBudgetModal from "./edit_budget_modal";
@@ -32,21 +35,25 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
   const { userRole } = useAuthorized();
   const canModify = isProxyAdminRole(userRole ?? "");
 
-  const { data: budgetList = [], isLoading } = useBudgets();
+  const budgetList = useBudgetList();
   const deleteBudget = useDeleteBudget();
 
-  const handleEditCall = async (budget: budgetItem) => {
-    if (accessToken == null) {
-      return;
-    }
-    setSelectedBudget(budget);
-    setIsEditModalVisible(true);
-  };
+  // Stable identities keep the memoized column defs stable; new ones remount every header and cell.
+  const handleEditCall = useCallback(
+    (budget: budgetItem) => {
+      if (accessToken == null) {
+        return;
+      }
+      setSelectedBudget(budget);
+      setIsEditModalVisible(true);
+    },
+    [accessToken],
+  );
 
-  const handleDeleteClick = (budget: budgetItem) => {
+  const handleDeleteClick = useCallback((budget: budgetItem) => {
     setSelectedBudget(budget);
     setIsDeleteModalVisible(true);
-  };
+  }, []);
 
   const handleDeleteConfirm = async () => {
     if (!selectedBudget || accessToken == null) {
@@ -73,23 +80,34 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
   };
 
   return (
-    <div className="w-full mx-auto flex-auto overflow-y-auto m-8 p-2">
-      {canModify && (
-        <Button size="sm" className="mb-2" onClick={() => setIsCreateModelVisible(true)}>
-          + {t("access.budgets.create")}
-        </Button>
-      )}
-      <Tabs defaultValue="budgets">
-        <TabsList variant="line" className="h-auto w-full justify-start rounded-none border-b p-0">
-          <TabsTrigger value="budgets" className="flex-none rounded-none px-4 py-2">
-            {t("access.budgets.tabs.budgets")}
-          </TabsTrigger>
-          <TabsTrigger value="examples" className="flex-none rounded-none px-4 py-2">
-            {t("access.budgets.tabs.examples")}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="budgets">
-          <div className="mt-6">
+    <div className="flex h-full flex-col gap-4 p-6 px-12">
+      <PageHeader
+        icon={<Wallet className="size-5" />}
+        title={t("access.budgets.tabs.budgets")}
+        subtitle={t("access.budgets.subtitle")}
+      />
+      <Tabs defaultValue="budgets" className="min-h-0 flex-1 gap-0">
+        <div className="flex items-center gap-4 border-b border-border">
+          {canModify && (
+            <>
+              <Button onClick={() => setIsCreateModelVisible(true)}>
+                <Plus className="size-4" />
+                {t("access.budgets.create")}
+              </Button>
+              <ToolbarSeparator className="h-6" />
+            </>
+          )}
+          <TabsList variant="line">
+            <TabsTrigger value="budgets" className="flex-none px-4">
+              {t("access.budgets.tabs.budgets")}
+            </TabsTrigger>
+            <TabsTrigger value="examples" className="flex-none px-4">
+              {t("access.budgets.tabs.examples")}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="budgets" className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col pt-6">
             <BudgetModal isModalVisible={isCreateModelVisible} setIsModalVisible={setIsCreateModelVisible} />
             {selectedBudget && (
               <EditBudgetModal
@@ -100,8 +118,7 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
             )}
             <p className="mb-4 text-sm text-muted-foreground">{t("access.budgets.subtitle")}</p>
             <BudgetTable
-              budgets={budgetList}
-              isLoading={isLoading}
+              list={budgetList}
               canModify={canModify}
               onEditClick={handleEditCall}
               onDeleteClick={handleDeleteClick}
@@ -123,8 +140,8 @@ const BudgetPanel: React.FC<BudgetSettingsPageProps> = ({ accessToken }) => {
             />
           </div>
         </TabsContent>
-        <TabsContent value="examples">
-          <div className="mt-6">
+        <TabsContent value="examples" className="min-h-0 flex-1 overflow-y-auto">
+          <div className="pt-6">
             <p className="text-base text-muted-foreground">{t("access.budgets.examples.title")}</p>
             <Tabs defaultValue="assign-budget">
               <TabsList variant="line" className="h-auto w-full justify-start rounded-none border-b p-0">

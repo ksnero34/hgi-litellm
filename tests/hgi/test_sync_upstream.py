@@ -65,7 +65,7 @@ def test_load_manifest_rejects_duplicate_path_ownership(tmp_path):
 def test_load_project_manifest():
     manifest = sync_upstream.load_manifest(Path(__file__).parents[2] / "customizations" / "manifest.json")
 
-    assert manifest["base_ref"] == "72a4a55f43ea7266de589f005d0d33624fe5d555"
+    assert manifest["base_ref"] == "884376644d463a1fc05c846e61c361ff1369a1cc"
     assert {group["name"] for group in manifest["groups"]} == {
         "license-boundary",
         "oidc",
@@ -79,6 +79,7 @@ def test_load_project_manifest():
         "prisma-v2-migrations",
         "spend-log-detail-access",
         "observability-scope",
+        "oss-audit-logs",
         "maintenance-tooling",
     }
 
