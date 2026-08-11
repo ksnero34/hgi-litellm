@@ -87,6 +87,18 @@ const getKeyTypeFromRoutes = (allowedRoutes: string[] | null | undefined): strin
   return "default";
 };
 
+const parseAllowlistValues = (value: unknown): string[] | undefined => {
+  if (typeof value !== "string" && !Array.isArray(value)) {
+    return undefined;
+  }
+  const values = typeof value === "string" ? [value] : value;
+  return values
+    .filter((entry): entry is string => typeof entry === "string")
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
 export function KeyEditView({
   keyData,
   onCancel,
@@ -191,6 +203,7 @@ export function KeyEditView({
       Array.isArray(keyData.allowed_routes) && keyData.allowed_routes.length > 0
         ? keyData.allowed_routes.join(", ")
         : "",
+    allowed_ip_ranges: keyData.allowed_ip_ranges ?? [],
   };
 
   useEffect(() => {
@@ -217,6 +230,7 @@ export function KeyEditView({
         Array.isArray(keyData.allowed_routes) && keyData.allowed_routes.length > 0
           ? keyData.allowed_routes.join(", ")
           : "",
+      allowed_ip_ranges: keyData.allowed_ip_ranges ?? [],
     });
   }, [keyData, form]);
 
@@ -272,6 +286,23 @@ export function KeyEditView({
         [...submittedRoutesSet].every((r) => originalRoutesSet.has(r));
       if (allowedRoutesUnchanged) {
         delete values.allowed_routes;
+      }
+
+      const submittedIpRanges = parseAllowlistValues(values.allowed_ip_ranges);
+      if (submittedIpRanges !== undefined) {
+        values.allowed_ip_ranges = submittedIpRanges;
+      }
+      const originalIpRangesSet = new Set<string>(
+        Array.isArray(keyData.allowed_ip_ranges) ? keyData.allowed_ip_ranges : [],
+      );
+      const submittedIpRangesSet = new Set<string>(
+        Array.isArray(values.allowed_ip_ranges) ? values.allowed_ip_ranges : [],
+      );
+      const allowedIpRangesUnchanged =
+        originalIpRangesSet.size === submittedIpRangesSet.size &&
+        [...submittedIpRangesSet].every((ipRange) => originalIpRangesSet.has(ipRange));
+      if (allowedIpRangesUnchanged) {
+        delete values.allowed_ip_ranges;
       }
 
       if (neverExpire) {
@@ -473,6 +504,26 @@ export function KeyEditView({
         name="allowed_routes"
       >
         <Input placeholder={t("gateway.keyEdit.allowedRoutesPlaceholder")} />
+      </Form.Item>
+
+      <Form.Item
+        label={
+          <span>
+            {t("gateway.ipAllowlist.label")}{" "}
+            <Tooltip title={t("gateway.ipAllowlist.tooltip")}>
+              <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+            </Tooltip>
+          </span>
+        }
+        name="allowed_ip_ranges"
+        extra={t("gateway.ipAllowlist.help")}
+      >
+        <Select
+          mode="tags"
+          tokenSeparators={[","]}
+          placeholder={t("gateway.ipAllowlist.placeholder")}
+          style={{ width: "100%" }}
+        />
       </Form.Item>
 
       <Form.Item label={t("gateway.keyEdit.maxBudget")} name="max_budget">

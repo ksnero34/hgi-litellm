@@ -5,36 +5,48 @@ import { Team } from "../key_team_helpers/key_list";
 import { userFilterUICall } from "../networking";
 import CreateKey from "./create_key_button";
 
-const { formMock, setFieldsValueMock, radioGroupValueRef, formStateRef, mockKeyCreateCall, teamDropdownTeamsRef } =
-  vi.hoisted(() => {
-    const formStateRef = { current: {} as Record<string, any> };
-    const teamDropdownTeamsRef = { current: [] as Array<{ team_id: string; team_alias: string; models: string[] }> };
-    const mockKeyCreateCall = vi.fn().mockResolvedValue({
-      key: "test-api-key",
-      soft_budget: null,
-    });
-    const formMock = {
-      setFieldsValue: vi.fn((values: Record<string, any>) => {
-        Object.assign(formStateRef.current, values);
-      }),
-      setFieldValue: vi.fn((name: string, value: any) => {
-        formStateRef.current[name] = value;
-      }),
-      getFieldValue: vi.fn((name: string) => formStateRef.current[name]),
-      resetFields: vi.fn(() => {
-        formStateRef.current = {};
-      }),
-    };
-    const radioGroupValueRef = { current: null as string | null };
-    return {
-      formMock,
-      setFieldsValueMock: formMock.setFieldsValue,
-      radioGroupValueRef,
-      formStateRef,
-      mockKeyCreateCall,
-      teamDropdownTeamsRef,
-    };
+const {
+  formMock,
+  setFieldsValueMock,
+  radioGroupValueRef,
+  formStateRef,
+  mockKeyCreateCall,
+  mockKeyCreateServiceAccountCall,
+  teamDropdownTeamsRef,
+} = vi.hoisted(() => {
+  const formStateRef = { current: {} as Record<string, any> };
+  const teamDropdownTeamsRef = { current: [] as Array<{ team_id: string; team_alias: string; models: string[] }> };
+  const mockKeyCreateCall = vi.fn().mockResolvedValue({
+    key: "test-api-key",
+    soft_budget: null,
   });
+  const mockKeyCreateServiceAccountCall = vi.fn().mockResolvedValue({
+    key: "test-service-account-key",
+    soft_budget: null,
+  });
+  const formMock = {
+    setFieldsValue: vi.fn((values: Record<string, any>) => {
+      Object.assign(formStateRef.current, values);
+    }),
+    setFieldValue: vi.fn((name: string, value: any) => {
+      formStateRef.current[name] = value;
+    }),
+    getFieldValue: vi.fn((name: string) => formStateRef.current[name]),
+    resetFields: vi.fn(() => {
+      formStateRef.current = {};
+    }),
+  };
+  const radioGroupValueRef = { current: null as string | null };
+  return {
+    formMock,
+    setFieldsValueMock: formMock.setFieldsValue,
+    radioGroupValueRef,
+    formStateRef,
+    mockKeyCreateCall,
+    mockKeyCreateServiceAccountCall,
+    teamDropdownTeamsRef,
+  };
+});
 
 const defaultAuthorizedState = {
   accessToken: "test-token",
@@ -229,10 +241,7 @@ vi.mock("../networking", () => ({
     User: { ui_label: "User" },
   }),
   userFilterUICall: vi.fn().mockResolvedValue([]),
-  keyCreateServiceAccountCall: vi.fn().mockResolvedValue({
-    key: "test-service-account-key",
-    soft_budget: null,
-  }),
+  keyCreateServiceAccountCall: mockKeyCreateServiceAccountCall,
   fetchMCPAccessGroups: vi.fn().mockResolvedValue([]),
   getAgentsList: vi.fn().mockResolvedValue({ agents: [] }),
 }));
@@ -395,6 +404,10 @@ describe("CreateKey", () => {
       key: "test-api-key",
       soft_budget: null,
     });
+    mockKeyCreateServiceAccountCall.mockResolvedValue({
+      key: "test-service-account-key",
+      soft_budget: null,
+    });
   });
 
   it("should render the CreateKey component", () => {
@@ -440,6 +453,33 @@ describe("CreateKey", () => {
       const formValues = mockKeyCreateCall.mock.calls[0][2];
       expect(formValues).toHaveProperty("access_group_ids");
       expect(formValues.access_group_ids).toEqual(["ag-1", "ag-2"]);
+    });
+  });
+
+  it("should send allowed_ip_ranges as an array for a service account key", async () => {
+    renderWithProviders(<CreateKey {...defaultProps} />);
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /create new key/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /create key|키 만들기/i })).toBeInTheDocument();
+    });
+
+    act(() => {
+      formMock.setFieldValue("key_alias", "Test Key");
+      formMock.setFieldValue("allowed_ip_ranges", ["203.0.113.10", "10.0.0.0/24", "2001:db8::/64"]);
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /create key|키 만들기/i }));
+    });
+
+    await waitFor(() => {
+      expect(mockKeyCreateServiceAccountCall).toHaveBeenCalled();
+      const formValues = mockKeyCreateServiceAccountCall.mock.calls[0][1];
+      expect(formValues.allowed_ip_ranges).toEqual(["203.0.113.10", "10.0.0.0/24", "2001:db8::/64"]);
     });
   });
 

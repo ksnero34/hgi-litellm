@@ -47,6 +47,7 @@ export interface KeyResponse {
   budget_duration: string;
   budget_reset_at: string;
   allowed_cache_controls: string[];
+  allowed_ip_ranges?: string[];
   allowed_routes: string[];
   key_type: string | null;
   permissions: Record<string, unknown>;

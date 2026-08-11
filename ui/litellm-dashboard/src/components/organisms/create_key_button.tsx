@@ -94,6 +94,18 @@ interface UserOption {
 
 const isPersonalKeyOwner = (owner: string): boolean => owner === "you" || owner === "another_user";
 
+const parseAllowlistValues = (value: unknown): string[] | undefined => {
+  if (typeof value !== "string" && !Array.isArray(value)) {
+    return undefined;
+  }
+  const values = typeof value === "string" ? [value] : value;
+  return values
+    .filter((entry): entry is string => typeof entry === "string")
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
 const getPredefinedTags = (data: any[] | null) => {
   let allTags = [];
 
@@ -442,6 +454,11 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
       if (!formValues.disable_global_guardrails) {
         delete formValues.disable_global_guardrails;
+      }
+
+      const allowedIpRanges = parseAllowlistValues(formValues.allowed_ip_ranges);
+      if (allowedIpRanges !== undefined) {
+        formValues.allowed_ip_ranges = allowedIpRanges;
       }
 
       // Transform allowed_vector_store_ids and allowed_mcp_servers_and_groups into object_permission format
@@ -1559,6 +1576,25 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                       </div>
                     </AccordionHeader>
                     <AccordionBody>
+                      <Form.Item
+                        label={
+                          <span>
+                            {t("gateway.ipAllowlist.label")}{" "}
+                            <Tooltip title={t("gateway.ipAllowlist.tooltip")}>
+                              <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        name="allowed_ip_ranges"
+                        extra={t("gateway.ipAllowlist.help")}
+                      >
+                        <Select
+                          mode="tags"
+                          tokenSeparators={[","]}
+                          placeholder={t("gateway.ipAllowlist.placeholder")}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
                       <SchemaFormFields
                         schemaComponent="GenerateKeyRequest"
                         form={form}
@@ -1571,6 +1607,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                           "metadata",
                           "tags",
                           "guardrails",
+                          "allowed_ip_ranges",
                           "max_budget",
                           "budget_duration",
                           "tpm_limit",

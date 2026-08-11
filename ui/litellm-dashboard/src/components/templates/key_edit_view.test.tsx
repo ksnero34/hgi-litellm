@@ -112,6 +112,7 @@ describe("KeyEditView", () => {
     budget_duration: "30d",
     budget_reset_at: "never",
     allowed_cache_controls: [],
+    allowed_ip_ranges: [],
     allowed_routes: [],
     permissions: {},
     model_spend: {},
@@ -563,6 +564,94 @@ describe("KeyEditView", () => {
       expect(onSubmitMock).toHaveBeenCalled();
       const callArgs = onSubmitMock.mock.calls[0][0];
       expect("allowed_routes" in callArgs).toBe(false);
+    });
+  });
+
+  it("should submit multiple IP addresses and CIDR ranges from the tag input", async () => {
+    const onSubmitMock = vi.fn().mockResolvedValue(undefined);
+    renderWithProviders(
+      <KeyEditView
+        keyData={MOCK_KEY_DATA}
+        onCancel={() => {}}
+        onSubmit={onSubmitMock}
+        accessToken={"test-token"}
+        userID={"test-user"}
+        userRole={"admin"}
+        premiumUser={false}
+      />,
+    );
+
+    const allowedIpRangesInput = await screen.findByLabelText(/allowed ip addresses and ranges/i);
+    await userEvent.type(allowedIpRangesInput, "203.0.113.10,");
+    await userEvent.type(allowedIpRangesInput, "10.0.0.0/24,");
+    await userEvent.type(allowedIpRangesInput, "2001:db8::/64{enter}");
+
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(onSubmitMock).toHaveBeenCalled();
+      expect(onSubmitMock.mock.calls[0][0].allowed_ip_ranges).toEqual(["203.0.113.10", "10.0.0.0/24", "2001:db8::/64"]);
+    });
+  });
+
+  it("should clear allowed_ip_ranges when every existing tag is removed", async () => {
+    const onSubmitMock = vi.fn().mockResolvedValue(undefined);
+    const keyDataWithIpRanges = {
+      ...MOCK_KEY_DATA,
+      allowed_ip_ranges: ["203.0.113.10", "10.0.0.0/24"],
+    };
+    renderWithProviders(
+      <KeyEditView
+        keyData={keyDataWithIpRanges}
+        onCancel={() => {}}
+        onSubmit={onSubmitMock}
+        accessToken={"test-token"}
+        userID={"test-user"}
+        userRole={"admin"}
+        premiumUser={false}
+      />,
+    );
+
+    const allowedIpRangesInput = await screen.findByLabelText(/allowed ip addresses and ranges/i);
+    await userEvent.click(allowedIpRangesInput);
+    await userEvent.keyboard("{Backspace}{Backspace}");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(onSubmitMock).toHaveBeenCalled();
+      expect(onSubmitMock.mock.calls[0][0].allowed_ip_ranges).toEqual([]);
+    });
+  });
+
+  it("should omit allowed_ip_ranges from submit when value is unchanged", async () => {
+    const onSubmitMock = vi.fn().mockResolvedValue(undefined);
+    const keyDataWithIpRanges = {
+      ...MOCK_KEY_DATA,
+      allowed_ip_ranges: ["203.0.113.10", "10.0.0.0/24"],
+    };
+    renderWithProviders(
+      <KeyEditView
+        keyData={keyDataWithIpRanges}
+        onCancel={() => {}}
+        onSubmit={onSubmitMock}
+        accessToken={"test-token"}
+        userID={"test-user"}
+        userRole={"admin"}
+        premiumUser={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
+    });
+
+    const submitButton = screen.getByRole("button", { name: /save changes/i });
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmitMock).toHaveBeenCalled();
+      const callArgs = onSubmitMock.mock.calls[0][0];
+      expect("allowed_ip_ranges" in callArgs).toBe(false);
     });
   });
 

@@ -136,6 +136,11 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.createKey.no": "아니요",
   "gateway.createKey.create": "키 만들기",
   "gateway.createKey.createUserTitle": "새 사용자 만들기",
+  "gateway.ipAllowlist.label": "허용 IP 주소 및 대역",
+  "gateway.ipAllowlist.tooltip":
+    "신뢰할 수 있는 프록시 헤더에서 확인된 클라이언트 IP만 이 키를 사용하도록 제한합니다. 비워 두면 모든 클라이언트 IP를 허용합니다.",
+  "gateway.ipAllowlist.help": "IPv4, IPv6 또는 CIDR 값을 입력하세요. Enter 키나 쉼표로 여러 값을 구분할 수 있습니다.",
+  "gateway.ipAllowlist.placeholder": "203.0.113.10, 10.0.0.0/24, 2001:db8::/64",
   "gateway.keyEdit.keyAlias": "키 별칭",
   "gateway.keyEdit.models": "모델",
   "gateway.keyEdit.saveChanges": "변경 사항 저장",

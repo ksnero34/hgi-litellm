@@ -135,6 +135,12 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.createKey.no": "No",
   "gateway.createKey.create": "Create Key",
   "gateway.createKey.createUserTitle": "Create New User",
+  "gateway.ipAllowlist.label": "Allowed IP Addresses and Ranges",
+  "gateway.ipAllowlist.tooltip":
+    "Restrict this key to client IP addresses resolved through trusted proxy headers. Leave empty to allow any client IP.",
+  "gateway.ipAllowlist.help":
+    "Enter one or more IPv4, IPv6, or CIDR values. Press Enter or separate values with commas.",
+  "gateway.ipAllowlist.placeholder": "203.0.113.10, 10.0.0.0/24, 2001:db8::/64",
   "gateway.keyEdit.keyAlias": "Key Alias",
   "gateway.keyEdit.models": "Models",
   "gateway.keyEdit.saveChanges": "Save Changes",

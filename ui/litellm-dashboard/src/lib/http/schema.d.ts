@@ -22626,7 +22626,7 @@ export interface components {
             supported_db_objects?: components["schemas"]["SupportedDBObjectType"][] | null;
             /**
              * Trusted Proxy Ranges
-             * @description CIDR ranges of trusted reverse proxies allowed to provide identity headers for header-based auth paths such as enable_oauth2_proxy_auth and custom_ui_sso_sign_in_handler.
+             * @description CIDR ranges of trusted reverse proxies. Requests received from these peers may use X-Forwarded-For for client IP resolution and may provide identity headers for header-based auth paths.
              */
             trusted_proxy_ranges?: string[] | null;
             /**
@@ -23812,6 +23812,8 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /** Allowed Ip Ranges */
+            allowed_ip_ranges?: string[] | null;
             /** Allowed Passthrough Routes */
             allowed_passthrough_routes?: unknown[] | null;
             /**
@@ -23968,6 +23970,8 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /** Allowed Ip Ranges */
+            allowed_ip_ranges?: string[] | null;
             /** Allowed Passthrough Routes */
             allowed_passthrough_routes?: unknown[] | null;
             /**
@@ -25001,6 +25005,11 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /**
+             * Allowed Ip Ranges
+             * @default []
+             */
+            allowed_ip_ranges: string[];
             /**
              * Allowed Routes
              * @default []
@@ -26360,6 +26369,11 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /**
+             * Allowed Ip Ranges
+             * @default []
+             */
+            allowed_ip_ranges: string[];
             /**
              * Allowed Routes
              * @default []
@@ -28196,6 +28210,8 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /** Allowed Ip Ranges */
+            allowed_ip_ranges?: string[] | null;
             /** Allowed Passthrough Routes */
             allowed_passthrough_routes?: unknown[] | null;
             /**
@@ -30095,6 +30111,8 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /** Allowed Ip Ranges */
+            allowed_ip_ranges?: string[] | null;
             /** Allowed Passthrough Routes */
             allowed_passthrough_routes?: unknown[] | null;
             /**
@@ -32186,6 +32204,8 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /** Allowed Ip Ranges */
+            allowed_ip_ranges?: string[] | null;
             /** Allowed Passthrough Routes */
             allowed_passthrough_routes?: unknown[] | null;
             /**
@@ -32953,6 +32973,11 @@ export interface components {
              * @default []
              */
             allowed_cache_controls: unknown[] | null;
+            /**
+             * Allowed Ip Ranges
+             * @default []
+             */
+            allowed_ip_ranges: string[];
             /** Allowed Model Region */
             allowed_model_region?: ("eu" | "us") | null;
             /**
