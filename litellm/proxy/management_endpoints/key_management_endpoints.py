@@ -160,12 +160,52 @@ def _caller_is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
     return user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value
 
 
-def _reject_managed_personal_key_mutation(key_row: LiteLLM_VerificationToken) -> None:
+def _is_managed_personal_key(key_row: LiteLLM_VerificationToken) -> bool:
     metadata = read_personal_key_metadata(key_row.metadata)
-    if metadata is not None and metadata.key_purpose == PersonalKeyPurpose.PERSONAL_LLM:
+    return metadata is not None and metadata.key_purpose == PersonalKeyPurpose.PERSONAL_LLM
+
+
+def _reject_managed_personal_key_mutation(key_row: LiteLLM_VerificationToken) -> None:
+    if _is_managed_personal_key(key_row):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"error": "Managed personal keys must be changed through /internal/personal-key."},
+        )
+
+
+_MANAGED_PERSONAL_KEY_FORBIDDEN_UPDATE_FIELDS = frozenset(
+    {
+        "agent_id",
+        "auto_rotate",
+        "blocked",
+        "budget_id",
+        "duration",
+        "organization_id",
+        "rotation_interval",
+        "spend",
+        "team_id",
+        "temp_budget_expiry",
+        "temp_budget_increase",
+        "user_id",
+    }
+)
+
+
+def _validate_proxy_admin_managed_personal_key_update(
+    data: UpdateKeyRequest,
+    existing_key_row: LiteLLM_VerificationToken,
+    user_api_key_dict: UserAPIKeyAuth,
+) -> None:
+    if not _caller_is_proxy_admin(user_api_key_dict) or not _is_managed_personal_key(existing_key_row):
+        return
+    forbidden_fields = tuple(sorted(_MANAGED_PERSONAL_KEY_FORBIDDEN_UPDATE_FIELDS.intersection(data.model_fields_set)))
+    if forbidden_fields:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Managed personal keys cannot update these fields via /key/update: "
+                + ", ".join(forbidden_fields)
+            },
         )
 
 
@@ -2763,10 +2803,15 @@ async def update_key_fn(
             prisma_client=prisma_client,
             key_alias=data.key_alias,
         )
-        _reject_managed_personal_key_mutation(existing_key_row)
+        _validate_proxy_admin_managed_personal_key_update(
+            data=data,
+            existing_key_row=existing_key_row,
+            user_api_key_dict=user_api_key_dict,
+        )
+        if not _caller_is_proxy_admin(user_api_key_dict):
+            _reject_managed_personal_key_mutation(existing_key_row)
         key = _resolve_token_to_update(data=data, existing_key_row=existing_key_row)
         data.key = key
-
         await _validate_update_key_data(
             data=data,
             existing_key_row=existing_key_row,

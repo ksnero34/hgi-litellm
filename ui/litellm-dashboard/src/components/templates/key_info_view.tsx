@@ -320,7 +320,6 @@ export default function KeyInfoView({
     try {
       setDeleteLoading(true);
       if (!accessToken) return;
-      const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata.personal_key);
       const canDeleteManagedPersonalKey = isProxyAdminRole(userRole) && Boolean(currentKeyData.user_id);
 
       if (isManagedPersonalKey && canDeleteManagedPersonalKey) {
@@ -380,6 +379,8 @@ export default function KeyInfoView({
       timeStyle: "short",
     }).format(date);
   };
+
+  const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata.personal_key);
 
   const canModifyKey =
     isProxyAdminRole(userRole || "") ||
@@ -480,9 +481,10 @@ export default function KeyInfoView({
         onBack={onClose}
         onRegenerate={() => setIsRegenerateModalOpen(true)}
         onDelete={() => setIsDeleteModalOpen(true)}
-        onResetSpend={canResetSpend ? () => setIsResetSpendModalOpen(true) : undefined}
-        onToggleBlocked={canBlockKey ? () => setIsBlockModalOpen(true) : undefined}
+        onResetSpend={!isManagedPersonalKey && canResetSpend ? () => setIsResetSpendModalOpen(true) : undefined}
+        onToggleBlocked={!isManagedPersonalKey && canBlockKey ? () => setIsBlockModalOpen(true) : undefined}
         isBlocked={isBlocked}
+        regenerateDisabled={isManagedPersonalKey}
         canModifyKey={canModifyKey}
         backButtonText={backButtonText}
       />
@@ -742,6 +744,7 @@ export default function KeyInfoView({
                   accessToken={accessToken}
                   userID={userID}
                   userRole={userRole}
+                  managedPersonalKey={isManagedPersonalKey}
                 />
               ) : (
                 <div className="space-y-4">

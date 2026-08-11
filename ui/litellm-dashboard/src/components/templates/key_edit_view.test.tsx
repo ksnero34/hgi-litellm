@@ -341,6 +341,43 @@ describe("KeyEditView", () => {
     });
   });
 
+  it("should omit managed personal key ownership and lifecycle fields on submit", async () => {
+    const onSubmitMock = vi.fn().mockResolvedValue(undefined);
+    const managedKeyData = {
+      ...MOCK_KEY_DATA,
+      user_id: "personal-key-owner",
+      team_id: "team-1",
+      organization_id: "org-1",
+      auto_rotate: true,
+      rotation_interval: "30d",
+    };
+
+    renderWithProviders(
+      <KeyEditView
+        keyData={managedKeyData}
+        onCancel={() => {}}
+        onSubmit={onSubmitMock}
+        accessToken="test-token"
+        userID="proxy-admin"
+        userRole="Admin"
+        premiumUser={true}
+        managedPersonalKey={true}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(onSubmitMock).toHaveBeenCalledOnce());
+    const submittedValues = onSubmitMock.mock.calls[0][0];
+    expect(submittedValues).not.toHaveProperty("user_id");
+    expect(submittedValues).not.toHaveProperty("team_id");
+    expect(submittedValues).not.toHaveProperty("organization_id");
+    expect(submittedValues).not.toHaveProperty("auto_rotate");
+    expect(submittedValues).not.toHaveProperty("rotation_interval");
+    expect(submittedValues).not.toHaveProperty("duration");
+    expect(submittedValues).toHaveProperty("models");
+  });
+
   it("should initialize and submit throttle_on_budget_exceeded from key metadata", async () => {
     const onSubmitMock = vi.fn().mockResolvedValue(undefined);
     const keyDataWithThrottle = {

@@ -778,6 +778,236 @@ async def test_update_key_personal_non_admin_denied_access_groups(
 
 
 @pytest.mark.asyncio
+async def test_update_key_proxy_admin_can_update_managed_personal_key(monkeypatch):
+    from litellm.proxy._types import LiteLLM_ObjectPermissionBase
+    from litellm.proxy.management_endpoints.key_management_endpoints import update_key_fn
+
+    test_hashed_token = "a1" * 32
+    managed_metadata = {
+        "personal_key": {
+            "owner_type": "user",
+            "key_purpose": "personal_llm",
+            "logical_key_id": "logical-key-1",
+            "generation": 2,
+            "lifecycle": "active",
+        }
+    }
+
+    mock_existing_key = MagicMock()
+    mock_existing_key.token = test_hashed_token
+    mock_existing_key.user_id = "alice"
+    mock_existing_key.team_id = None
+    mock_existing_key.created_by = "alice"
+    mock_existing_key.max_budget = None
+    mock_existing_key.organization_id = None
+    mock_existing_key.project_id = None
+    mock_existing_key.metadata = managed_metadata
+    mock_existing_key.key_alias = "alice-personal"
+    mock_existing_key.object_permission_id = "existing-object-permission"
+
+    mock_prisma_client = AsyncMock()
+    mock_prisma_client.update_data = AsyncMock(
+        return_value={"data": {"token": test_hashed_token, "allowed_ip_ranges": ["203.0.113.7/32"]}}
+    )
+    mock_validate_key_mcp_servers_against_team = AsyncMock(
+        return_value={"mcp_servers": ["mcp-admin"], "mcp_access_groups": [], "mcp_toolsets": []}
+    )
+    mock_validate_key_search_tools_against_team = AsyncMock(return_value=None)
+    mock_validate_key_vector_stores_against_team = AsyncMock(return_value=None)
+    captured_object_permission_data = {}
+
+    async def mock_enforce_unique_key_alias(**kwargs):
+        return None
+
+    async def mock_delete_cache_key_object(**kwargs):
+        return None
+
+    async def mock_handle_update_object_permission_common(**kwargs):
+        captured_object_permission_data.update(kwargs["data_json"])
+        return "updated-object-permission"
+
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints._get_and_validate_existing_key",
+        AsyncMock(return_value=mock_existing_key),
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints._enforce_unique_key_alias",
+        mock_enforce_unique_key_alias,
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints._delete_cache_key_object",
+        mock_delete_cache_key_object,
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints.handle_update_object_permission_common",
+        mock_handle_update_object_permission_common,
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints.validate_key_mcp_servers_against_team",
+        mock_validate_key_mcp_servers_against_team,
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints.validate_key_search_tools_against_team",
+        mock_validate_key_search_tools_against_team,
+    )
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints.validate_key_vector_stores_against_team",
+        mock_validate_key_vector_stores_against_team,
+    )
+    monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_api_key_cache", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.proxy_logging_obj", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.llm_router", None)
+    monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", True)
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_custom_key_update", None)
+    monkeypatch.setattr("litellm.store_audit_logs", False)
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints.KeyManagementEventHooks.async_key_updated_hook",
+        AsyncMock(),
+    )
+
+    mock_request = MagicMock()
+    mock_request.query_params = {}
+
+    result = await update_key_fn(
+        request=mock_request,
+        data=UpdateKeyRequest(
+            key=test_hashed_token,
+            key_alias="renamed-personal-key",
+            models=["gpt-4o-mini"],
+            max_budget=12.5,
+            allowed_routes=["/chat/completions"],
+            allowed_ip_ranges=["203.0.113.7/32"],
+            metadata={"app": "gateway-ui"},
+            object_permission=LiteLLM_ObjectPermissionBase(mcp_servers=["mcp-admin"]),
+        ),
+        user_api_key_dict=UserAPIKeyAuth(
+            user_role=LitellmUserRoles.PROXY_ADMIN,
+            api_key="sk-admin",
+            user_id="proxy-admin",
+        ),
+        litellm_changed_by=None,
+    )
+
+    persisted_data = mock_prisma_client.update_data.await_args.kwargs["data"]
+    assert mock_validate_key_mcp_servers_against_team.await_args.kwargs["object_permission"]["mcp_servers"] == [
+        "mcp-admin"
+    ]
+    assert captured_object_permission_data["object_permission"]["mcp_servers"] == [
+        "mcp-admin"
+    ]
+    assert persisted_data["allowed_ip_ranges"] == ["203.0.113.7/32"]
+    assert persisted_data["object_permission_id"] == "updated-object-permission"
+    assert persisted_data["key_alias"] == "renamed-personal-key"
+    assert persisted_data["models"] == ["gpt-4o-mini"]
+    assert persisted_data["max_budget"] == 12.5
+    assert persisted_data["allowed_routes"] == ["/chat/completions"]
+    assert result["allowed_ip_ranges"] == ["203.0.113.7/32"]
+
+
+@pytest.mark.asyncio
+async def test_update_key_non_admin_cannot_update_managed_personal_key(monkeypatch):
+    from litellm.proxy.management_endpoints.key_management_endpoints import update_key_fn
+
+    mock_existing_key = MagicMock()
+    mock_existing_key.metadata = {
+        "personal_key": {
+            "owner_type": "user",
+            "key_purpose": "personal_llm",
+            "logical_key_id": "logical-key-1",
+            "generation": 2,
+            "lifecycle": "active",
+        }
+    }
+
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints._get_and_validate_existing_key",
+        AsyncMock(return_value=mock_existing_key),
+    )
+    monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", AsyncMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_api_key_cache", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.proxy_logging_obj", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.llm_router", None)
+    monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", True)
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_custom_key_update", None)
+
+    with pytest.raises(ProxyException) as exc_info:
+        await update_key_fn(
+            request=MagicMock(query_params={}),
+            data=UpdateKeyRequest(key="sk-managed-personal", allowed_ip_ranges=["203.0.113.9"]),
+            user_api_key_dict=UserAPIKeyAuth(
+                user_role=LitellmUserRoles.INTERNAL_USER,
+                api_key="sk-user",
+                user_id="alice",
+            ),
+            litellm_changed_by=None,
+        )
+
+    assert str(exc_info.value.code) == "403"
+    assert "/internal/personal-key" in str(exc_info.value.message)
+
+
+@pytest.mark.asyncio
+async def test_update_key_proxy_admin_cannot_update_managed_personal_key_forbidden_fields(monkeypatch):
+    from litellm.proxy.management_endpoints.key_management_endpoints import update_key_fn
+
+    mock_existing_key = MagicMock()
+    mock_existing_key.metadata = {
+        "personal_key": {
+            "owner_type": "user",
+            "key_purpose": "personal_llm",
+            "logical_key_id": "logical-key-1",
+            "generation": 2,
+            "lifecycle": "active",
+        }
+    }
+
+    monkeypatch.setattr(
+        "litellm.proxy.management_endpoints.key_management_endpoints._get_and_validate_existing_key",
+        AsyncMock(return_value=mock_existing_key),
+    )
+    monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", AsyncMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_api_key_cache", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.proxy_logging_obj", MagicMock())
+    monkeypatch.setattr("litellm.proxy.proxy_server.llm_router", None)
+    monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", True)
+    monkeypatch.setattr("litellm.proxy.proxy_server.user_custom_key_update", None)
+
+    with pytest.raises(ProxyException) as exc_info:
+        await update_key_fn(
+            request=MagicMock(query_params={}),
+            data=UpdateKeyRequest(
+                key="sk-managed-personal",
+                user_id="bob",
+                team_id="team-1",
+                blocked=True,
+                duration="30d",
+                spend=1.0,
+                auto_rotate=True,
+                rotation_interval="30d",
+                budget_id="budget-1",
+            ),
+            user_api_key_dict=UserAPIKeyAuth(
+                user_role=LitellmUserRoles.PROXY_ADMIN,
+                api_key="sk-admin",
+                user_id="proxy-admin",
+            ),
+            litellm_changed_by=None,
+        )
+
+    assert str(exc_info.value.code) == "403"
+    message = str(exc_info.value.message)
+    assert "user_id" in message
+    assert "team_id" in message
+    assert "blocked" in message
+    assert "duration" in message
+    assert "spend" in message
+    assert "auto_rotate" in message
+    assert "rotation_interval" in message
+    assert "budget_id" in message
+
+
+@pytest.mark.asyncio
 async def test_generate_key_helper_fn_with_access_group_ids(monkeypatch):
     """Ensure generate_key_helper_fn passes access_group_ids into the key insert payload."""
     mock_prisma_client = AsyncMock()

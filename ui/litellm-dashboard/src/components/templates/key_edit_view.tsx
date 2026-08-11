@@ -46,6 +46,7 @@ interface KeyEditViewProps {
   userID: string | null;
   userRole: string | null;
   premiumUser?: boolean;
+  managedPersonalKey?: boolean;
 }
 
 // Add this helper function
@@ -99,6 +100,11 @@ const parseAllowlistValues = (value: unknown): string[] | undefined => {
     .filter((entry) => entry.length > 0);
 };
 
+const managedPersonalKeyExcludedFields =
+  "agent_id auto_rotate blocked budget_id duration organization_id rotation_interval spend team_id temp_budget_expiry temp_budget_increase user_id".split(
+    " ",
+  );
+
 export function KeyEditView({
   keyData,
   onCancel,
@@ -108,6 +114,7 @@ export function KeyEditView({
   userID,
   userRole,
   premiumUser = false,
+  managedPersonalKey = false,
 }: KeyEditViewProps) {
   const { t } = useTranslation();
   const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
@@ -348,6 +355,12 @@ export function KeyEditView({
         values.budget_fallbacks = budgetFallbacks;
       } else if (hadExistingFallbacks) {
         values.budget_fallbacks = {};
+      }
+
+      if (managedPersonalKey) {
+        for (const field of managedPersonalKeyExcludedFields) {
+          delete values[field];
+        }
       }
 
       await onSubmit(values);
@@ -785,7 +798,7 @@ export function KeyEditView({
         <OrganizationDropdown
           organizations={organizations}
           loading={isOrganizationsLoading}
-          disabled={userRole !== "Admin"}
+          disabled={managedPersonalKey || userRole !== "Admin"}
           onChange={(orgId) => {
             setSelectedOrganizationId(orgId || null);
             form.setFieldValue("team_id", undefined);
@@ -801,7 +814,7 @@ export function KeyEditView({
         <Select
           placeholder={t("gateway.keyEdit.selectTeam")}
           showSearch
-          disabled={enableProjectsUI && hasProject}
+          disabled={managedPersonalKey || (enableProjectsUI && hasProject)}
           style={{ width: "100%" }}
           onChange={(teamId) => {
             const selectedTeam = teams?.find((t) => t.team_id === teamId) || null;
@@ -841,17 +854,19 @@ export function KeyEditView({
       </Form.Item>
 
       {/* Auto-Rotation Settings */}
-      <div className="mb-4">
-        <KeyLifecycleSettings
-          form={form}
-          autoRotationEnabled={autoRotationEnabled}
-          onAutoRotationChange={setAutoRotationEnabled}
-          rotationInterval={rotationInterval}
-          onRotationIntervalChange={setRotationInterval}
-          neverExpire={neverExpire}
-          onNeverExpireChange={setNeverExpire}
-        />
-      </div>
+      {!managedPersonalKey && (
+        <div className="mb-4">
+          <KeyLifecycleSettings
+            form={form}
+            autoRotationEnabled={autoRotationEnabled}
+            onAutoRotationChange={setAutoRotationEnabled}
+            rotationInterval={rotationInterval}
+            onRotationIntervalChange={setRotationInterval}
+            neverExpire={neverExpire}
+            onNeverExpireChange={setNeverExpire}
+          />
+        </div>
+      )}
 
       {/* Hidden form field for token */}
       <Form.Item name="token" hidden>
