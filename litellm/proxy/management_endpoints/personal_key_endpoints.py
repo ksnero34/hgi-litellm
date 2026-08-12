@@ -211,6 +211,17 @@ async def _count_active_personal_keys(db: Prisma, token_hashes: tuple[str, ...],
     )
 
 
+async def _count_personal_grace_keys(db: Prisma, active_token_hashes: tuple[str, ...], now: datetime) -> int:
+    if not active_token_hashes:
+        return 0
+    return await db.litellm_deprecatedverificationtoken.count(
+        where={
+            "active_token_id": {"in": active_token_hashes},
+            "revoke_at": {"gt": now},
+        }
+    )
+
+
 def _personal_key_status(
     token_row: LiteLLM_VerificationToken,
     expires: datetime,
@@ -302,19 +313,14 @@ async def _load_manual_scope(
         *((user_row.team_id,) if user_row.team_id is not None else ()),
     )
     team_ids = tuple(dict.fromkeys(team_id for team_id in assigned_team_ids if team_id != UI_SESSION_TOKEN_TEAM_ID))
-    if len(team_ids) != 1:
+    team_rows = await db.litellm_teamtable.find_many(where={"team_id": {"in": team_ids}}) if team_ids else []
+    organization_team_rows = tuple(team for team in team_rows if team.organization_id is not None)
+    if len(organization_team_rows) != 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The administrator must belong to exactly one organization-backed team",
         )
-    team_row = await db.litellm_teamtable.find_unique(where={"team_id": team_ids[0]})
-    if team_row is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator team not found")
-    if team_row.organization_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The administrator's team must belong to an organization",
-        )
+    team_row = organization_team_rows[0]
     organization_id = str(team_row.organization_id)
     if organization_ids and organization_id not in organization_ids:
         raise HTTPException(
@@ -730,7 +736,7 @@ async def get_personal_key_metrics(
             },
         }
     )
-    grace_keys = await database.litellm_deprecatedverificationtoken.count(where={"revoke_at": {"gt": now}})
+    grace_keys = await _count_personal_grace_keys(database, active_token_hashes, now)
     return PersonalKeyMetrics(
         active_personal_keys=active_personal_keys,
         expiring_within_seven_days=expiring_within_seven_days,

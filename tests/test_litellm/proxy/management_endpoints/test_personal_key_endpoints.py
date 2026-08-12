@@ -18,6 +18,7 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
 from litellm.proxy.management_endpoints.personal_key_endpoints import (
     _audit,
     _count_active_personal_keys,
+    _count_personal_grace_keys,
     _delete_deprecated_personal_keys,
     _invalidate_personal_key_cache,
     _load_scope,
@@ -306,7 +307,7 @@ async def test_admin_manual_org_team_can_resolve_personal_key_scope():
         litellm_organizationmembership=SimpleNamespace(
             find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="admin-org")])
         ),
-        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[team])),
         litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
     )
 
@@ -320,7 +321,7 @@ async def test_admin_manual_org_team_can_resolve_personal_key_scope():
     assert resolved_team is team
     assert organization_id == "admin-org"
     database.litellm_organizationmembership.find_many.assert_awaited_once_with(where={"user_id": "admin-1"})
-    database.litellm_teamtable.find_unique.assert_awaited_once_with(where={"team_id": "admin-team"})
+    database.litellm_teamtable.find_many.assert_awaited_once_with(where={"team_id": {"in": ("admin-team",)}})
 
 
 @pytest.mark.asyncio
@@ -330,7 +331,7 @@ async def test_admin_manual_scope_uses_org_backed_team_without_organization_memb
     database = SimpleNamespace(
         litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
         litellm_organizationmembership=SimpleNamespace(find_many=AsyncMock(return_value=[])),
-        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[team])),
         litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
     )
 
@@ -338,7 +339,27 @@ async def test_admin_manual_scope_uses_org_backed_team_without_organization_memb
 
     assert resolved_team is team
     assert organization_id == "admin-org"
-    database.litellm_teamtable.find_unique.assert_awaited_once_with(where={"team_id": "admin-team"})
+    database.litellm_teamtable.find_many.assert_awaited_once_with(where={"team_id": {"in": ("admin-team",)}})
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_scope_ignores_non_organization_team_memberships():
+    user = SimpleNamespace(user_id="admin-1", metadata={}, teams=["admin-team", "collaboration-team"], team_id=None)
+    organization_team = SimpleNamespace(team_id="admin-team", organization_id="admin-org")
+    collaboration_team = SimpleNamespace(team_id="collaboration-team", organization_id=None)
+    database = SimpleNamespace(
+        litellm_usertable=SimpleNamespace(find_unique=AsyncMock(return_value=user)),
+        litellm_organizationmembership=SimpleNamespace(
+            find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="admin-org")])
+        ),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[organization_team, collaboration_team])),
+        litellm_organizationtable=SimpleNamespace(find_unique=AsyncMock(return_value=SimpleNamespace())),
+    )
+
+    _, resolved_team, organization_id = await _load_scope(database, "admin-1", allow_manual_scope=True)
+
+    assert resolved_team is organization_team
+    assert organization_id == "admin-org"
 
 
 @pytest.mark.asyncio
@@ -350,7 +371,7 @@ async def test_admin_manual_scope_rejects_team_outside_organization_memberships(
         litellm_organizationmembership=SimpleNamespace(
             find_many=AsyncMock(return_value=[SimpleNamespace(organization_id="member-org")])
         ),
-        litellm_teamtable=SimpleNamespace(find_unique=AsyncMock(return_value=team)),
+        litellm_teamtable=SimpleNamespace(find_many=AsyncMock(return_value=[team])),
     )
 
     with pytest.raises(HTTPException) as error:
@@ -542,3 +563,31 @@ async def test_active_personal_key_count_requires_unblocked_unexpired_token():
             "expires": {"gt": now},
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_personal_grace_key_count_is_scoped_to_active_personal_keys():
+    deprecated_tokens = SimpleNamespace(count=AsyncMock(return_value=2))
+    database = SimpleNamespace(litellm_deprecatedverificationtoken=deprecated_tokens)
+    now = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    count = await _count_personal_grace_keys(database, ("personal-active-1", "personal-active-2"), now)
+
+    assert count == 2
+    deprecated_tokens.count.assert_awaited_once_with(
+        where={
+            "active_token_id": {"in": ("personal-active-1", "personal-active-2")},
+            "revoke_at": {"gt": now},
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_personal_grace_key_count_skips_query_without_active_personal_keys():
+    deprecated_tokens = SimpleNamespace(count=AsyncMock())
+    database = SimpleNamespace(litellm_deprecatedverificationtoken=deprecated_tokens)
+
+    count = await _count_personal_grace_keys(database, (), datetime(2026, 8, 1, tzinfo=timezone.utc))
+
+    assert count == 0
+    deprecated_tokens.count.assert_not_awaited()
