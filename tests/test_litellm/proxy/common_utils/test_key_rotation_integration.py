@@ -175,10 +175,13 @@ class TestKeyRotationSecretNamingStability:
         # 3. Request data without alias
         request_data = RegenerateKeyRequest(key=initial_token_hash, key_alias=None)
 
-        with patch(
-            "litellm.proxy.hooks.key_management_event_hooks.KeyManagementEventHooks._rotate_virtual_key_in_secret_manager",
-            new_callable=AsyncMock,
-        ) as mock_rotate:
+        with (
+            patch("litellm.store_audit_logs", False),
+            patch(
+                "litellm.proxy.hooks.key_management_event_hooks.KeyManagementEventHooks._rotate_virtual_key_in_secret_manager",
+                new_callable=AsyncMock,
+            ) as mock_rotate,
+        ):
             await KeyManagementEventHooks.async_key_rotated_hook(
                 data=request_data,
                 existing_key_row=existing_key,
@@ -219,10 +222,13 @@ class TestKeyRotationSecretNamingStability:
         )
         request_data = RegenerateKeyRequest(key="old-hash", key_alias=test_alias)
 
-        with patch(
-            "litellm.proxy.hooks.key_management_event_hooks.KeyManagementEventHooks._rotate_virtual_key_in_secret_manager",
-            new_callable=AsyncMock,
-        ) as mock_rotate:
+        with (
+            patch("litellm.store_audit_logs", False),
+            patch(
+                "litellm.proxy.hooks.key_management_event_hooks.KeyManagementEventHooks._rotate_virtual_key_in_secret_manager",
+                new_callable=AsyncMock,
+            ) as mock_rotate,
+        ):
             await KeyManagementEventHooks.async_key_rotated_hook(
                 data=request_data,
                 existing_key_row=existing_key,

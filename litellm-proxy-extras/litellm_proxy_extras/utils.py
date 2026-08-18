@@ -14,6 +14,10 @@ from litellm_proxy_extras.replica_identity import (
     REPLICA_IDENTITY_FULL_ENV_VAR,
     apply_replica_identity_full,
 )
+from litellm_proxy_extras.prisma_toolchain import (
+    ensure_prisma_toolchain,
+    prisma_command_timeout,
+)
 
 
 def str_to_bool(value: Optional[str]) -> bool:
@@ -142,7 +146,7 @@ class ProxyExtrasDBManager:
                 ],
                 stdout=open(migration_file, "w"),
                 check=True,
-                timeout=30,
+                timeout=prisma_command_timeout(),
                 env=prisma_env,
             )
 
@@ -157,7 +161,7 @@ class ProxyExtrasDBManager:
                     "0_init",
                 ],
                 check=True,
-                timeout=30,
+                timeout=prisma_command_timeout(),
                 env=prisma_env,
             )
 
@@ -193,7 +197,7 @@ class ProxyExtrasDBManager:
                 "--rolled-back",
                 migration_name,
             ],
-            timeout=60,
+            timeout=prisma_command_timeout(),
             check=True,
             capture_output=True,
             env=prisma_env,
@@ -205,7 +209,7 @@ class ProxyExtrasDBManager:
         prisma_env = _get_prisma_env()
         subprocess.run(
             [_get_prisma_command(), "migrate", "resolve", "--applied", migration_name],
-            timeout=60,
+            timeout=prisma_command_timeout(),
             check=True,
             capture_output=True,
             env=prisma_env,
@@ -302,7 +306,7 @@ class ProxyExtrasDBManager:
                     "--script",
                 ],
                 check=True,
-                timeout=60,
+                timeout=prisma_command_timeout(),
                 capture_output=True,
                 text=True,
                 env=_get_prisma_env(),
@@ -337,7 +341,7 @@ class ProxyExtrasDBManager:
                             "--schema",
                             schema_path,
                         ],
-                        timeout=60,
+                        timeout=prisma_command_timeout(),
                         check=True,
                         capture_output=True,
                         text=True,
@@ -366,7 +370,7 @@ class ProxyExtrasDBManager:
                     "--schema",
                     schema_path,
                 ],
-                timeout=60,
+                timeout=prisma_command_timeout(),
                 check=True,
                 capture_output=True,
                 text=True,
@@ -395,7 +399,7 @@ class ProxyExtrasDBManager:
                         "--applied",
                         migration_name,
                     ],
-                    timeout=60,
+                    timeout=prisma_command_timeout(),
                     check=True,
                     capture_output=True,
                     text=True,
@@ -532,7 +536,7 @@ class ProxyExtrasDBManager:
             try:
                 subprocess.run(
                     [_get_prisma_command(), "db", "push", "--accept-data-loss"],
-                    timeout=60,
+                    timeout=prisma_command_timeout(),
                     check=True,
                     env=_get_prisma_env(),
                 )
@@ -557,7 +561,7 @@ class ProxyExtrasDBManager:
                 try:
                     result = subprocess.run(
                         [_get_prisma_command(), "migrate", "deploy"],
-                        timeout=60,
+                        timeout=prisma_command_timeout(),
                         check=True,
                         capture_output=True,
                         text=True,
@@ -732,6 +736,9 @@ class ProxyExtrasDBManager:
         Returns:
             bool: True if setup was successful, False otherwise
         """
+        ensure_prisma_toolchain(
+            prisma_command=_get_prisma_command(), prisma_env=_get_prisma_env()
+        )
         migrated = ProxyExtrasDBManager._run_migrations(
             use_migrate=use_migrate, use_v2_resolver=use_v2_resolver
         )
@@ -758,7 +765,7 @@ class ProxyExtrasDBManager:
                         # Set migrations directory for Prisma
                         result = subprocess.run(
                             [_get_prisma_command(), "migrate", "deploy"],
-                            timeout=60,
+                            timeout=prisma_command_timeout(),
                             check=True,
                             capture_output=True,
                             text=True,
@@ -833,7 +840,7 @@ class ProxyExtrasDBManager:
                                             "--rolled-back",
                                             failed_migration,
                                         ],
-                                        timeout=60,
+                                        timeout=prisma_command_timeout(),
                                         check=True,
                                         capture_output=True,
                                         text=True,
@@ -961,7 +968,7 @@ class ProxyExtrasDBManager:
                     # Use prisma db push with increased timeout
                     subprocess.run(
                         [_get_prisma_command(), "db", "push", "--accept-data-loss"],
-                        timeout=60,
+                        timeout=prisma_command_timeout(),
                         check=True,
                     )
                     return True

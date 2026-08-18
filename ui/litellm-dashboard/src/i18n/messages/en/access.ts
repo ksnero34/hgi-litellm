@@ -156,7 +156,7 @@ export const accessMessages: MessageCatalog = {
   "access.teams.notifications.deleteFailed": "Failed to delete team: {{error}}",
   "access.teams.notifications.creating": "Creating team",
   "access.teams.notifications.created": "Team created",
-  "access.teams.notifications.createFailed": "Failed to create team: {{error}}",
+  "access.teams.notifications.createFailed": "Error creating the team: {{error}}",
   "access.teams.notifications.joined": "Successfully joined team",
   "access.teams.notifications.joinFailed": "Failed to join team",
   "access.teams.delete.title": "Delete Team?",

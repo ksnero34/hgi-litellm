@@ -1,9 +1,8 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Select, Table, Typography } from "antd";
+import { Button, Select, Table } from "antd";
 import React from "react";
 import { useTranslation } from "react-i18next";
 
-const { Text } = Typography;
 const { Option } = Select;
 
 interface BlockedWord {

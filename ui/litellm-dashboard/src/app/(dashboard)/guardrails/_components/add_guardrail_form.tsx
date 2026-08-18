@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Tag, Typography, Button } from "antd";
+import { Form, Input, Modal, Select, Tag, Button } from "antd";
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import NotificationsManager from "@/components/molecules/notifications_manager";
@@ -32,7 +32,6 @@ import LLMJudgeFields from "./llm_judge/LLMJudgeFields";
 import PiiConfiguration from "./pii_configuration";
 import ToolPermissionRulesEditor, { ToolPermissionConfig } from "./tool_permission/ToolPermissionRulesEditor";
 
-const { Title, Text, Link } = Typography;
 const { Option } = Select;
 
 interface GuardrailPreset {
@@ -154,11 +153,6 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
   const [selectedActions, setSelectedActions] = useState<{ [key: string]: string }>({});
   const [currentStep, setCurrentStep] = useState(0);
   const [providerParams, setProviderParams] = useState<ProviderParamsResponse | null>(null);
-
-  // Azure Text Moderation state
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [globalSeverityThreshold, setGlobalSeverityThreshold] = useState<number>(2);
-  const [categorySpecificThresholds, setCategorySpecificThresholds] = useState<{ [key: string]: number }>({});
 
   // Content Filter state
   const [selectedPatterns, setSelectedPatterns] = useState<ContentFilterPattern[]>([]);
@@ -289,11 +283,6 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
     setSelectedEntities([]);
     setSelectedActions({});
 
-    // Reset Azure Text Moderation selections when changing provider
-    setSelectedCategories([]);
-    setGlobalSeverityThreshold(2);
-    setCategorySpecificThresholds({});
-
     // Reset Content Filter selections
     setSelectedPatterns([]);
     setBlockedWords([]);
@@ -324,24 +313,6 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
     setSelectedActions((prev) => ({
       ...prev,
       [entity]: action,
-    }));
-  };
-
-  // Azure Text Moderation handlers
-  const handleCategorySelect = (category: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category],
-    );
-  };
-
-  const handleGlobalSeverityChange = (threshold: number) => {
-    setGlobalSeverityThreshold(threshold);
-  };
-
-  const handleCategorySeverityChange = (category: string, threshold: number) => {
-    setCategorySpecificThresholds((prev) => ({
-      ...prev,
-      [category]: threshold,
     }));
   };
 
@@ -380,53 +351,11 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
     setCurrentStep(currentStep - 1);
   };
 
-  const handleAddAndContinue = (competitorIntentOnly?: boolean) => {
-    // Competitor intent only: just advance to next step (no category to add)
-    if (competitorIntentOnly) {
-      setCurrentStep(currentStep + 1);
-      return;
-    }
-
-    if (!pendingCategorySelection || !guardrailSettings) return;
-
-    const contentFilterSettings = guardrailSettings.content_filter_settings;
-    if (!contentFilterSettings) return;
-
-    const category = contentFilterSettings.content_categories?.find((c) => c.name === pendingCategorySelection);
-    if (!category) return;
-
-    // Check if already added
-    if (selectedContentCategories.some((c) => c.category === pendingCategorySelection)) {
-      setPendingCategorySelection("");
-      setCurrentStep(currentStep + 1);
-      return;
-    }
-
-    // Add the category
-    setSelectedContentCategories([
-      ...selectedContentCategories,
-      {
-        id: `category-${Date.now()}`,
-        category: category.name,
-        display_name: category.display_name,
-        action: category.default_action as "BLOCK" | "MASK",
-        severity_threshold: "medium",
-      },
-    ]);
-
-    // Clear pending selection and advance to next step
-    setPendingCategorySelection("");
-    setCurrentStep(currentStep + 1);
-  };
-
   const resetForm = () => {
     form.resetFields();
     setSelectedProvider(null);
     setSelectedEntities([]);
     setSelectedActions({});
-    setSelectedCategories([]);
-    setGlobalSeverityThreshold(2);
-    setCategorySpecificThresholds({});
     setSelectedPatterns([]);
     setBlockedWords([]);
     setSelectedContentCategories([]);
@@ -955,6 +884,33 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
     }
   };
 
+  const handleAddAndContinue = async (skipCategoryAdd: boolean) => {
+    if (
+      !skipCategoryAdd &&
+      pendingCategorySelection &&
+      guardrailSettings?.content_filter_settings?.content_categories &&
+      selectedProvider
+    ) {
+      const category = guardrailSettings.content_filter_settings.content_categories.find(
+        (item) => item.name === pendingCategorySelection,
+      );
+      if (category) {
+        setSelectedContentCategories([
+          ...selectedContentCategories,
+          {
+            id: `category-${Date.now()}`,
+            category: category.name,
+            display_name: category.display_name,
+            action: category.default_action === "MASK" ? "MASK" : "BLOCK",
+            severity_threshold: "medium",
+          },
+        ]);
+      }
+      setPendingCategorySelection("");
+    }
+    await nextStep();
+  };
+
   const renderStepButtons = () => {
     const totalSteps = shouldRenderContentFilterConfigSettings(selectedProvider) ? 5 : 2;
     const isLastStep = currentStep === totalSteps - 1;
@@ -996,7 +952,6 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
       </div>
     );
   };
-
   const renderEndpointSettings = () => {
     return (
       <div className="space-y-6">

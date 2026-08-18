@@ -1,6 +1,6 @@
 import math
 from collections.abc import Set
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Final, Optional, Union
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
@@ -96,7 +96,7 @@ def _check_passthrough_routes_caller_permission(
             status_code=403,
             detail={"error": f"Only proxy admins can set `allowed_passthrough_routes` on a {entity}."},
         )
-    metadata = getattr(data, "metadata", None)
+    metadata: Final = getattr(data, "metadata", None)
     if isinstance(metadata, dict) and metadata.get("allowed_passthrough_routes"):
         raise HTTPException(
             status_code=403,
@@ -130,7 +130,7 @@ async def _is_user_org_admin_for_team(user_api_key_dict: UserAPIKeyAuth, team_ob
         user_api_key_cache,
     )
 
-    caller_user = await get_user_object(
+    caller_user: Final = await get_user_object(
         user_id=user_api_key_dict.user_id,
         prisma_client=prisma_client,
         user_api_key_cache=user_api_key_cache,
@@ -194,7 +194,7 @@ async def _user_has_admin_privileges(
     from litellm.proxy.auth.auth_checks import get_user_object
 
     try:
-        user_obj = await get_user_object(
+        user_obj: Final = await get_user_object(
             user_id=user_api_key_dict.user_id,
             prisma_client=prisma_client,
             user_api_key_cache=user_api_key_cache or DualCacheImport(),
@@ -223,7 +223,7 @@ async def _user_has_admin_privileges(
 
     except Exception as e:
         # If there's an error checking, default to False for security
-        verbose_proxy_logger.debug(f"Error checking admin privileges for user {user_api_key_dict.user_id}: {e}")
+        verbose_proxy_logger.debug("Error checking admin privileges for user %s: %s", user_api_key_dict.user_id, e)
         return False
 
     return False
@@ -246,7 +246,7 @@ def _org_admin_can_invite_user(
     """
     if admin_user_obj.organization_memberships is None:
         return False
-    admin_org_ids = {
+    admin_org_ids: Final = {
         m.organization_id
         for m in admin_user_obj.organization_memberships
         if m.user_role == LitellmUserRoles.ORG_ADMIN.value
@@ -255,7 +255,7 @@ def _org_admin_can_invite_user(
         return False
     if target_user_obj.organization_memberships is None:
         return False
-    target_org_ids = {m.organization_id for m in target_user_obj.organization_memberships}
+    target_org_ids: Final = {m.organization_id for m in target_user_obj.organization_memberships}
     return bool(admin_org_ids & target_org_ids)
 
 
@@ -283,8 +283,8 @@ async def _team_admin_can_invite_user(
     if not target_user_obj.teams or len(target_user_obj.teams) == 0:
         return False
 
-    teams = await TeamRepository(prisma_client).table.find_many(where={"team_id": {"in": admin_user_obj.teams}})
-    admin_team_ids = [
+    teams: Final = await TeamRepository(prisma_client).table.find_many(where={"team_id": {"in": admin_user_obj.teams}})
+    admin_team_ids: Final = [
         team.team_id
         for team in teams
         if _is_user_team_admin(
@@ -294,7 +294,7 @@ async def _team_admin_can_invite_user(
     ]
     if not admin_team_ids:
         return False
-    target_team_ids = set(target_user_obj.teams)
+    target_team_ids: Final = set(target_user_obj.teams)
     return bool(set(admin_team_ids) & target_team_ids)
 
 
@@ -333,8 +333,8 @@ async def admin_can_invite_user(
     from litellm.proxy.auth.auth_checks import get_user_object
 
     try:
-        cache = user_api_key_cache or DualCacheImport()
-        admin_user_obj = await get_user_object(
+        cache: Final = user_api_key_cache or DualCacheImport()
+        admin_user_obj: Final = await get_user_object(
             user_id=user_api_key_dict.user_id,
             prisma_client=prisma_client,
             user_api_key_cache=cache,
@@ -344,7 +344,7 @@ async def admin_can_invite_user(
         if admin_user_obj is None:
             return False
 
-        target_user_obj = await get_user_object(
+        target_user_obj: Final = await get_user_object(
             user_id=target_user_id,
             prisma_client=prisma_client,
             user_api_key_cache=cache,
@@ -367,7 +367,7 @@ async def admin_can_invite_user(
 
         return False
     except Exception as e:
-        verbose_proxy_logger.debug(f"Error checking invite permission for user {user_api_key_dict.user_id}: {e}")
+        verbose_proxy_logger.debug("Error checking invite permission for user %s: %s", user_api_key_dict.user_id, e)
         return False
 
 
@@ -404,7 +404,7 @@ def _set_object_metadata_field(
     object_data.metadata[field_name] = value
 
 
-_TEAM_MEMBER_BUDGET_LIMIT_FIELDS = (
+_TEAM_MEMBER_BUDGET_LIMIT_FIELDS: Final = (
     "max_budget",
     "soft_budget",
     "max_parallel_requests",
@@ -457,14 +457,14 @@ async def _upsert_budget_and_membership(
     if not budget_patch:
         return
 
-    write_data = dict(budget_patch)
+    write_data: Final = dict(budget_patch)
     if "budget_duration" in write_data:
-        duration = write_data["budget_duration"]
+        duration: Final = write_data["budget_duration"]
         write_data["budget_reset_at"] = (
             get_budget_reset_time(budget_duration=duration) if duration is not None else None
         )
 
-    is_shared_default = (
+    is_shared_default: Final = (
         existing_budget_id is not None
         and team_default_budget_id is not None
         and existing_budget_id == team_default_budget_id
@@ -477,8 +477,8 @@ async def _upsert_budget_and_membership(
         )
 
     if existing_budget_id is not None and not is_shared_default:
-        existing_budget = await tx.litellm_budgettable.find_unique(where={"budget_id": existing_budget_id})
-        merged = existing_budget.model_dump() if existing_budget is not None else {}
+        existing_budget: Final = await tx.litellm_budgettable.find_unique(where={"budget_id": existing_budget_id})
+        merged: Final = existing_budget.model_dump() if existing_budget is not None else {}
         merged.update(write_data)
         if not _has_meaningful_budget_limit(merged):
             await _disconnect()
@@ -489,15 +489,15 @@ async def _upsert_budget_and_membership(
         )
         return
 
-    create_data: dict[str, Any] = {
+    create_data: Final[dict[str, Any]] = {
         "created_by": user_api_key_dict.user_id or "",
         "updated_by": user_api_key_dict.user_id or "",
     }
 
     if is_shared_default:
-        default_budget_row = await tx.litellm_budgettable.find_unique(where={"budget_id": existing_budget_id})
+        default_budget_row: Final = await tx.litellm_budgettable.find_unique(where={"budget_id": existing_budget_id})
         if default_budget_row is not None:
-            default_budget_dict = default_budget_row.model_dump()
+            default_budget_dict: Final = default_budget_row.model_dump()
             for field in _TEAM_MEMBER_BUDGET_LIMIT_FIELDS:
                 value = default_budget_dict.get(field)
                 if _is_set_budget_value(value):
@@ -515,7 +515,7 @@ async def _upsert_budget_and_membership(
             await _disconnect()
         return
 
-    new_budget = await tx.litellm_budgettable.create(
+    new_budget: Final = await tx.litellm_budgettable.create(
         data=create_data,
         include={"team_membership": True},
     )
@@ -566,7 +566,7 @@ def _update_metadata_field(
 
     if field_name in updated_kv and updated_kv[field_name] is not None:
         # remove field from updated_kv
-        _value = updated_kv.pop(field_name)
+        _value: Final = updated_kv.pop(field_name)
         if "metadata" in updated_kv and updated_kv["metadata"] is not None:
             updated_kv["metadata"][field_name] = _value
         else:

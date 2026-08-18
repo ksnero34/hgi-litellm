@@ -30,7 +30,7 @@ Output: response.output is List[GenericResponseOutputItem] where each has:
 
 import copy
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic import BaseModel
@@ -94,10 +94,10 @@ class OpenAIResponsesHandler(BaseTranslation):
         Transforms `input` (string or ResponseInputParam) and optional
         `instructions` into chat completion messages.
         """
-        input_data = data.get("input")
+        input_data: Final = data.get("input")
         if input_data is None:
             return None
-        messages = LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages(
+        messages: Final = LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages(
             input=input_data,
             responses_api_request=data,
         )
@@ -191,15 +191,15 @@ class OpenAIResponsesHandler(BaseTranslation):
 
         Handles both string input and list of message objects.
         """
-        input_data: str | ResponseInputParam | None = data.get("input")
-        tools_to_check: list[ChatCompletionToolParam] = []
+        input_data: Final[str | ResponseInputParam | None] = data.get("input")
+        tools_to_check: Final[list[ChatCompletionToolParam]] = []
         await self._process_previous_response_messages(data, guardrail_to_apply, litellm_logging_obj)
         if input_data is None:
             return data
 
         await self._process_instructions(data, guardrail_to_apply, litellm_logging_obj)
 
-        structured_messages = self.get_structured_messages(data)
+        structured_messages: Final = self.get_structured_messages(data)
 
         # Handle simple string input
         if isinstance(input_data, str):
@@ -223,7 +223,7 @@ class OpenAIResponsesHandler(BaseTranslation):
                 if tools_to_check:
                     inputs["tools"] = tools_to_check
             if structured_messages:
-                inputs["structured_messages"] = structured_messages  # type: ignore
+                inputs["structured_messages"] = structured_messages
             # Include model information if available
             model = data.get("model")
             if model:
@@ -245,10 +245,10 @@ class OpenAIResponsesHandler(BaseTranslation):
         if not isinstance(input_data, list):
             return data
 
-        texts_to_check: list[str] = []
-        images_to_check: list[str] = []
-        task_mappings: list[InputTextMapping] = []
-        original_tools_list: list[dict[str, Any]] = list(data.get("tools") or [])
+        texts_to_check: Final[list[str]] = []
+        images_to_check: Final[list[str]] = []
+        task_mappings: Final[list[InputTextMapping]] = []
+        original_tools_list: Final[list[dict[str, Any]]] = list(data.get("tools") or [])
 
         # Step 1: Extract all text content, images, and tools
         for msg_idx, message in enumerate(input_data):
@@ -289,7 +289,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             if tools_to_check:
                 inputs["tools"] = tools_to_check
             if structured_messages:
-                inputs["structured_messages"] = structured_messages  # type: ignore
+                inputs["structured_messages"] = structured_messages
             # Include model information if available
             model = data.get("model")
             if model:
@@ -386,7 +386,7 @@ class OpenAIResponsesHandler(BaseTranslation):
     def extract_request_tool_names(self, data: dict) -> list[str]:
         """Extract tool names from Responses API request (tools[].name for function
         and custom, tools[].server_label for mcp)."""
-        names: list[str] = []
+        names: Final[list[str]] = []
         for tool in data.get("tools") or []:
             if not isinstance(tool, dict):
                 continue
@@ -412,9 +412,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             (
                 transformed_tools,
                 _,
-            ) = LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools(
-                tools  # type: ignore
-            )
+            ) = LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools(tools)
             tools_to_check.extend(cast(list[ChatCompletionToolParam], transformed_tools))
 
     def _remap_tools_to_responses_api_format(self, guardrailed_tools: list[Any]) -> list[dict[str, Any]]:
@@ -423,7 +421,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         Responses API request tool format.
         """
         return LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools(
-            guardrailed_tools  # type: ignore
+            guardrailed_tools
         )
 
     def _merge_tools_after_guardrail(
@@ -439,7 +437,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         """
         if not original_tools:
             return remapped
-        result: list[dict[str, Any]] = []
+        result: Final[list[dict[str, Any]]] = []
         j = 0
         for tool in original_tools:
             if isinstance(tool, dict) and tool.get("type") in (
@@ -463,7 +461,7 @@ class OpenAIResponsesHandler(BaseTranslation):
     ) -> None:
         """Remap guardrailed tools to Responses API format and merge with original, then set data['tools']."""
         if guardrailed_tools is not None:
-            remapped = self._remap_tools_to_responses_api_format(guardrailed_tools)
+            remapped: Final = self._remap_tools_to_responses_api_format(guardrailed_tools)
             data["tools"] = self._merge_tools_after_guardrail(original_tools, remapped)
 
     def _extract_input_text_and_images(
@@ -499,7 +497,7 @@ class OpenAIResponsesHandler(BaseTranslation):
                 task_mappings.append((msg_idx, "arguments", None))
             return
 
-        content = message.get("content", None)
+        content: Final = message.get("content", None)
         if content is None:
             return
         self._extract_input_text_field(
@@ -596,10 +594,10 @@ class OpenAIResponsesHandler(BaseTranslation):
             - Each OutputText object has a text field
         """
 
-        texts_to_check: list[str] = []
-        images_to_check: list[str] = []
-        tool_calls_to_check: list[ChatCompletionToolCallChunk] = []
-        task_mappings: list[tuple[int, int]] = []
+        texts_to_check: Final[list[str]] = []
+        images_to_check: Final[list[str]] = []
+        tool_calls_to_check: Final[list[ChatCompletionToolCallChunk]] = []
+        task_mappings: Final[list[tuple[int, int]]] = []
         # Track (output_item_index, content_index) for each text
 
         # Handle both dict and Pydantic object responses
@@ -638,11 +636,11 @@ class OpenAIResponsesHandler(BaseTranslation):
 
             # Add user API key metadata with prefixed keys
             if "litellm_metadata" not in request_data and "metadata" not in request_data:
-                user_metadata = self.transform_user_api_key_dict_to_metadata(user_api_key_dict)
+                user_metadata: Final = self.transform_user_api_key_dict_to_metadata(user_api_key_dict)
                 if user_metadata:
                     request_data["litellm_metadata"] = user_metadata
 
-            inputs = GenericGuardrailAPIInputs(texts=texts_to_check)
+            inputs: Final = GenericGuardrailAPIInputs(texts=texts_to_check)
             inputs["text_sources"] = [
                 GuardrailInputSource(
                     type="response",
@@ -666,14 +664,14 @@ class OpenAIResponsesHandler(BaseTranslation):
             if response_model:
                 inputs["model"] = response_model
 
-            guardrailed_inputs = await guardrail_to_apply.apply_guardrail(
+            guardrailed_inputs: Final = await guardrail_to_apply.apply_guardrail(
                 inputs=inputs,
                 request_data=request_data,
                 input_type="response",
                 logging_obj=litellm_logging_obj,
             )
 
-            guardrailed_texts = guardrailed_inputs.get("texts", [])
+            guardrailed_texts: Final = guardrailed_inputs.get("texts", [])
 
             # Step 3: Map guardrail responses back to original response structure
             await self._apply_guardrail_responses_to_output(
@@ -709,7 +707,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         if not responses_so_far:
             return responses_so_far
 
-        final_chunk = responses_so_far[-1]
+        final_chunk: Final = responses_so_far[-1]
         # Accept both plain dicts and Pydantic models (BaseLiteLLMOpenAIResponseObject
         # exposes a .get() shim, so all the .get() calls below work for both).
         if not (isinstance(final_chunk, dict) or hasattr(final_chunk, "get")):
@@ -720,14 +718,14 @@ class OpenAIResponsesHandler(BaseTranslation):
         # final chunk; iterate output items, apply guardrail, write back.     #
         # ------------------------------------------------------------------ #
         if final_chunk.get("type") == "response.completed":
-            response_obj = final_chunk.get("response") or {}
+            response_obj: Final = final_chunk.get("response") or {}
             if not hasattr(response_obj, "get"):
                 return responses_so_far
-            outputs: list[Any] = response_obj.get("output") or []
+            outputs: Final[list[Any]] = response_obj.get("output") or []
 
-            texts_to_check: list[str] = []
-            tool_calls_to_check: list[ChatCompletionToolCallChunk] = []
-            task_mappings: list[tuple[int, int]] = []
+            texts_to_check: Final[list[str]] = []
+            tool_calls_to_check: Final[list[ChatCompletionToolCallChunk]] = []
+            task_mappings: Final[list[tuple[int, int]]] = []
 
             for output_idx, output_item in enumerate(outputs):
                 self._extract_output_text_and_images(
@@ -745,7 +743,7 @@ class OpenAIResponsesHandler(BaseTranslation):
                 if "response" not in request_data:
                     request_data["response"] = response_obj
                 if "litellm_metadata" not in request_data and "metadata" not in request_data:
-                    user_metadata = self.transform_user_api_key_dict_to_metadata(user_api_key_dict)
+                    user_metadata: Final = self.transform_user_api_key_dict_to_metadata(user_api_key_dict)
                     if user_metadata:
                         request_data["litellm_metadata"] = user_metadata
 
@@ -756,14 +754,14 @@ class OpenAIResponsesHandler(BaseTranslation):
                 if response_model:
                     inputs["model"] = response_model
 
-                guardrailed_inputs = await guardrail_to_apply.apply_guardrail(
+                guardrailed_inputs: Final = await guardrail_to_apply.apply_guardrail(
                     inputs=inputs,
                     request_data=request_data,
                     input_type="response",
                     logging_obj=litellm_logging_obj,
                 )
 
-                guardrailed_texts = guardrailed_inputs.get("texts", [])
+                guardrailed_texts: Final = guardrailed_inputs.get("texts", [])
 
                 # Write guardrailed texts back into the output items in-place.
                 # final_chunk is a reference into responses_so_far so this
@@ -780,10 +778,10 @@ class OpenAIResponsesHandler(BaseTranslation):
         # Case 2: response.output_item.done — extract tool calls only.        #
         # ------------------------------------------------------------------ #
         if final_chunk.get("type") == "response.output_item.done":
-            model_response_stream = (
+            model_response_stream: Final = (
                 OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream(final_chunk)
             )
-            tool_calls = model_response_stream.choices[0].delta.tool_calls
+            tool_calls: Final = model_response_stream.choices[0].delta.tool_calls
             if tool_calls:
                 inputs = GenericGuardrailAPIInputs()
                 inputs["tool_calls"] = cast(list[ChatCompletionToolCallChunk], tool_calls)
@@ -802,9 +800,9 @@ class OpenAIResponsesHandler(BaseTranslation):
         # No structured write-back is possible here; guardrails that only     #
         # need to block/flag (not rewrite) still work correctly.             #
         # ------------------------------------------------------------------ #
-        string_so_far = self.get_streaming_string_so_far(responses_so_far)
+        string_so_far: Final = self.get_streaming_string_so_far(responses_so_far)
         if string_so_far:
-            fallback_inputs = GenericGuardrailAPIInputs(texts=[string_so_far])
+            fallback_inputs: Final = GenericGuardrailAPIInputs(texts=[string_so_far])
             response_model = (
                 final_chunk.get("response", {}).get("model") if isinstance(final_chunk.get("response"), dict) else None
             )
@@ -824,7 +822,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         """
         if not responses_so_far:
             return False
-        terminal_types = {
+        terminal_types: Final = {
             ResponsesAPIStreamEvents.RESPONSE_COMPLETED.value,
             ResponsesAPIStreamEvents.RESPONSE_FAILED.value,
             ResponsesAPIStreamEvents.RESPONSE_INCOMPLETE.value,
@@ -906,7 +904,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             if tool_calls_to_check is not None:
                 # Convert dict to ResponseFunctionToolCall for processing
                 try:
-                    tool_call_obj = ResponseFunctionToolCall(**output_item)
+                    tool_call_obj: Final = ResponseFunctionToolCall(**output_item)
                     tool_call_dict = LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call(
                         tool_call_item=tool_call_obj,
                         index=output_idx,
@@ -920,14 +918,14 @@ class OpenAIResponsesHandler(BaseTranslation):
         content: list[OutputText] | list[dict] | None = None
         if isinstance(output_item, BaseModel):
             try:
-                output_item_dump = output_item.model_dump()
-                generic_response_output_item = GenericResponseOutputItem.model_validate(output_item_dump)
+                output_item_dump: Final = output_item.model_dump()
+                generic_response_output_item: Final = GenericResponseOutputItem.model_validate(output_item_dump)
                 if generic_response_output_item.content:
                     content = generic_response_output_item.content
             except Exception:
                 # Try to extract content directly from output_item if validation fails
-                if hasattr(output_item, "content") and output_item.content:  # type: ignore
-                    content = output_item.content  # type: ignore
+                if hasattr(output_item, "content") and output_item.content:
+                    content = output_item.content
                 else:
                     return
         elif isinstance(output_item, dict):
@@ -1000,10 +998,10 @@ class OpenAIResponsesHandler(BaseTranslation):
                         if isinstance(content_item, OutputText):
                             content_item.text = guardrail_response
                             # Update the original response output
-                            if hasattr(output_item, "content") and output_item.content:  # type: ignore
-                                original_content = output_item.content[content_idx]  # type: ignore
+                            if hasattr(output_item, "content") and output_item.content:
+                                original_content = output_item.content[content_idx]
                                 if hasattr(original_content, "text"):
-                                    original_content.text = guardrail_response  # type: ignore
+                                    original_content.text = guardrail_response
                 except Exception:
                     pass
             elif isinstance(output_item, dict):

@@ -4,7 +4,7 @@ import json
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import Request
 from prisma import Prisma
@@ -40,7 +40,7 @@ def _canonical_sso_team_name(team_name: str) -> str:
     return " ".join(team_name.split()).casefold()
 
 
-def _mapping_team_value(value: Dict[Any, Any]) -> Any:
+def _mapping_team_value(value: dict[Any, Any]) -> Any:
     for key in _TEAM_VALUE_KEYS:
         if key in value:
             return value[key]
@@ -53,8 +53,8 @@ def _mapping_team_value(value: Dict[Any, Any]) -> Any:
     return next(iter(value.values())) if len(value) == 1 else None
 
 
-def normalize_sso_team_claim(raw_value: Any) -> List[str]:
-    normalized: List[str] = []
+def normalize_sso_team_claim(raw_value: Any) -> list[str]:
+    normalized: list[str] = []
 
     def append_value(value: Any) -> None:
         if value is None or isinstance(value, bool):
@@ -124,13 +124,13 @@ async def ensure_human_organization(prisma_client: PrismaClient) -> str:
 
 async def resolve_or_create_sso_teams(
     prisma_client: PrismaClient,
-    team_claim_values: List[str],
-) -> List[str]:
+    team_claim_values: list[str],
+) -> list[str]:
     normalized_team_claim_values = normalize_sso_team_claim(team_claim_values)
     if len(normalized_team_claim_values) != 1:
         raise ValueError("OIDC user_orgnm must contain exactly one department")
     organization_id = await ensure_human_organization(prisma_client)
-    resolved_team_ids: List[str] = []
+    resolved_team_ids: list[str] = []
     for claim_value in normalized_team_claim_values:
         existing_team = await TeamRepository(prisma_client).table.find_unique(where={"team_id": claim_value})
         if existing_team is None:
@@ -173,12 +173,12 @@ async def resolve_or_create_sso_teams(
     return list(dict.fromkeys(resolved_team_ids))
 
 
-def _get_user_metadata(user_info: Any) -> Dict[str, Any]:
+def _get_user_metadata(user_info: Any) -> dict[str, Any]:
     metadata = getattr(user_info, "metadata", None)
     return deepcopy(metadata) if isinstance(metadata, dict) else {}
 
 
-def get_managed_sso_team_ids(user_info: Any) -> List[str]:
+def get_managed_sso_team_ids(user_info: Any) -> list[str]:
     metadata = _get_user_metadata(user_info)
     value = metadata.get(SSO_MANAGED_TEAM_IDS_METADATA_KEY)
     if not isinstance(value, list):
@@ -186,7 +186,7 @@ def get_managed_sso_team_ids(user_info: Any) -> List[str]:
     return list(dict.fromkeys(str(team_id) for team_id in value if isinstance(team_id, str) and team_id))
 
 
-def _member_data(member: Any) -> Dict[str, Any]:
+def _member_data(member: Any) -> dict[str, Any]:
     if isinstance(member, dict):
         return deepcopy(member)
     model_dump = getattr(member, "model_dump", None)
@@ -201,7 +201,7 @@ def _updated_members_with_roles(
     user_id: str,
     user_email: str | None,
     include_user: bool,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     members = members_with_roles if isinstance(members_with_roles, list) else []
     serialized_members = [_member_data(member) for member in members]
     matching_members = [
@@ -266,7 +266,7 @@ async def _sync_department_memberships(
 async def sync_sso_team_memberships(
     prisma_client: PrismaClient,
     user_info: Any,
-    target_team_ids: List[str],
+    target_team_ids: list[str],
 ) -> None:
     user_id: str | None = getattr(user_info, "user_id", None)
     if not user_id:

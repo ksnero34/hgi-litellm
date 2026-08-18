@@ -134,6 +134,8 @@ export const authMessages: MessageCatalog = {
   "auth.teamDefaults.rpmLimit.description": "모든 모델에서 분당 허용되는 최대 요청 수입니다.",
   "auth.teamDefaults.models.label": "모델",
   "auth.teamDefaults.models.description": "새 팀이 기본적으로 접근할 수 있는 모델 목록입니다.",
+  "auth.teamDefaults.organization.label": "조직",
+  "auth.teamDefaults.organization.description": "새로 생성되는 팀에 기본으로 할당할 조직입니다.",
   "auth.teamDefaults.permissions.label": "팀 구성원 권한",
   "auth.teamDefaults.permissions.description":
     "새로 생성되는 팀 구성원에게 기본으로 부여되는 권한입니다. /key/info 및 /key/health는 항상 포함됩니다.",

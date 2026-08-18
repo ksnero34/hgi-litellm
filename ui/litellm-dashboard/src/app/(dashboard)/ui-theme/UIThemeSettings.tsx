@@ -17,7 +17,7 @@ interface UIThemeSettingsProps {
 
 const UIThemeSettings: React.FC<UIThemeSettingsProps> = ({ userID, userRole, accessToken }) => {
   const { t } = useTranslation();
-  const { logoUrl, setLogoUrl, faviconUrl, setFaviconUrl } = useTheme();
+  const { setLogoUrl, setFaviconUrl } = useTheme();
   const [logoUrlInput, setLogoUrlInput] = useState<string>("");
   const [faviconUrlInput, setFaviconUrlInput] = useState<string>("");
   const [loading, setLoading] = useState(false);

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import ConfigDict, Field
 
@@ -7,23 +7,23 @@ from litellm.types.llms.base import LiteLLMPydanticObjectBase
 
 
 class PersonalKeyCreateRequest(LiteLLMPydanticObjectBase):
-    key_alias: Optional[str] = Field(default=None, max_length=255)
-    user_id: Optional[str] = None
+    key_alias: str | None = Field(default=None, max_length=255)
+    user_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 class PersonalKeyView(LiteLLMPydanticObjectBase):
     logical_key_id: str
-    key_alias: Optional[str] = None
+    key_alias: str | None = None
     user_id: str
     team_id: str
     organization_id: str
     generation: int
     status: Literal["active", "blocked", "expired"]
     expires: datetime
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class PersonalKeyCreateResponse(PersonalKeyView):

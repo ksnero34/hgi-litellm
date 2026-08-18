@@ -59,7 +59,7 @@ interface UserDropdownProps {
 
 const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
   const { t } = useTranslation();
-  const { userId, userEmail, userRole } = useAuthorized();
+  const { userId, userEmail, userRoleLabel: userRole } = useAuthorized();
   const disableShowPrompts = useDisableShowPrompts();
   const [disableShowNewBadge, setDisableShowNewBadge] = useState(false);
 

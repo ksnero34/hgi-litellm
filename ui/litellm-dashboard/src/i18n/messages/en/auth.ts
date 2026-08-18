@@ -134,6 +134,8 @@ export const authMessages: MessageCatalog = {
   "auth.teamDefaults.rpmLimit.description": "Maximum requests per minute allowed across all models.",
   "auth.teamDefaults.models.label": "Models",
   "auth.teamDefaults.models.description": "Default list of models that new teams can access.",
+  "auth.teamDefaults.organization.label": "Organization",
+  "auth.teamDefaults.organization.description": "Default organization assigned to newly created teams.",
   "auth.teamDefaults.permissions.label": "Team Member Permissions",
   "auth.teamDefaults.permissions.description":
     "Default permissions granted to members of newly created teams. /key/info and /key/health are always included.",

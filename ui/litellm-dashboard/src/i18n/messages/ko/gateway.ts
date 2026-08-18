@@ -158,6 +158,7 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.keyEdit.numericPlaceholder": "숫자를 입력하세요",
   "gateway.keyEdit.resetBudget": "예산 재설정",
   "gateway.keyEdit.notApplicable": "해당 없음",
+  "gateway.keyEdit.neverResets": "초기화 안 함",
   "gateway.keyEdit.daily": "매일",
   "gateway.keyEdit.weekly": "매주",
   "gateway.keyEdit.monthly": "매월",

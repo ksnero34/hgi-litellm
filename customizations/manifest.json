@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_ref": "83d6d84bfb7abbbff70d456bc89028d426db8c33",
+  "base_ref": "ef84494d52c6708e4e9f4a54ce551a265995ad8f",
   "generated_paths": [
     "litellm/proxy/_experimental/out",
     "ui/litellm-dashboard/src/lib/http/schema.d.ts"
@@ -207,6 +207,7 @@
       "paths": [
         "litellm/integrations/custom_logger.py",
         "litellm/litellm_core_utils/litellm_logging.py",
+        "litellm/litellm_core_utils/prompt_templates/factory.py",
         "litellm/llms/openai/chat/guardrail_translation/handler.py",
         "litellm/llms/openai/responses/guardrail_translation/handler.py",
         "litellm/proxy/common_request_processing.py",
@@ -216,6 +217,7 @@
         "litellm/types/guardrails.py",
         "litellm/utils.py",
         "tests/test_litellm/litellm_core_utils/test_litellm_logging.py",
+        "tests/test_litellm/completion_extras/test_litellm_responses_transformation_transformation.py",
         "tests/test_litellm/llms/openai/chat/guardrail_translation/test_openai_guardrail_handler.py",
         "tests/test_litellm/llms/openai/responses/test_openai_responses_guardrail_handler.py",
         "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio.py",
@@ -452,6 +454,7 @@
         "litellm/proxy/management_endpoints/audit_logging_endpoints.py",
         "litellm/proxy/management_endpoints/organization_endpoints.py",
         "litellm/proxy/management_helpers/audit_logs.py",
+        "tests/proxy_unit_tests/test_audit_logs_proxy.py",
         "tests/test_litellm/proxy/hooks/test_key_management_event_hooks.py",
         "tests/test_litellm/proxy/management_endpoints/test_audit_logging_endpoints.py",
         "tests/test_litellm/proxy/management_endpoints/test_organization_endpoints.py",

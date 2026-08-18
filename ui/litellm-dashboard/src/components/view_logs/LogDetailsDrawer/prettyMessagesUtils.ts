@@ -2,7 +2,15 @@
  * Utility functions for parsing and formatting messages for pretty view
  */
 
-import { ParsedMessage, ParsedMessages, RoleStyle } from "./prettyMessagesTypes";
+import {
+  MessageRole,
+  ParsedMessage,
+  ParsedMessages,
+  RequestPayload,
+  ResponsePayload,
+  RoleStyle,
+  ToolCall,
+} from "./prettyMessagesTypes";
 import { parseResponsesPretty } from "./responsesPrettyUtils";
 
 /**
@@ -36,34 +44,49 @@ export const ROLE_STYLES: Record<string, RoleStyle> = {
   },
 };
 
+type UnknownRecord = Record<string, unknown>;
+type ResponsesToolCallRecord = UnknownRecord & { type: "function_call" | "custom_tool_call" };
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const asString = (value: unknown): string => (typeof value === "string" ? value : "");
+
+const ROLES: readonly MessageRole[] = ["system", "user", "assistant", "tool"];
+
+const toRole = (value: unknown, fallback: MessageRole): MessageRole => {
+  if (value === "developer") return "system";
+  if (value === "function") return "tool";
+  return ROLES.includes(value as MessageRole) ? (value as MessageRole) : fallback;
+};
+
+const classifyRequest = (request: unknown): RequestPayload => {
+  if (Array.isArray(request)) return { kind: "chat", messages: request };
+  if (!isRecord(request)) return { kind: "unknown" };
+  if (Array.isArray(request.messages)) return { kind: "chat", messages: request.messages };
+  const { input } = request;
+  if (typeof input === "string" || Array.isArray(input)) {
+    return { kind: "responses", instructions: asString(request.instructions), input };
+  }
+  return { kind: "unknown" };
+};
+
+const classifyResponse = (response: unknown): ResponsePayload => {
+  if (!isRecord(response)) return { kind: "unknown" };
+  if (Array.isArray(response.choices)) return { kind: "chat", choices: response.choices };
+  if (Array.isArray(response.output)) return { kind: "responses", output: response.output };
+  return { kind: "unknown" };
+};
+
+const isResponsesToolCallRecord = (item: unknown): item is ResponsesToolCallRecord =>
+  isRecord(item) && (item.type === "function_call" || item.type === "custom_tool_call");
+
 /**
  * Parse request messages and response message from log data
  */
-export const parseMessages = (request: any, response: any): ParsedMessages => {
-  // Parse request messages. `request` is either the raw request body
-  // ({ messages: [...] }) or, when prompts come from cold storage, the bare
-  // messages array itself.
-  const requestMessages: ParsedMessage[] = [];
-
-  const requestMessageList = getRequestMessageList(request);
-
-  requestMessageList.forEach((item) => {
-    const message = parseRequestMessage(item);
-    if (message) requestMessages.push(message);
-  });
-
-  // Parse response message
-  let responseMessage: ParsedMessage | null = null;
-  const responseMsg = response?.choices?.[0]?.message;
-
-  if (responseMsg) {
-    responseMessage = {
-      role: responseMsg.role || "assistant",
-      content: responseMsg.content || "",
-      toolCalls: parseToolCalls(responseMsg.tool_calls),
-    };
-  }
-
+export const parseMessages = (request: unknown, response: unknown): ParsedMessages => {
+  const responsePayload = classifyResponse(response);
+  const responseMessage = parseResponseMessage(responsePayload);
   const responsesPretty = parseResponsesPretty(response);
   const chatItems = responseMessage
     ? [
@@ -77,150 +100,149 @@ export const parseMessages = (request: any, response: any): ParsedMessages => {
     : [];
 
   return {
-    requestMessages,
+    requestMessages: parseRequestMessages(classifyRequest(request)),
     responseMessage,
     responseItems: responsesPretty?.responseItems ?? chatItems,
     responseState: responsesPretty?.responseState ?? null,
   };
 };
 
-const parseRequestMessage = (value: unknown): ParsedMessage | null => {
-  if (typeof value === "string") return { role: "user", content: value };
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-
-  const item = value as Record<string, unknown>;
-  const itemType = typeof item.type === "string" ? item.type : "";
-  const role =
-    item.role === "system" || item.role === "user" || item.role === "assistant" || item.role === "tool"
-      ? item.role
-      : "user";
-  let callId = "";
-  if (typeof item.call_id === "string") {
-    callId = item.call_id;
-  } else if (typeof item.id === "string") {
-    callId = item.id;
-  }
-
-  if (itemType === "function_call" || itemType === "custom_tool_call") {
-    let name = "unknown";
-    if (typeof item.name === "string") {
-      name = item.name;
-    } else if (itemType === "custom_tool_call") {
-      name = "custom_tool";
+const parseRequestMessages = (payload: RequestPayload): ParsedMessage[] => {
+  switch (payload.kind) {
+    case "chat":
+      return payload.messages.map(parseChatMessage);
+    case "responses": {
+      const instructions: ParsedMessage[] = payload.instructions
+        ? [{ role: "system", content: payload.instructions }]
+        : [];
+      const input: ParsedMessage[] =
+        typeof payload.input === "string"
+          ? [{ role: "user", content: payload.input }]
+          : payload.input.flatMap(parseResponsesInputItem);
+      return [...instructions, ...input];
     }
-    const args =
-      itemType === "custom_tool_call"
-        ? { input: item.input ?? item.arguments ?? "" }
-        : parseToolArguments(item.arguments);
-    return {
-      role: "assistant",
-      content: "",
-      toolCalls: [{ id: callId, name, arguments: args }],
-    };
+    case "unknown":
+      return [];
   }
+};
 
-  if (itemType === "function_call_output" || itemType === "custom_tool_call_output") {
-    return {
-      role: "tool",
-      content: parseMessageContent(item.output ?? item.content),
-      toolCallId: callId,
-    };
+const parseResponseMessage = (payload: ResponsePayload): ParsedMessage | null => {
+  switch (payload.kind) {
+    case "chat": {
+      const choice = payload.choices[0];
+      const message = isRecord(choice) ? choice.message : undefined;
+      if (!isRecord(message)) return null;
+      return {
+        role: toRole(message.role, "assistant"),
+        content: parseMessageContent(message.content),
+        toolCalls: parseChatToolCalls(message.tool_calls),
+      };
+    }
+    case "responses": {
+      const content = payload.output
+        .filter((item): item is UnknownRecord => isRecord(item) && item.type === "message")
+        .map((item) => parseMessageContent(item.content))
+        .filter((text) => text.length > 0)
+        .join("\n");
+      const toolCalls = payload.output.filter(isResponsesToolCallRecord).map(parseResponsesToolCall);
+      if (content.length === 0 && toolCalls.length === 0) return null;
+      return { role: "assistant", content, toolCalls: toolCalls.length > 0 ? toolCalls : undefined };
+    }
+    case "unknown":
+      return null;
   }
+};
 
+const parseChatMessage = (message: unknown): ParsedMessage => {
+  if (!isRecord(message)) return { role: "user", content: parseMessageContent(message) };
   return {
-    role,
-    content: parseMessageContent(item.content),
-    toolCallId: typeof item.tool_call_id === "string" ? item.tool_call_id : undefined,
+    role: toRole(message.role, "user"),
+    content: parseMessageContent(message.content),
+    toolCalls: parseChatToolCalls(message.tool_calls),
+    toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
   };
 };
 
-const getRequestMessageList = (request: unknown): unknown[] => {
-  if (Array.isArray(request)) return request;
-  if (typeof request !== "object" || request === null) return [];
-  const requestObject = request as Record<string, unknown>;
-  if (Array.isArray(requestObject.messages)) return requestObject.messages;
-  if (Array.isArray(requestObject.input)) {
-    const input = requestObject.input;
-    return input.every(isResponsesContentBlock) ? [{ role: "user", content: input }] : input;
+const parseResponsesInputItem = (item: unknown): ParsedMessage[] => {
+  if (typeof item === "string") return [{ role: "user", content: item }];
+  if (!isRecord(item)) return [];
+  if (item.type === "function_call" || item.type === "custom_tool_call") {
+    return [{ role: "assistant", content: "", toolCalls: [parseResponsesToolCall(item)] }];
   }
-  if (typeof requestObject.input === "string") return [{ role: "user", content: requestObject.input }];
+  if (item.type === "function_call_output" || item.type === "custom_tool_call_output") {
+    return [
+      {
+        role: "tool",
+        content: parseMessageContent(item.output ?? item.content),
+        toolCallId: asString(item.call_id) || asString(item.id),
+      },
+    ];
+  }
+  if (item.type === "reasoning") return [];
+  if ("role" in item || "content" in item) {
+    return [{ role: toRole(item.role, "user"), content: parseMessageContent(item.content) }];
+  }
   return [];
 };
 
-const isResponsesContentBlock = (item: unknown): boolean => {
-  if (typeof item !== "object" || item === null) return false;
-  const itemType = (item as Record<string, unknown>).type;
-  switch (itemType) {
-    case "text":
-    case "input_text":
-    case "input_image":
-    case "input_file":
-      return true;
-    default:
-      return false;
-  }
-};
-
-const isDisplayTextBlockType = (itemType: unknown): boolean => {
-  switch (itemType) {
-    case "text":
-    case "input_text":
-    case "output_text":
-      return true;
-    default:
-      return false;
-  }
-};
+const parseResponsesToolCall = (item: UnknownRecord): ToolCall => ({
+  id: asString(item.call_id) || asString(item.id),
+  name:
+    item.type === "custom_tool_call" ? "custom_tool" : asString(item.name) || asString(item.function_name) || "unknown",
+  arguments:
+    item.type === "custom_tool_call"
+      ? { input: item.input ?? item.arguments ?? "" }
+      : parseToolArguments(item.arguments),
+});
 
 /**
  * Parse message content - handle strings and content arrays (for vision, etc.)
  */
 const parseMessageContent = (content: unknown): string => {
-  if (typeof content === "string") {
-    return content;
-  }
+  if (typeof content === "string") return content;
+  if (content === null || content === undefined) return "";
+  if (Array.isArray(content)) return content.map(parseContentPart).join("\n");
+  return JSON.stringify(content);
+};
 
-  if (Array.isArray(content)) {
-    // Handle content arrays (vision API format)
-    return content
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (typeof item !== "object" || item === null) return "";
-        const contentItem = item as Record<string, unknown>;
-        if (isDisplayTextBlockType(contentItem.type) && typeof contentItem.text === "string") {
-          return contentItem.text;
-        }
-        if (contentItem.type === "reasoning_text") return "";
-        if (contentItem.type === "image_url") return "[Image]";
-        return JSON.stringify(contentItem);
-      })
-      .filter(Boolean)
-      .join("\n");
+const parseContentPart = (part: unknown): string => {
+  if (typeof part === "string") return part;
+  if (!isRecord(part)) return JSON.stringify(part);
+  switch (part.type) {
+    case "text":
+    case "input_text":
+    case "output_text":
+      return asString(part.text);
+    case "refusal":
+      return asString(part.refusal);
+    case "reasoning_text":
+      return "";
+    case "image_url":
+    case "input_image":
+      return "[Image]";
+    case "input_file":
+      return "[File]";
+    case "input_audio":
+      return "[Audio]";
+    default:
+      return JSON.stringify(part);
   }
-
-  // Fallback to JSON string for complex content
-  return content === undefined || content === null ? "" : JSON.stringify(content) ?? String(content);
 };
 
 /**
  * Parse tool calls from response message
  */
-const parseToolCalls = (
-  toolCalls: any[],
-):
-  | Array<{
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
-    }>
-  | undefined => {
-  if (!toolCalls || !Array.isArray(toolCalls)) return undefined;
-
-  return toolCalls.map((tc) => ({
-    id: tc.id || "",
-    name: tc.function?.name || "unknown",
-    arguments: parseToolArguments(tc.function?.arguments),
-  }));
+const parseChatToolCalls = (toolCalls: unknown): ToolCall[] | undefined => {
+  if (!Array.isArray(toolCalls)) return undefined;
+  return toolCalls.map((toolCall) => {
+    const call = isRecord(toolCall) ? toolCall : {};
+    const fn = isRecord(call.function) ? call.function : {};
+    return {
+      id: asString(call.id),
+      name: asString(fn.name) || "unknown",
+      arguments: parseToolArguments(fn.arguments),
+    };
+  });
 };
 
 /**
@@ -228,14 +250,13 @@ const parseToolCalls = (
  */
 const parseToolArguments = (args: unknown): Record<string, unknown> => {
   if (!args) return {};
-
   if (typeof args === "string") {
     try {
-      return JSON.parse(args);
+      const parsed: unknown = JSON.parse(args);
+      return isRecord(parsed) ? parsed : { raw: args };
     } catch {
       return { raw: args };
     }
   }
-
-  return typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+  return isRecord(args) ? args : {};
 };

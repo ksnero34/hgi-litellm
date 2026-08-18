@@ -15,6 +15,7 @@ export interface SpendMetrics {
   response_time_count?: number;
   average_ttft_ms?: number | null;
   ttft_count?: number;
+  autorouter_savings_spend?: number;
 }
 
 export type DailyData = {

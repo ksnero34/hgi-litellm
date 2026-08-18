@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
 import React from "react";
 import { Organization } from "@/components/networking";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -69,31 +70,6 @@ vi.mock("@/app/(dashboard)/hooks/models/useModels", () => ({
   useUserModels: () => ({ data: [] }),
 }));
 
-// The selected org is URL-derived (?org=) via useOrgDetailRouting. Next's real useSearchParams
-// re-renders subscribers on history.pushState/replaceState; mirror that so URL changes propagate.
-vi.mock("next/navigation", async () => {
-  const { useSyncExternalStore } = await import("react");
-  const LOCATION_CHANGE_EVENT = "test-locationchange";
-  for (const method of ["pushState", "replaceState"] as const) {
-    const original = window.history[method].bind(window.history);
-    window.history[method] = (...args: Parameters<History["pushState"]>) => {
-      original(...args);
-      window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
-    };
-  }
-  const subscribe = (onChange: () => void) => {
-    window.addEventListener(LOCATION_CHANGE_EVENT, onChange);
-    window.addEventListener("popstate", onChange);
-    return () => {
-      window.removeEventListener(LOCATION_CHANGE_EVENT, onChange);
-      window.removeEventListener("popstate", onChange);
-    };
-  };
-  return {
-    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
-  };
-});
-
 import OrganizationsPanel from "./OrganizationsPanel";
 import { useOrganizations } from "@/app/(dashboard)/hooks/organizations/useOrganizations";
 
@@ -119,17 +95,46 @@ const organizations: Organization[] = [
 ];
 const loadedOrganizations = { data: organizations, isLoading: false } as ReturnType<typeof useOrganizations>;
 
-const renderWithQueryClient = (ui: React.ReactElement) => {
+const onUrlUpdate = vi.fn<(event: UrlUpdateEvent) => void>();
+
+interface RenderPanelOptions {
+  premiumUser?: boolean;
+  searchParams?: string;
+}
+
+const renderPanel = ({ premiumUser = true, searchParams = "" }: RenderPanelOptions = {}) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  const url = { current: searchParams };
+  const handleUrlUpdate = (event: UrlUpdateEvent) => {
+    onUrlUpdate(event);
+    url.current = event.queryString;
+  };
+  const tree = (currentSearchParams: string) => (
+    <NuqsTestingAdapter searchParams={currentSearchParams} onUrlUpdate={handleUrlUpdate} hasMemory>
+      <QueryClientProvider client={queryClient}>
+        <OrganizationsPanel userRole="Admin" accessToken={null} premiumUser={premiumUser} />
+      </QueryClientProvider>
+    </NuqsTestingAdapter>
+  );
+  const { rerender } = render(tree(searchParams));
+  return {
+    navigate: (nextSearchParams: string) => {
+      rerender(tree(url.current));
+      rerender(tree(nextSearchParams));
+      url.current = nextSearchParams;
+    },
+  };
 };
+
+const expectQueryString = (queryString: string) =>
+  waitFor(() => expect(onUrlUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ queryString })));
 
 beforeEach(() => {
   capturedTableProps = null;
   mockOrgInfoView.mockClear();
-  window.history.replaceState(null, "", "/organizations/");
+  onUrlUpdate.mockClear();
 });
 
 describe("OrganizationsPanel", () => {
@@ -184,18 +189,20 @@ describe("OrganizationsPanel", () => {
 });
 
 describe("OrganizationsPanel - org detail deep link (?org=)", () => {
-  it("clicking an organization pushes ?org= and opens the detail view", () => {
-    renderWithQueryClient(<OrganizationsPanel userRole="Admin" accessToken={null} />);
+  it("clicking an organization pushes ?org= and opens the detail view", async () => {
+    renderPanel();
 
     act(() => capturedTableProps?.onOrganizationClick("org-deep-link"));
 
-    expect(window.location.search).toContain("org=org-deep-link");
+    await expectQueryString("?org=org-deep-link");
+    expect(onUrlUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ options: expect.objectContaining({ history: "push" }) }),
+    );
     expect(mockOrgInfoView).toHaveBeenLastCalledWith(expect.objectContaining({ organizationId: "org-deep-link" }));
   });
 
   it("opens the org detail directly from a ?org= deep link", () => {
-    window.history.replaceState(null, "", "/organizations/?org=org-from-url");
-    renderWithQueryClient(<OrganizationsPanel userRole="Admin" accessToken={null} />);
+    renderPanel({ searchParams: "?org=org-from-url" });
 
     expect(mockOrgInfoView).toHaveBeenLastCalledWith(
       expect.objectContaining({ organizationId: "org-from-url", editOrg: false }),
@@ -203,39 +210,53 @@ describe("OrganizationsPanel - org detail deep link (?org=)", () => {
     expect(screen.queryByTestId("organizations-table")).not.toBeInTheDocument();
   });
 
-  it("closing the org detail removes ?org= and returns to the list", () => {
-    window.history.replaceState(null, "", "/organizations/?org=org-from-url");
-    renderWithQueryClient(<OrganizationsPanel userRole="Admin" accessToken={null} />);
+  it("closing the org detail removes ?org= and returns to the list", async () => {
+    renderPanel({ searchParams: "?org=org-from-url" });
 
     act(() => mockOrgInfoView.mock.calls.at(-1)?.[0].onClose());
 
-    expect(window.location.search).not.toContain("org=");
+    await expectQueryString("");
     expect(screen.queryByTestId("organization-info-view")).not.toBeInTheDocument();
     expect(screen.getByTestId("organizations-table")).toBeInTheDocument();
   });
 
-  it("the edit action opens the detail in edit mode with ?org= set", () => {
-    renderWithQueryClient(<OrganizationsPanel userRole="Admin" accessToken={null} />);
+  it("the edit action opens the detail in edit mode with ?org= set", async () => {
+    renderPanel();
 
     act(() => capturedTableProps?.onEditClick("org-edit"));
 
-    expect(window.location.search).toContain("org=org-edit");
+    await expectQueryString("?org=org-edit");
     expect(mockOrgInfoView).toHaveBeenLastCalledWith(
       expect.objectContaining({ organizationId: "org-edit", editOrg: true }),
     );
   });
 
-  it("a plain row click after leaving an edit view via browser history does not reopen in edit mode", () => {
-    renderWithQueryClient(<OrganizationsPanel userRole="Admin" accessToken={null} />);
+  it("a plain row click after leaving an edit view via browser history does not reopen in edit mode", async () => {
+    const { navigate } = renderPanel();
 
     act(() => capturedTableProps?.onEditClick("org-edit"));
+    await expectQueryString("?org=org-edit");
     expect(mockOrgInfoView).toHaveBeenLastCalledWith(expect.objectContaining({ editOrg: true }));
 
-    act(() => window.history.pushState(null, "", "/organizations/"));
+    navigate("");
+    expect(screen.getByTestId("organizations-table")).toBeInTheDocument();
+
     act(() => capturedTableProps?.onOrganizationClick("org-plain"));
 
+    await expectQueryString("?org=org-plain");
     expect(mockOrgInfoView).toHaveBeenLastCalledWith(
       expect.objectContaining({ organizationId: "org-plain", editOrg: false }),
     );
   });
 });
+
+const renderWithQueryClient = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <NuqsTestingAdapter searchParams="" onUrlUpdate={onUrlUpdate} hasMemory>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </NuqsTestingAdapter>,
+  );
+};

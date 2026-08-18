@@ -6,7 +6,9 @@ import BudgetDurationDropdown, { getBudgetDurationLabel } from "./common_compone
 import { ModelSelect } from "./ModelSelect/ModelSelect";
 import { getModelDisplayName } from "./key_team_helpers/fetch_available_models_team_key";
 import NotificationsManager from "./molecules/notifications_manager";
-import { getDefaultTeamSettings, updateDefaultTeamSettings } from "./networking";
+import { getDefaultTeamSettings, updateDefaultTeamSettings, Organization } from "./networking";
+import OrganizationDropdown from "./common_components/OrganizationDropdown";
+import { useOrganizations } from "@/app/(dashboard)/hooks/organizations/useOrganizations";
 
 const { Text, Title } = Typography;
 
@@ -68,6 +70,11 @@ const renderTags = (values: string[], emptyLabel: string, displayFn?: (value: st
   );
 };
 
+const getOrganizationLabel = (organizationId: string, organizations: Organization[] | undefined): string => {
+  const organization = organizations?.find((org) => org.organization_id === organizationId);
+  return organization?.organization_alias ? `${organization.organization_alias} (${organizationId})` : organizationId;
+};
+
 interface SettingsValues {
   max_budget: number | null;
   budget_duration: string | null;
@@ -75,6 +82,7 @@ interface SettingsValues {
   rpm_limit: number | null;
   models: string[];
   team_member_permissions: string[];
+  organization_id: string | null;
 }
 
 const DEFAULT_VALUES: SettingsValues = {
@@ -84,6 +92,7 @@ const DEFAULT_VALUES: SettingsValues = {
   rpm_limit: null,
   models: [],
   team_member_permissions: [],
+  organization_id: null,
 };
 
 const TeamSSOSettings: React.FC<TeamSSOSettingsProps> = ({ accessToken }) => {
@@ -94,6 +103,7 @@ const TeamSSOSettings: React.FC<TeamSSOSettingsProps> = ({ accessToken }) => {
   const [editedValues, setEditedValues] = useState<SettingsValues>(DEFAULT_VALUES);
   const [saving, setSaving] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<boolean>(false);
+  const { data: organizations, isLoading: isOrganizationsLoading } = useOrganizations();
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -254,7 +264,7 @@ const TeamSSOSettings: React.FC<TeamSSOSettingsProps> = ({ accessToken }) => {
               editContent={
                 <BudgetDurationDropdown
                   value={editedValues.budget_duration || null}
-                  onChange={(value) => update("budget_duration", value)}
+                  onChange={(v) => update("budget_duration", v ?? null)}
                   style={{ maxWidth: 320 }}
                 />
               }
@@ -317,6 +327,31 @@ const TeamSSOSettings: React.FC<TeamSSOSettingsProps> = ({ accessToken }) => {
             {t("auth.teamDefaults.sections.access", { defaultValue: "Access & Permissions" })}
           </div>
           <div className="border-t border-gray-100">
+            <SettingRow
+              label={t("auth.teamDefaults.organization.label", { defaultValue: "Default Organization" })}
+              description={t("auth.teamDefaults.organization.description", {
+                defaultValue: "Teams created without an explicit organization are assigned to this organization.",
+              })}
+              isEditing={isEditing}
+              viewContent={
+                values.organization_id ? (
+                  <Text>{getOrganizationLabel(values.organization_id, organizations)}</Text>
+                ) : (
+                  <NotSet label={notSetLabel} />
+                )
+              }
+              editContent={
+                <OrganizationDropdown
+                  organizations={organizations}
+                  loading={isOrganizationsLoading}
+                  value={editedValues.organization_id ?? undefined}
+                  onChange={(organizationId) => update("organization_id", organizationId || null)}
+                  placeholder="Select an organization"
+                  style={{ maxWidth: 320 }}
+                />
+              }
+            />
+
             <SettingRow
               label={t("auth.teamDefaults.models.label", { defaultValue: "Models" })}
               description={t("auth.teamDefaults.models.description", {

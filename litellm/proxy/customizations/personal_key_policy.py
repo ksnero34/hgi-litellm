@@ -1,8 +1,8 @@
 import json
 import os
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 

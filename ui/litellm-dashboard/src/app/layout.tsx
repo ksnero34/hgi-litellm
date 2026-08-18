@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import { NuqsAdapter } from "nuqs/adapters/next/app";
+
 import AntdGlobalProvider from "@/contexts/AntdGlobalProvider";
-import I18nProvider from "@/i18n/I18nProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ReactQueryProvider from "@/contexts/ReactQueryProvider";
+import I18nProvider from "@/i18n/I18nProvider";
 
 export const metadata: Metadata = {
   title: "사내 LLM Gateway",
@@ -21,11 +23,13 @@ export default function RootLayout({
     <html lang="ko">
       <body>
         <I18nProvider>
-          <ReactQueryProvider>
-            <AntdGlobalProvider>
-              <AuthProvider>{children}</AuthProvider>
-            </AntdGlobalProvider>
-          </ReactQueryProvider>
+          <NuqsAdapter>
+            <ReactQueryProvider>
+              <AntdGlobalProvider>
+                <AuthProvider>{children}</AuthProvider>
+              </AntdGlobalProvider>
+            </ReactQueryProvider>
+          </NuqsAdapter>
         </I18nProvider>
       </body>
     </html>

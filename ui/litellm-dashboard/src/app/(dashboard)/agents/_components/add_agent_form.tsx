@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Modal, Form, Select, Input, Steps, Radio, Tag, Divider, Switch, InputNumber, Collapse } from "antd";
+import { Modal, Form, Select, Input, Steps, Radio, Tag, Divider, Switch, InputNumber } from "antd";
 import { useTranslation } from "react-i18next";
 import MessageManager from "@/components/molecules/message_manager";
 import { Logo } from "@/components/molecules/logo/Logo";
@@ -49,7 +49,6 @@ const AddAgentForm: React.FC<AddAgentFormProps> = ({ visible, onClose, accessTok
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [agentType, setAgentType] = useState<string>("a2a");
   const [agentTypeMetadata, setAgentTypeMetadata] = useState<AgentCreateInfo[]>([]);
-  const [loadingMetadata, setLoadingMetadata] = useState(false);
 
   // Step 3: key assignment state
   const [keyAssignOption, setKeyAssignOption] = useState<"create_new" | "existing_key" | "skip">("create_new");
@@ -84,14 +83,11 @@ const AddAgentForm: React.FC<AddAgentFormProps> = ({ visible, onClose, accessTok
   // Fetch agent type metadata on mount
   useEffect(() => {
     const fetchMetadata = async () => {
-      setLoadingMetadata(true);
       try {
         const metadata = await getAgentCreateMetadata();
         setAgentTypeMetadata(metadata);
       } catch (error) {
         console.error("Error fetching agent metadata:", error);
-      } finally {
-        setLoadingMetadata(false);
       }
     };
     fetchMetadata();

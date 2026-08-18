@@ -39,7 +39,6 @@ const AddPassThroughEndpoint: React.FC<AddFallbacksProps> = ({
   const [form] = Form.useForm();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("");
   const [pathValue, setPathValue] = useState("");
   const [targetValue, setTargetValue] = useState("");
   const [includeSubpath, setIncludeSubpath] = useState(true);
@@ -107,11 +106,6 @@ const AddPassThroughEndpoint: React.FC<AddFallbacksProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    NotificationsManager.success(t("operations.passThrough.copied"));
   };
 
   return (

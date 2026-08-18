@@ -1,11 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Card } from "@tremor/react";
-import { Typography } from "antd";
 import { CopyOutlined, CheckCircleOutlined, ClockCircleOutlined, DownOutlined, RightOutlined } from "@ant-design/icons";
 import NotificationsManager from "@/components/molecules/notifications_manager";
-
-const { Text } = Typography;
 
 interface TestResult {
   guardrailName: string;

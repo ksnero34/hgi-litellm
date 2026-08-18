@@ -63,6 +63,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/cva.config";
+import { rolesWithCapability } from "../utils/capabilities";
 import {
   all_admin_roles,
   internalUserRoles,
@@ -97,7 +98,8 @@ interface SidebarProps {
 interface MenuItem {
   key: string;
   page: string;
-  label: string | React.ReactNode;
+  label: string;
+  badge?: React.ReactNode;
   roles?: string[];
   children?: MenuItem[];
   icon?: React.ReactNode;
@@ -167,7 +169,13 @@ const menuGroups: MenuGroup[] = [
         children: [
           { key: "search-tools", page: "search-tools", label: "Search Tools", icon: <Search {...ICON} /> },
           { key: "vector-stores", page: "vector-stores", label: "Vector Stores", icon: <Database {...ICON} /> },
-          { key: "tool-policies", page: "tool-policies", label: "Tool Policies", icon: <ShieldCheck {...ICON} /> },
+          {
+            key: "tool-policies",
+            page: "tool-policies",
+            label: "Tool Policies",
+            icon: <ShieldCheck {...ICON} />,
+            roles: rolesWithCapability("viewToolPolicies"),
+          },
         ],
       },
     ],
@@ -187,11 +195,8 @@ const menuGroups: MenuGroup[] = [
         page: "cost-optimization",
         icon: <PiggyBank {...ICON} />,
         roles: [...all_admin_roles, ...internalUserRoles],
-        label: (
-          <span className="flex items-center gap-2">
-            Cost Optimization <BetaBadge />
-          </span>
-        ),
+        label: "Cost Optimization",
+        badge: <BetaBadge />,
       },
       { key: "logs", page: "logs", label: "Logs", icon: <Activity {...ICON} /> },
       {
@@ -210,11 +215,8 @@ const menuGroups: MenuGroup[] = [
       {
         key: "projects",
         page: "projects",
-        label: (
-          <span className="flex items-center gap-2">
-            Projects <BetaBadge />
-          </span>
-        ),
+        label: "Projects",
+        badge: <BetaBadge />,
         icon: <Folder {...ICON} />,
         roles: all_admin_roles,
       },
@@ -275,11 +277,8 @@ const menuGroups: MenuGroup[] = [
       {
         key: "settings",
         page: "settings",
-        label: (
-          <span className="flex items-center gap-2">
-            Settings <NewBadge />
-          </span>
-        ),
+        label: "Settings",
+        badge: <NewBadge />,
         icon: <SettingsIcon {...ICON} />,
         roles: all_admin_roles,
         children: [
@@ -300,13 +299,11 @@ const menuGroups: MenuGroup[] = [
           {
             key: "admin-panel",
             page: "admin-panel",
-            label: (
-              <span className="flex items-center gap-2">
-                Admin Settings{" "}
-                <NewBadge dot>
-                  <span />
-                </NewBadge>
-              </span>
+            label: "Admin Settings",
+            badge: (
+              <NewBadge dot>
+                <span />
+              </NewBadge>
             ),
             icon: <SettingsIcon {...ICON} />,
             roles: all_admin_roles,
@@ -384,13 +381,13 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   "admin-panel": "nav.adminPanel",
   "cost-tracking": "nav.costTracking",
   "ui-theme": "nav.uiTheme",
+  "cost-optimization": "nav.costOptimization",
 };
 
 const labelText = (item: MenuItem): string => {
   const translationKey = NAV_LABEL_KEYS[item.key];
   if (translationKey) return i18n.t(translationKey);
-  if (typeof item.label === "string") return item.label;
-  return item.key;
+  return item.label;
 };
 const SECTION_DISPLAY: Record<string, string> = {
   "AI GATEWAY": "section.gateway",
@@ -405,6 +402,13 @@ const prettify = (key: string): string =>
     .split(/[-_]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+
+const isViewOnlyNavRole = (role: string): boolean => {
+  const normalizedRole = role.toLowerCase();
+  return (
+    normalizedRole === "admin viewer" || normalizedRole === "proxy_admin_viewer" || normalizedRole === "admin_viewer"
+  );
+};
 
 // Breadcrumb ("Section" / "Page") for the top bar, derived from the same nav config.
 export const getBreadcrumb = (page: string): { section: string | null; title: string } => {
@@ -432,7 +436,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   allowVectorStoresForTeamAdmins,
 }) => {
   useTranslation();
-  const { userId, accessToken, userRole } = useAuthorized();
+  const { userId, accessToken, userRole, isViewOnly } = useAuthorized();
   const { data: organizations } = useOrganizations();
   const { data: teams } = useTeams();
   const { logoUrl } = useTheme();
@@ -468,12 +472,14 @@ const Sidebar_: React.FC<SidebarProps> = ({
   }, [userId, organizations]);
 
   const isTeamAdmin = useMemo(() => isUserTeamAdminForAnyTeam(teams ?? null, userId ?? ""), [teams, userId]);
+  const viewOnlySession = isViewOnly || isViewOnlyNavRole(userRole);
 
   const filterItemsByRole = (items: MenuItem[]): MenuItem[] => {
     const isAdmin = isAdminRole(userRole);
     return items
       .map((item) => ({ ...item, children: item.children ? filterItemsByRole(item.children) : undefined }))
       .filter((item) => {
+        if (item.key === "llm-playground" && viewOnlySession) return false;
         if (item.key === "organizations" || item.key === "users") {
           const hasRoleAccess = !item.roles || item.roles.includes(userRole) || isOrgAdmin;
           if (!hasRoleAccess) return false;
@@ -536,7 +542,12 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const renderLeaf = (item: MenuItem, isChild: boolean) => {
     const active = selectedKey === item.key;
     const size = isChild ? "sub" : "default";
-    const label = <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>;
+    const label = (
+      <span className="flex flex-1 items-center gap-2 truncate group-data-[collapsed=true]/sidebar:hidden">
+        {labelText(item)}
+        {item.badge}
+      </span>
+    );
 
     if (item.external_url) {
       return (
@@ -588,7 +599,10 @@ const Sidebar_: React.FC<SidebarProps> = ({
           title={collapsed ? labelText(item) : undefined}
         >
           {item.icon}
-          <span className="flex-1 truncate group-data-[collapsed=true]/sidebar:hidden">{labelText(item)}</span>
+          <span className="flex flex-1 items-center gap-2 truncate group-data-[collapsed=true]/sidebar:hidden">
+            {labelText(item)}
+            {item.badge}
+          </span>
           <ChevronRight
             className={cn(
               "size-4 shrink-0 transition-transform group-data-[collapsed=true]/sidebar:hidden",

@@ -27,7 +27,7 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("overview");
   const [evaluationModalOpen, setEvaluationModalOpen] = useState(false);
-  const [logsPage, setLogsPage] = useState(1);
+  const [logsPage] = useState(1);
   const logsPageSize = 50;
 
   const {

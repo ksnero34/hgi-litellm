@@ -2,6 +2,7 @@ import React, { PropsWithChildren } from "react";
 import { render, RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import I18nProvider from "@/i18n/I18nProvider";
+import { NuqsTestingAdapter, OnUrlUpdateFunction } from "nuqs/adapters/testing";
 
 // Create a client for testing
 export const testQueryClient = new QueryClient({
@@ -20,15 +21,21 @@ export const testQueryClient = new QueryClient({
   },
 });
 
-const Providers: React.FC<PropsWithChildren> = ({ children }) => {
-  return (
+interface ProviderOptions {
+  searchParams?: string | Record<string, string> | URLSearchParams;
+  onUrlUpdate?: OnUrlUpdateFunction;
+}
+
+export const renderWithProviders = (ui: React.ReactElement, options?: RenderOptions & ProviderOptions) => {
+  const { searchParams, onUrlUpdate, ...renderOptions } = options ?? {};
+  const Providers: React.FC<PropsWithChildren> = ({ children }) => (
     <I18nProvider>
-      <QueryClientProvider client={testQueryClient}>{children}</QueryClientProvider>
+      <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={onUrlUpdate} hasMemory>
+        <QueryClientProvider client={testQueryClient}>{children}</QueryClientProvider>
+      </NuqsTestingAdapter>
     </I18nProvider>
   );
+  return render(ui, { wrapper: Providers, ...renderOptions });
 };
-
-export const renderWithProviders = (ui: React.ReactElement, options?: RenderOptions) =>
-  render(ui, { wrapper: Providers, ...options });
 
 export * from "@testing-library/react";

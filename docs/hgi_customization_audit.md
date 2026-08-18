@@ -263,3 +263,26 @@ API schema는 v1.95 코드에서 다시 생성했다. 새로 추가된 관리자
 logs/audit, tool policy/routing, access group, memory, retry/fallback 화면도 `src/i18n` 리소스를 사용하도록
 이식했다. 실제 IdP, PostgreSQL clone, Redis 다중 worker, registry digest 검증은 이전 감사와 마찬가지로
 별도 운영 통합 검증 항목이다.
+
+## 12. v1.97.0 업스트림 통합
+
+`hgi-v1.97.0`은 upstream tag `v1.97.0`의
+`ef84494d52c6708e4e9f4a54ce551a265995ad8f`를 기준점으로 사용한다. tag commit은 upstream
+`stable/1.97.x` 및 release ref와 일치한다. upstream tag를 두 번째 parent로 하는 `--no-ff` merge에서
+1.96.2 HGI 변경을 1.97의 중앙 authorization, App Router dashboard, Prisma proxy-extras 구조에 맞춰
+재구성했다.
+
+Enterprise 배포물과 dependency는 포함하지 않았다. 공통 OAuth2/SSO entitlement 및 사용자 수 제한,
+Organizations premium gate, OSS Audit Logs premium gate는 제거된 상태를 유지하며 OAuth state/nonce,
+OIDC issuer/audience/signature, SAML assertion, RBAC 검증은 유지한다. SSO 부서 claim과 Human quota pool
+Organization/Team 동기화, 수동 협업 Team 및 서비스 키 보존, 개인 키 registry/quota/rotation/deprecated-key
+grace, spend key-hash scope, Presidio source attribution과 fail-closed 처리, policy usage, Purview, 응답시간/TTFT
+지표를 보존했다.
+
+1.97의 주요 구조 변경에 따라 IP allowlist는 새 중앙 authorization helper에 연결했고, key rotation lineage와
+active token 갱신은 같은 transaction에서 처리한다. deprecated-key mapping은 multi-worker 정합성을 위해
+매 요청 authoritative DB lookup을 유지한다. Audit Logs는 Enterprise 구현 대신 OSS repository와 allowlist,
+redaction, actor-key hashing, mandatory failure observation을 사용한다. dashboard는 `NuqsAdapter`를 수용하되
+폐쇄망 production build가 외부 Google Fonts를 요청하지 않도록 원격 font dependency를 제외한다. upstream
+Prisma migration과 lockfile은 1.97 의존성 그래프에서 다시 생성하며 generated API schema와
+`_experimental/out`은 upstream/generated 경계를 따른다.

@@ -42,9 +42,6 @@
     },
     "react-hooks/set-state-in-effect": {
       "count": 2
-    },
-    "unused-imports/no-unused-imports": {
-      "count": 1
     }
   },
   "src/app/(dashboard)/agents/_components/agent_card_discovery.tsx": {
@@ -782,6 +779,25 @@
       "count": 1
     }
   },
+  "src/app/(dashboard)/mcp-servers/_components/AwsSigV4Fields.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/app/(dashboard)/mcp-servers/_components/CreateMCPServer.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 2
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 4
+    }
+  },
   "src/app/(dashboard)/mcp-servers/_components/DcrBridgeToggle.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -859,6 +875,11 @@
       "count": 1
     }
   },
+  "src/app/(dashboard)/mcp-servers/_components/OpenApiByokFields.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
   "src/app/(dashboard)/mcp-servers/_components/PassthroughAuthorizeSection.test.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -904,23 +925,6 @@
     },
     "no-restricted-imports": {
       "count": 1
-    }
-  },
-  "src/app/(dashboard)/mcp-servers/_components/create_mcp_server.tsx": {
-    "local/filename-pascal-case": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "no-nested-ternary": {
-      "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 2
-    },
-    "react-hooks/set-state-in-effect": {
-      "count": 4
     }
   },
   "src/app/(dashboard)/mcp-servers/_components/index.tsx": {
@@ -2450,16 +2454,11 @@
       "count": 2
     },
     "react-hooks/set-state-in-effect": {
-      "count": 3
+      "count": 1
     }
   },
   "src/components/TeamsPage/teamTableColumns.tsx": {
     "local/filename-pascal-case": {
-      "count": 1
-    }
-  },
-  "src/components/ToolDetail.tsx": {
-    "unused-imports/no-unused-imports": {
       "count": 1
     }
   },
@@ -2870,6 +2869,16 @@
   "src/components/common_components/MemberTable.tsx": {
     "no-restricted-imports": {
       "count": 2
+    }
+  },
+  "src/components/common_components/MetadataKeyValueFields.test.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/components/common_components/MetadataKeyValueFields.tsx": {
+    "no-restricted-imports": {
+      "count": 1
     }
   },
   "src/components/common_components/ModelAliasManager.tsx": {
@@ -3383,7 +3392,7 @@
       "count": 2
     },
     "prefer-const": {
-      "count": 4
+      "count": 2
     },
     "react-hooks/set-state-in-effect": {
       "count": 4
@@ -4005,7 +4014,7 @@
       "count": 1
     },
     "react-hooks/set-state-in-effect": {
-      "count": 2
+      "count": 1
     }
   },
   "src/components/vector_store_management/VectorStoreSelector.test.tsx": {
@@ -4154,11 +4163,6 @@
   },
   "src/components/view_logs/LogDetailsDrawer/TruncatedValue.tsx": {
     "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/components/view_logs/LogDetailsDrawer/prettyMessagesUtils.ts": {
-    "no-nested-ternary": {
       "count": 1
     }
   },

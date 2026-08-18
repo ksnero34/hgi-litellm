@@ -158,6 +158,7 @@ export const gatewayMessages: MessageCatalog = {
   "gateway.keyEdit.numericPlaceholder": "Enter a numerical value",
   "gateway.keyEdit.resetBudget": "Reset Budget",
   "gateway.keyEdit.notApplicable": "n/a",
+  "gateway.keyEdit.neverResets": "Never resets",
   "gateway.keyEdit.daily": "Daily",
   "gateway.keyEdit.weekly": "Weekly",
   "gateway.keyEdit.monthly": "Monthly",

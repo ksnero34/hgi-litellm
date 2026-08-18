@@ -171,14 +171,14 @@ async def test_create_internal_user_audit_log_uses_changed_by_helper():
 
 
 @pytest.mark.asyncio
-async def test_create_audit_log_for_update_premium_user():
+async def test_create_audit_log_for_update_uses_oss_redaction_contract():
     """
     Basic unit test for create_audit_log_for_update
 
-    Test that the audit log is created when a premium user updates a team
+    Test that the audit log is created with the OSS allowlist and redaction contract.
     """
     with (
-        patch("litellm.proxy.proxy_server.premium_user", True),
+        patch("litellm.proxy.proxy_server.premium_user", False),
         patch("litellm.store_audit_logs", True),
         patch("litellm.proxy.proxy_server.prisma_client") as mock_prisma,
     ):
@@ -203,11 +203,12 @@ async def test_create_audit_log_for_update_premium_user():
                 "id": "test_id",
                 "updated_at": request_data.updated_at,
                 "changed_by": request_data.changed_by,
+                "changed_by_api_key": "",
                 "action": request_data.action,
                 "table_name": request_data.table_name,
                 "object_id": request_data.object_id,
-                "updated_values": request_data.updated_values,
-                "before_value": request_data.before_value,
+                "updated_values": {"success": True},
+                "before_value": {},
             }
         )
 
