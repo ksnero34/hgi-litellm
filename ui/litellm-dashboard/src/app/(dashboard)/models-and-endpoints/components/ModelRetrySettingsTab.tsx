@@ -1,7 +1,11 @@
-import { Button, Select, SelectItem, Text, Title } from "@tremor/react";
-import { InputNumber } from "antd";
+import { LoaderCircle } from "lucide-react";
 import React from "react";
 import { useTranslation } from "react-i18next";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface GlobalRetryPolicyObject {
   [retryPolicyKey: string]: number;
@@ -32,6 +36,8 @@ const retryPolicyMap: Record<string, string> = {
   "ContentPolicyViolationError (400)": "ContentPolicyViolationErrorRetries",
   "InternalServerError (500)": "InternalServerErrorRetries",
 };
+
+const isValidRetryCount = (value: number) => Number.isFinite(value) && Number.isInteger(value) && value >= 0;
 
 const ModelRetrySettingsTab = ({
   selectedModelGroup,
@@ -65,67 +71,80 @@ const ModelRetrySettingsTab = ({
     });
   };
 
+  const handleRetryCountChange = (retryPolicyKey: string, rawValue: string) => {
+    const value = rawValue === "" ? null : Number(rawValue);
+    if (value !== null && !isValidRetryCount(value)) return;
+    if (isGlobalScope) setGlobalValue(retryPolicyKey, value);
+    else setModelOverride(retryPolicyKey, value);
+  };
+
   return (
-    <div>
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center">
-          <Text>{t("toolsModels.models.retryScope")}</Text>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Label htmlFor="retry-policy-scope">{t("toolsModels.models.retryScope")}</Label>
+        <div className="w-48">
           <Select
-            className="ml-2 w-48"
             value={isGlobalScope ? "global" : selectedModelGroup || availableModelGroups[0]}
             onValueChange={(value) => setSelectedModelGroup(value)}
           >
-            <SelectItem value="global">{t("toolsModels.models.globalDefault")}</SelectItem>
-            {availableModelGroups.map((group, idx) => (
-              <SelectItem key={idx} value={group}>
-                {group}
-              </SelectItem>
-            ))}
+            <SelectTrigger id="retry-policy-scope" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="global">{t("toolsModels.models.globalDefault")}</SelectItem>
+              {availableModelGroups.map((group) => (
+                <SelectItem key={group} value={group}>
+                  {group}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
       </div>
 
       {isGlobalScope ? (
-        <>
-          <Title>{t("toolsModels.models.globalRetryPolicy")}</Title>
-          <Text className="mb-6">{t("toolsModels.models.globalRetryPolicyDescription")}</Text>
-        </>
+        <div>
+          <h2 className="text-lg font-semibold">{t("toolsModels.models.globalRetryPolicy")}</h2>
+          <p className="text-sm text-muted-foreground">{t("toolsModels.models.globalRetryPolicyDescription")}</p>
+        </div>
       ) : (
-        <>
-          <Title>{t("toolsModels.models.retryPolicyFor", { group: selectedModelGroup ?? "" })}</Title>
-          <Text className="mb-6">{t("toolsModels.models.retryPolicyForDescription")}</Text>
-        </>
+        <div>
+          <h2 className="text-lg font-semibold">
+            {t("toolsModels.models.retryPolicyFor", { group: selectedModelGroup ?? "" })}
+          </h2>
+          <p className="text-sm text-muted-foreground">{t("toolsModels.models.retryPolicyForDescription")}</p>
+        </div>
       )}
-      <table>
+      <table className="w-full">
         <tbody>
-          {Object.entries(retryPolicyMap).map(([exceptionType, retryPolicyKey], idx) => {
+          {Object.entries(retryPolicyMap).map(([exceptionType, retryPolicyKey]) => {
             const inheritedValue = globalRetryPolicy?.[retryPolicyKey] ?? defaultRetry;
             const override = isGlobalScope ? undefined : modelGroupRetryPolicy?.[selectedModelGroup!]?.[retryPolicyKey];
             const hasOverride = override != null;
 
             return (
-              <tr key={idx} className="flex justify-between items-center mt-2">
-                <td>
-                  <Text>{exceptionType}</Text>
+              <tr key={retryPolicyKey} className="flex items-center justify-between gap-4 border-b py-2 last:border-0">
+                <td className="text-sm">
+                  <span>{exceptionType}</span>
                   {!isGlobalScope && (
-                    <Text className="text-xs text-gray-500 ml-2">
+                    <span className="ml-2 text-xs text-muted-foreground">
                       {t("toolsModels.models.globalInheritedValue", { value: inheritedValue })}
-                    </Text>
+                    </span>
                   )}
                 </td>
                 <td className="flex items-center gap-2">
-                  <InputNumber
-                    className="ml-5"
-                    value={isGlobalScope ? inheritedValue : hasOverride ? override : null}
-                    placeholder={isGlobalScope ? undefined : String(inheritedValue)}
+                  <Input
+                    className="w-28"
+                    type="number"
+                    aria-label={`${exceptionType} retry count`}
                     min={0}
                     step={1}
-                    onChange={(value) =>
-                      isGlobalScope ? setGlobalValue(retryPolicyKey, value) : setModelOverride(retryPolicyKey, value)
-                    }
+                    value={isGlobalScope ? inheritedValue : hasOverride ? override : ""}
+                    placeholder={isGlobalScope ? undefined : String(inheritedValue)}
+                    onChange={(event) => handleRetryCountChange(retryPolicyKey, event.currentTarget.value)}
                   />
                   {!isGlobalScope && hasOverride && (
-                    <Button variant="light" size="xs" onClick={() => setModelOverride(retryPolicyKey, null)}>
+                    <Button variant="ghost" size="xs" onClick={() => setModelOverride(retryPolicyKey, null)}>
                       {t("toolsModels.common.reset")}
                     </Button>
                   )}
@@ -135,7 +154,8 @@ const ModelRetrySettingsTab = ({
           })}
         </tbody>
       </table>
-      <Button className="mt-6 mr-8" onClick={handleSaveRetrySettings} loading={isSaving} disabled={isSaving}>
+      <Button onClick={handleSaveRetrySettings} disabled={isSaving}>
+        {isSaving && <LoaderCircle className="animate-spin" />}
         {t("toolsModels.common.save")}
       </Button>
     </div>

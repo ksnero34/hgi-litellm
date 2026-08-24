@@ -1,9 +1,11 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Typography, Select, Modal, Space, Button, Input } from "antd";
-
-const { Text } = Typography;
-const { Option } = Select;
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ACTION_ITEMS } from "./action_options";
+import { ABOVE_ANTD_MODAL } from "./dialog_layering";
 
 interface CustomPatternModalProps {
   visible: boolean;
@@ -29,57 +31,69 @@ const CustomPatternModal: React.FC<CustomPatternModalProps> = ({
   onCancel,
 }) => {
   const { t } = useTranslation();
+  const actionItems = ACTION_ITEMS.map((item) => ({
+    ...item,
+    label: t(item.value === "BLOCK" ? "safety.contentFilter.block" : "safety.contentFilter.mask"),
+  }));
   return (
-    <Modal
-      title={t("safety.contentFilter.addCustomTitle")}
-      open={visible}
-      onCancel={onCancel}
-      footer={null}
-      width={800}
-    >
-      <Space direction="vertical" style={{ width: "100%" }} size="large">
-        <div>
-          <Text strong>{t("safety.contentFilter.patternName")}</Text>
-          <Input
-            placeholder={t("safety.contentFilter.patternNamePlaceholder")}
-            value={patternName}
-            onChange={(e) => onNameChange(e.target.value)}
-            style={{ marginTop: 8 }}
-          />
+    <Dialog open={visible} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className={`max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[800px] ${ABOVE_ANTD_MODAL}`}>
+        <DialogHeader>
+          <DialogTitle>{t("safety.contentFilter.addCustomTitle")}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          <div>
+            <p className="font-semibold">{t("safety.contentFilter.patternName")}</p>
+            <Input
+              className="mt-2"
+              placeholder={t("safety.contentFilter.patternNamePlaceholder")}
+              value={patternName}
+              onChange={(e) => onNameChange(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <p className="font-semibold">{t("safety.contentFilter.regexPattern")}</p>
+            <Input
+              className="mt-2"
+              placeholder={t("safety.contentFilter.regexPlaceholder")}
+              value={patternRegex}
+              onChange={(e) => onRegexChange(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{t("safety.contentFilter.regexHelp")}</p>
+          </div>
+
+          <div>
+            <p className="font-semibold">{t("safety.contentFilter.action")}</p>
+            <p className="mt-1 mb-2 text-muted-foreground">{t("safety.contentFilter.patternActionHelp")}</p>
+            <Select
+              items={actionItems}
+              value={patternAction}
+              onValueChange={(value: string | null) => value && onActionChange(value as "BLOCK" | "MASK")}
+            >
+              <SelectTrigger className="w-full" aria-label={t("safety.contentFilter.action")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                {actionItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div>
-          <Text strong>{t("safety.contentFilter.regexPattern")}</Text>
-          <Input
-            placeholder={t("safety.contentFilter.regexPlaceholder")}
-            value={patternRegex}
-            onChange={(e) => onRegexChange(e.target.value)}
-            style={{ marginTop: 8 }}
-          />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t("safety.contentFilter.regexHelp")}
-          </Text>
-        </div>
-
-        <div>
-          <Text strong>{t("safety.contentFilter.action")}</Text>
-          <Text type="secondary" style={{ display: "block", marginTop: 4, marginBottom: 8 }}>
-            {t("safety.contentFilter.patternActionHelp")}
-          </Text>
-          <Select value={patternAction} onChange={onActionChange} style={{ width: "100%" }}>
-            <Option value="BLOCK">{t("safety.contentFilter.block")}</Option>
-            <Option value="MASK">{t("safety.contentFilter.mask")}</Option>
-          </Select>
-        </div>
-      </Space>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "24px" }}>
-        <Button onClick={onCancel}>{t("safety.contentFilter.cancel")}</Button>
-        <Button type="primary" onClick={onAdd}>
-          {t("safety.contentFilter.add")}
-        </Button>
-      </div>
-    </Modal>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            {t("safety.contentFilter.cancel")}
+          </Button>
+          <Button onClick={onAdd}>{t("safety.contentFilter.add")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 

@@ -101,8 +101,10 @@ describe("AllModelsTable", () => {
     expect(screen.queryByText("DB Model")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /columns/i }));
-    await user.click(await screen.findByRole("menuitemcheckbox", { name: /status/i }));
+    expect(screen.queryByRole("menuitemcheckbox", { name: /source/i })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /^status$/i }));
 
+    expect(await screen.findByRole("columnheader", { name: /^status$/i })).toBeInTheDocument();
     expect(await screen.findByText("DB Model")).toBeInTheDocument();
   });
 

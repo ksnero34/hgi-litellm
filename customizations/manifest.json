@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_ref": "ef84494d52c6708e4e9f4a54ce551a265995ad8f",
+  "base_ref": "d8f71d7bdbd7c9873d98293f83d64c6db72847e6",
   "generated_paths": [
     "litellm/proxy/_experimental/out",
     "ui/litellm-dashboard/src/lib/http/schema.d.ts"
@@ -140,6 +140,7 @@
         "ui/litellm-dashboard/src/components/team/AvailableTeamsTableColumns.tsx",
         "ui/litellm-dashboard/src/components/team/available_teams.test.tsx",
         "ui/litellm-dashboard/src/components/team/available_teams.tsx",
+        "ui/litellm-dashboard/src/components/templates/KeyEditModelAccessFields.tsx",
         "ui/litellm-dashboard/src/components/templates/key_edit_view.test.tsx",
         "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
         "ui/litellm-dashboard/src/components/templates/key_info_view.tsx"
@@ -211,6 +212,7 @@
         "litellm/llms/openai/chat/guardrail_translation/handler.py",
         "litellm/llms/openai/responses/guardrail_translation/handler.py",
         "litellm/proxy/common_request_processing.py",
+        "litellm/proxy/guardrails/init_guardrails.py",
         "litellm/proxy/guardrails/guardrail_hooks/presidio.py",
         "litellm/proxy/guardrails/guardrail_initializers.py",
         "litellm/proxy/hooks/proxy_track_cost_callback.py",
@@ -370,6 +372,7 @@
         "litellm-proxy-extras/litellm_proxy_extras/migrations/20260723120000_add_spend_log_policy_index/",
         "litellm-proxy-extras/litellm_proxy_extras/migrations/20260724000000_repair_daily_performance_metrics/",
         "litellm-proxy-extras/litellm_proxy_extras/schema.prisma",
+        "litellm/proxy/db/daily_spend_bulk_upsert.py",
         "litellm/proxy/db/db_spend_update_writer.py",
         "litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py",
         "litellm/proxy/guardrails/usage_endpoints.py",
@@ -467,14 +470,18 @@
       "name": "maintenance-tooling",
       "commit": "chore(hgi): add upstream synchronization tooling",
       "paths": [
+        ".gitattributes",
         "Makefile",
         "basedpyright-code-budget.json",
         "customizations/README.md",
         "customizations/manifest.json",
         "customizations/runbooks/",
         "docs/hgi_customization_audit.md",
+        "litellm/main.py",
         "ruff-strict-budget.json",
         "scripts/hgi/",
+        "tests/local_testing/test_dynamic_rate_limit_handler.py",
+        "tests/test_litellm/test_logging.py",
         "tests/hgi/",
         "type-discipline-budget.json"
       ],

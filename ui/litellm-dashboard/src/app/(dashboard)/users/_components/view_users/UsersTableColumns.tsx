@@ -176,7 +176,7 @@ export const getUsersTableColumns = ({
       ),
       size: 130,
       enableSorting: true,
-      cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={4} />,
+      cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={2} />,
     },
     {
       id: "max_budget",

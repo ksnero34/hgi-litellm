@@ -1,9 +1,13 @@
-import { ArrowLeftOutlined, SafetyOutlined, SettingOutlined, WarningOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Col, Row, Spin, Tabs } from "antd";
+import { ArrowLeft, Settings, Shield, TriangleAlert } from "lucide-react";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getGuardrailsUsageDetail, getGuardrailsUsageLogs } from "@/components/networking";
+import { StatusBadge, type StatusTone } from "@/components/shared/table_cells/status_badge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { EvaluationSettingsModal } from "./EvaluationSettingsModal";
 import { LogViewer } from "@/components/GuardrailsMonitor/LogViewer";
 import { MetricCard } from "@/components/GuardrailsMonitor/MetricCard";
@@ -17,10 +21,10 @@ interface GuardrailDetailProps {
   endDate: string;
 }
 
-const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-  healthy: { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
-  warning: { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
-  critical: { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
+const STATUS_TONE: Record<string, StatusTone> = {
+  healthy: "success",
+  warning: "warning",
+  critical: "error",
 };
 
 export function GuardrailDetail({ guardrailId, onBack, accessToken = null, startDate, endDate }: GuardrailDetailProps) {
@@ -63,11 +67,6 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
       input_snippet: l.input_snippet as string | undefined,
       output_snippet: l.output_snippet as string | undefined,
       reason: l.reason as string | undefined,
-      api_key: l.api_key as string | undefined,
-      key_alias: l.key_alias as string | undefined,
-      team_id: l.team_id as string | undefined,
-      team_alias: l.team_alias as string | undefined,
-      guardrail_information: l.guardrail_information as Record<string, unknown>[] | undefined,
     }));
   }, [logsData?.logs]);
 
@@ -79,7 +78,6 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
         provider: detailData.provider,
         type: detailData.type,
         requestsEvaluated: detailData.requestsEvaluated,
-        flaggedCount: detailData.flaggedCount,
         failRate: detailData.failRate,
         avgScore: detailData.avgScore,
         avgLatency: detailData.avgLatency,
@@ -91,147 +89,123 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
         provider: "—",
         type: "—",
         requestsEvaluated: 0,
-        flaggedCount: 0,
         failRate: 0,
         avgScore: undefined as number | undefined,
         avgLatency: undefined as number | undefined,
       };
-  const statusStyle = statusColors[data.status] ?? statusColors.healthy;
 
   if (detailLoading && !detailData) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Spin size="large" />
+      <div role="status" aria-busy="true" aria-label="Loading" className="flex items-center justify-center py-12">
+        <UiLoadingSpinner className="size-8 text-primary" />
       </div>
     );
   }
   if (detailError && !detailData) {
     return (
       <div>
-        <Button type="link" icon={<ArrowLeftOutlined />} onClick={onBack} className="pl-0 mb-4">
+        <Button variant="link" onClick={onBack} className="mb-4 pl-0">
+          <ArrowLeft className="size-4" />
           Back to Overview
         </Button>
-        <p className="text-red-600">{t("observabilityExtra.guardrails.failedLoad")}</p>
+        <p className="text-destructive">{t("observabilityExtra.guardrails.failedLoad")}</p>
       </div>
     );
   }
 
+  const logViewer = (filterAction?: "all") => (
+    <LogViewer
+      guardrailName={data.name}
+      filterAction={filterAction}
+      logs={logs}
+      logsLoading={logsLoading}
+      totalLogs={logsData?.total ?? 0}
+      accessToken={accessToken}
+      startDate={startDate}
+      endDate={endDate}
+    />
+  );
+
   return (
     <div>
       <div className="mb-6">
-        <Button type="link" icon={<ArrowLeftOutlined />} onClick={onBack} className="pl-0 mb-4">
+        <Button variant="link" onClick={onBack} className="mb-4 pl-0">
+          <ArrowLeft className="size-4" />
           Back to Overview
         </Button>
 
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <SafetyOutlined className="text-xl text-gray-400" />
-              <h1 className="text-xl font-semibold text-gray-900">{data.name}</h1>
-              <span
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full ${statusStyle.bg} ${statusStyle.text}`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                {data.status.charAt(0).toUpperCase() + data.status.slice(1)}
-              </span>
+            <div className="mb-1 flex items-center gap-3">
+              <Shield className="size-5 text-muted-foreground" />
+              <h1 className="text-xl font-semibold text-foreground">{data.name}</h1>
+              <StatusBadge
+                tone={STATUS_TONE[data.status] ?? "success"}
+                label={data.status.charAt(0).toUpperCase() + data.status.slice(1)}
+              />
             </div>
-            <p className="text-sm text-gray-500 ml-8">{data.description}</p>
+            <p className="ml-8 text-sm text-muted-foreground">{data.description}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {data.provider}
-            </span>
+            <Badge variant="outline">{data.provider}</Badge>
             <Button
-              type="default"
-              icon={<SettingOutlined />}
+              variant="outline"
+              size="icon"
               onClick={() => setEvaluationModalOpen(true)}
               title={t("observabilityExtra.guardrails.evaluationSettings")}
-            />
+            >
+              <Settings className="size-4" />
+            </Button>
           </div>
         </div>
       </div>
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          { key: "overview", label: t("observabilityExtra.guardrails.overview") },
-          { key: "logs", label: t("observabilityExtra.guardrails.logs") },
-        ]}
-      />
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as string)}>
+        <TabsList variant="line">
+          <TabsTrigger value="overview" className="flex-none">
+            {t("observabilityExtra.guardrails.overview")}
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex-none">
+            {t("observabilityExtra.guardrails.logs")}
+          </TabsTrigger>
+        </TabsList>
 
-      {activeTab === "overview" && (
-        <div className="space-y-6 mt-4">
-          <Row gutter={[16, 16]}>
-            <Col xs={12} md={6}>
-              <MetricCard
-                label={t("observabilityExtra.guardrails.requestsEvaluated")}
-                value={data.requestsEvaluated.toLocaleString()}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <MetricCard
-                label={t("observabilityExtra.guardrails.auditDetections")}
-                value={data.flaggedCount.toLocaleString()}
-                valueColor={data.flaggedCount > 0 ? "text-amber-600" : "text-green-600"}
-                subtitle={t("observabilityExtra.guardrails.auditDetectionsHint")}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <MetricCard
-                label={t("observabilityExtra.guardrails.failRate")}
-                value={`${data.failRate}%`}
-                valueColor={
-                  data.failRate > 15 ? "text-red-600" : data.failRate > 5 ? "text-amber-600" : "text-green-600"
-                }
-                subtitle={`${Math.round((data.requestsEvaluated * data.failRate) / 100).toLocaleString()} blocked`}
-                icon={data.failRate > 15 ? <WarningOutlined className="text-red-400" /> : undefined}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <MetricCard
-                label={t("observabilityExtra.guardrails.avgLatency")}
-                value={data.avgLatency != null ? `${Math.round(data.avgLatency)}ms` : "—"}
-                valueColor={
-                  data.avgLatency != null
-                    ? data.avgLatency > 150
-                      ? "text-red-600"
-                      : data.avgLatency > 50
-                        ? "text-amber-600"
-                        : "text-green-600"
-                    : "text-gray-500"
-                }
-                subtitle={data.avgLatency != null ? "Per request (avg)" : t("observabilityExtra.guardrails.noData")}
-              />
-            </Col>
-          </Row>
+        <TabsContent value="overview" className="mt-4 space-y-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            <MetricCard
+              label={t("observabilityExtra.guardrails.requestsEvaluated")}
+              value={data.requestsEvaluated.toLocaleString()}
+            />
+            <MetricCard
+              label={t("observabilityExtra.guardrails.failRate")}
+              value={`${data.failRate}%`}
+              valueColor={data.failRate > 15 ? "text-red-600" : data.failRate > 5 ? "text-amber-600" : "text-green-600"}
+              subtitle={`${Math.round((data.requestsEvaluated * data.failRate) / 100).toLocaleString()} blocked`}
+              icon={data.failRate > 15 ? <TriangleAlert className="size-4 text-red-400" /> : undefined}
+            />
+            <MetricCard
+              label={t("observabilityExtra.guardrails.avgLatency")}
+              value={data.avgLatency != null ? `${Math.round(data.avgLatency)}ms` : "—"}
+              valueColor={
+                data.avgLatency != null
+                  ? data.avgLatency > 150
+                    ? "text-red-600"
+                    : data.avgLatency > 50
+                      ? "text-amber-600"
+                      : "text-green-600"
+                  : "text-muted-foreground"
+              }
+              subtitle={data.avgLatency != null ? "Per request (avg)" : t("observabilityExtra.guardrails.noData")}
+            />
+          </div>
 
-          <LogViewer
-            guardrailName={data.name}
-            filterAction="all"
-            logs={logs}
-            logsLoading={logsLoading}
-            totalLogs={logsData?.total ?? 0}
-            accessToken={accessToken}
-            startDate={startDate}
-            endDate={endDate}
-          />
-        </div>
-      )}
+          {logViewer("all")}
+        </TabsContent>
 
-      {activeTab === "logs" && (
-        <div className="mt-4">
-          <LogViewer
-            guardrailName={data.name}
-            logs={logs}
-            logsLoading={logsLoading}
-            totalLogs={logsData?.total ?? 0}
-            accessToken={accessToken}
-            startDate={startDate}
-            endDate={endDate}
-          />
-        </div>
-      )}
+        <TabsContent value="logs" className="mt-4">
+          {logViewer()}
+        </TabsContent>
+      </Tabs>
 
       <EvaluationSettingsModal
         open={evaluationModalOpen}

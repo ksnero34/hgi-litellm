@@ -9,8 +9,32 @@ export const settingsExtraMessages: MessageCatalog = {
   "settingsExtra.logging.retentionDescription":
     "지출 로그의 최대 보존 기간을 설정합니다(예: 7일은 '7d', 30일은 '30d'). 제한하지 않으려면 비워 두세요.",
   "settingsExtra.logging.retentionPlaceholder": "예: 7d, 30d",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.label": "최대 지출 로그 보존 기간(선택 사항)",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.description":
+    "지출 로그의 최대 보존 기간을 설정합니다(예: 7일은 '7d', 30일은 '30d'). 제한하지 않으려면 비워 두세요.",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.placeholder": "예: 7d, 30d",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.label": "지출 로그 정리 배치 크기(선택 사항)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.description":
+    "정리 중 DELETE 문 하나로 삭제할 행 수입니다. 기본값 1000을 사용하려면 비워 두세요.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.placeholder": "예: 1000",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.label":
+    "지출 로그 정리 최대 배치 수(선택 사항)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.description":
+    "한 번의 정리 작업에서 테이블별로 실행할 DELETE 문의 최대 개수입니다. 기본값 500을 사용하려면 비워 두세요.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.placeholder": "예: 500",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.label":
+    "지출 로그 정리 실행 시간 예산(선택 사항)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.description":
+    "모든 대상 테이블이 공유하는 전체 정리 작업의 실행 시간 예산입니다(예: '5m'). 기본값 5m을 사용하려면 비워 두세요.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.placeholder": "예: 5m",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.label":
+    "지출 로그 정리 배치 제한 시간(선택 사항)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.description":
+    "각 정리 배치에 적용할 PostgreSQL statement 및 lock timeout입니다(예: '30s'). 기본값 30s를 사용하려면 비워 두세요.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.placeholder": "예: 30s",
   "settingsExtra.logging.updated": "지출 로그 설정을 업데이트했습니다",
   "settingsExtra.logging.saveFailed": "지출 로그 설정을 저장하지 못했습니다: {{message}}",
+  "settingsExtra.logging.clearFailed": "저장된 값을 초기화하지 못했습니다: {{fields}}",
   "settingsExtra.common.saving": "저장 중...",
   "settingsExtra.common.saveSettings": "설정 저장",
   "settingsExtra.common.actions": "작업",
@@ -74,6 +98,7 @@ export const settingsExtraMessages: MessageCatalog = {
   "settingsExtra.fallbacks.modelName": "모델 이름",
   "settingsExtra.fallbacks.fallbacks": "Fallback",
   "settingsExtra.fallbacks.test": "Fallback 테스트",
+  "settingsExtra.fallbacks.edit": "Fallback 편집",
   "settingsExtra.fallbacks.delete": "Fallback 삭제",
   "settingsExtra.fallbacks.deleteTitle": "Fallback을 삭제할까요?",
   "settingsExtra.fallbacks.deleteConfirm": "이 Fallback을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",

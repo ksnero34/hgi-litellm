@@ -7,7 +7,7 @@ Canonical definition for ``litellm_verificationtoken``. Re-exported from
 
 from datetime import datetime
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.types.llms.base import LiteLLMPydanticObjectBase
@@ -35,7 +35,7 @@ class LiteLLM_VerificationToken(LiteLLMPydanticObjectBase):
     budget_reset_at: datetime | None = None
     allowed_cache_controls: list | None = []
     allowed_routes: list | None = []
-    allowed_ip_ranges: list[str] = []
+    allowed_ip_ranges: list[str] = Field(default_factory=list)
     key_type: str | None = None
     permissions: dict = {}
     model_spend: dict = {}
@@ -50,6 +50,7 @@ class LiteLLM_VerificationToken(LiteLLMPydanticObjectBase):
     created_by: str | None = None
     updated_at: datetime | None = None
     updated_by: str | None = None
+    settings_updated_at: datetime | None = None
     last_active: datetime | None = None
     object_permission_id: str | None = None
     object_permission: LiteLLM_ObjectPermissionTable | None = None

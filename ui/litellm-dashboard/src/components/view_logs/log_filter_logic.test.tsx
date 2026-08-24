@@ -23,6 +23,8 @@ vi.mock("../networking", () => ({
 }));
 
 import { uiSpendLogsCall } from "../networking";
+import * as filterHelpers from "../key_team_helpers/filter_helpers";
+import type { Team } from "../key_team_helpers/key_list";
 
 const emptyResponse: PaginatedResponse = {
   data: [],
@@ -56,11 +58,13 @@ const lastCallParams = () => vi.mocked(uiSpendLogsCall).mock.calls.at(-1)?.[0];
 
 describe("useLogFilterLogic", () => {
   let queryClient: QueryClient;
+  let fetchAllTeamsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     vi.clearAllMocks();
     vi.mocked(uiSpendLogsCall).mockResolvedValue(emptyResponse);
+    fetchAllTeamsSpy = vi.spyOn(filterHelpers, "fetchAllTeams").mockResolvedValue([]);
   });
 
   const wrapper = ({ children }: { children: ReactNode }) =>
@@ -214,6 +218,39 @@ describe("useLogFilterLogic", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(uiSpendLogsCall).not.toHaveBeenCalled();
     });
+  });
+
+  describe("team filter list scope", () => {
+    const callerTeams = [{ team_id: "team-a" }, { team_id: "team-b" }] as Team[];
+
+    it("scopes /team/list to an internal user and still surfaces their teams", async () => {
+      fetchAllTeamsSpy.mockResolvedValue(callerTeams);
+
+      const { result } = renderFilterHook({ userRole: "Internal User", userID: "member-7" });
+
+      await waitFor(() => expect(fetchAllTeamsSpy).toHaveBeenCalled());
+      expect(fetchAllTeamsSpy).toHaveBeenCalledWith("test-token", null, "member-7");
+      await waitFor(() => expect(result.current.allTeams).toEqual(callerTeams));
+    });
+
+    it("scopes /team/list for an internal viewer", async () => {
+      fetchAllTeamsSpy.mockResolvedValue(callerTeams);
+
+      renderFilterHook({ userRole: "Internal Viewer", userID: "member-7" });
+
+      await waitFor(() => expect(fetchAllTeamsSpy).toHaveBeenCalledWith("test-token", null, "member-7"));
+    });
+
+    it.each(["Admin", "Admin Viewer", "Org Admin"])(
+      "leaves /team/list unscoped for %s so the broad list survives",
+      async (userRole) => {
+        fetchAllTeamsSpy.mockResolvedValue(callerTeams);
+
+        renderFilterHook({ userRole, userID: "member-7" });
+
+        await waitFor(() => expect(fetchAllTeamsSpy).toHaveBeenCalledWith("test-token", null, null));
+      },
+    );
   });
 
   it("returns an empty payload and does not crash when the call fails", async () => {

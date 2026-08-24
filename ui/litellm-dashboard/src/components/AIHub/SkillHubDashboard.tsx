@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SearchOutlined } from "@ant-design/icons";
 import { SortingState } from "@tanstack/react-table";
-import { Input, Select } from "antd";
-import { Inbox } from "lucide-react";
+import { Inbox, Search, X } from "lucide-react";
 import { Plugin } from "@/components/claude_code_plugins/types";
 import { DataTable } from "@/components/shared/DataTable";
 import { getSkillHubTableColumns } from "@/components/AIHub/SkillHubTableColumns";
 import SkillDetail from "@/components/claude_code_plugins/skill_detail";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const ALL_DOMAINS = "__all_domains__";
 
 interface SkillHubDashboardProps {
   skills: Plugin[];
@@ -19,16 +21,18 @@ interface SkillHubDashboardProps {
 }
 
 function SkillsEmptyState({ filtered }: { filtered: boolean }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-col items-center gap-1 py-6">
       <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-muted">
         <Inbox className="size-5 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">{filtered ? "No matching skills" : "No skills yet"}</div>
+      <div className="text-sm font-medium text-foreground">
+        {t(filtered ? "hubSkills.dashboard.empty.filteredTitle" : "hubSkills.dashboard.empty.title")}
+      </div>
       <div className="text-sm text-muted-foreground">
-        {filtered
-          ? "Adjust the search or domain filter to see more skills."
-          : "Skills added here will appear for developers."}
+        {t(filtered ? "hubSkills.dashboard.empty.filteredDescription" : "hubSkills.dashboard.empty.description")}
       </div>
     </div>
   );
@@ -50,7 +54,10 @@ const SkillHubDashboard: React.FC<SkillHubDashboardProps> = ({
 
   // Derived stats
   const totalSkills = skills.length;
-  const domains = useMemo(() => [...new Set(skills.map((s) => s.domain).filter(Boolean))], [skills]);
+  const domains = useMemo(
+    () => [...new Set(skills.map((s) => s.domain).filter((domain): domain is string => Boolean(domain)))],
+    [skills],
+  );
   const namespaces = useMemo(() => [...new Set(skills.map((s) => s.namespace).filter(Boolean))], [skills]);
 
   // Filtered table data
@@ -74,6 +81,14 @@ const SkillHubDashboard: React.FC<SkillHubDashboardProps> = ({
   }, [skills, search, domainFilter]);
 
   const columns = useMemo(() => getSkillHubTableColumns({ onSkillClick: setSelectedSkill }), []);
+
+  const domainItems = useMemo(
+    () => [
+      { value: ALL_DOMAINS, label: t("hubSkills.dashboard.allDomains") },
+      ...domains.map((d) => ({ value: d, label: d })),
+    ],
+    [domains, t],
+  );
 
   const hasActiveFilter = search.trim().length > 0 || domainFilter != null;
 
@@ -115,21 +130,43 @@ const SkillHubDashboard: React.FC<SkillHubDashboardProps> = ({
           </h3>
           <div className="flex items-center gap-2">
             <Select
-              placeholder={t("hubSkills.dashboard.allDomains")}
-              allowClear
-              value={domainFilter}
-              onChange={(val) => setDomainFilter(val)}
-              style={{ width: 160 }}
-              options={domains.map((d) => ({ label: d, value: d }))}
-            />
-            <Input
-              prefix={<SearchOutlined className="text-gray-400" />}
-              placeholder={t("hubSkills.dashboard.searchPlaceholder")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 280 }}
-              allowClear
-            />
+              items={domainItems}
+              value={domainFilter ?? ALL_DOMAINS}
+              onValueChange={(val) => setDomainFilter(val === null || val === ALL_DOMAINS ? undefined : val)}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {domainItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <InputGroup className="w-[280px]">
+              <InputGroupAddon>
+                <Search className="size-4 text-muted-foreground" />
+              </InputGroupAddon>
+              <InputGroupInput
+                placeholder={t("hubSkills.dashboard.searchPlaceholder")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search !== "" && (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={t("hubSkills.dashboard.clearSearch")}
+                    onClick={() => setSearch("")}
+                  >
+                    <X className="size-3.5" />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
           </div>
         </div>
         <DataTable
@@ -140,7 +177,7 @@ const SkillHubDashboard: React.FC<SkillHubDashboardProps> = ({
           sorting={sorting}
           onSortingChange={setSorting}
           isLoading={isLoading}
-          loadingMessage="Loading skills…"
+          loadingMessage={t("hubSkills.dashboard.loading")}
           noDataMessage={<SkillsEmptyState filtered={hasActiveFilter} />}
           size="compact"
         />

@@ -57,6 +57,8 @@ export const identityMessages: MessageCatalog = {
   "identity.accessGroups.modal.createTitle": "Create Access Group",
   "identity.accessGroups.modal.createConfirm": "Create Group",
   "identity.accessGroups.modal.createSuccess": "Access group created successfully",
+  "identity.accessGroups.modal.createFailed": "Failed to create access group",
+  "identity.accessGroups.modal.creating": "Creating...",
   "identity.accessGroups.modal.editTitle": "Edit Access Group",
   "identity.accessGroups.modal.editSuccess": "Access group updated successfully",
 };

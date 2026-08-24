@@ -1,10 +1,12 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Typography, Select, Table, Tag, Button } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
-
-const { Text } = Typography;
-const { Option } = Select;
+import { Trash2 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/shared/DataTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ACTION_ITEMS, SEVERITY_ITEMS } from "./action_options";
 
 interface ContentCategory {
   id: string;
@@ -30,70 +32,84 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
   readOnly = false,
 }) => {
   const { t } = useTranslation();
-  const columns = [
+  const actionItems = ACTION_ITEMS.map((item) => ({
+    ...item,
+    label: t(item.value === "BLOCK" ? "safety.contentFilter.block" : "safety.contentFilter.mask"),
+  }));
+  const severityItems = SEVERITY_ITEMS.map((item) => ({
+    ...item,
+    label: t(`safety.contentFilter.${item.value}`),
+  }));
+  const columns: ColumnDef<ContentCategory>[] = [
     {
-      title: t("safety.contentFilter.category"),
-      dataIndex: "display_name",
-      key: "display_name",
-      render: (displayName: string, record: ContentCategory) => (
-        <div>
-          <Text strong>{displayName}</Text>
-          {displayName !== record.category && (
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {record.category}
-              </Text>
-            </div>
-          )}
-        </div>
-      ),
+      header: t("safety.contentFilter.category"),
+      accessorKey: "display_name",
+      cell: ({ row }) => {
+        const { category, display_name: displayName } = row.original;
+        return (
+          <div>
+            <span className="font-semibold">{displayName}</span>
+            {displayName !== category && <div className="text-xs text-muted-foreground">{category}</div>}
+          </div>
+        );
+      },
     },
     {
-      title: t("safety.contentFilter.severityThreshold"),
-      dataIndex: "severity_threshold",
-      key: "severity_threshold",
-      width: 180,
-      render: (severity: string, record: ContentCategory) => {
+      header: t("safety.contentFilter.severityThreshold"),
+      accessorKey: "severity_threshold",
+      size: 180,
+      cell: ({ row }) => {
+        const { id, severity_threshold: severity } = row.original;
         if (readOnly) {
-          const colorMap = {
-            high: "red",
-            medium: "orange",
-            low: "yellow",
-          } as const;
-          return <Tag color={colorMap[severity as keyof typeof colorMap]}>{severity.toUpperCase()}</Tag>;
+          return <Badge variant={severity === "high" ? "destructive" : "secondary"}>{severity.toUpperCase()}</Badge>;
         }
         return (
           <Select
+            items={severityItems}
             value={severity}
-            onChange={(value) => onSeverityChange?.(record.id, value as "high" | "medium" | "low")}
-            style={{ width: 150 }}
-            size="small"
+            onValueChange={(value: string | null) =>
+              value && onSeverityChange?.(id, value as "high" | "medium" | "low")
+            }
           >
-            <Option value="high">{t("safety.contentFilter.high")}</Option>
-            <Option value="medium">{t("safety.contentFilter.medium")}</Option>
-            <Option value="low">{t("safety.contentFilter.low")}</Option>
+            <SelectTrigger size="sm" className="w-[150px]" aria-label={t("safety.contentFilter.severityThreshold")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              {severityItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         );
       },
     },
     {
-      title: t("safety.contentFilter.action"),
-      dataIndex: "action",
-      key: "action",
-      width: 150,
-      render: (action: string, record: ContentCategory) => {
+      header: t("safety.contentFilter.action"),
+      accessorKey: "action",
+      size: 150,
+      cell: ({ row }) => {
+        const { action, id } = row.original;
         if (readOnly) {
-          return <Tag color={action === "BLOCK" ? "red" : "blue"}>{action}</Tag>;
+          return <Badge variant={action === "BLOCK" ? "destructive" : "secondary"}>{action}</Badge>;
         }
         return (
           <Select
+            items={actionItems}
             value={action}
-            onChange={(value) => onActionChange?.(record.id, value as "BLOCK" | "MASK")}
-            style={{ width: 120 }}
-            size="small"
+            onValueChange={(value: string | null) => value && onActionChange?.(id, value as "BLOCK" | "MASK")}
           >
-            <Option value="BLOCK">{t("safety.contentFilter.block")}</Option>
-            <Option value="MASK">{t("safety.contentFilter.mask")}</Option>
+            <SelectTrigger size="sm" className="w-[120px]" aria-label={t("safety.contentFilter.action")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              {actionItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         );
       },
@@ -102,26 +118,23 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
 
   if (!readOnly) {
     columns.push({
-      title: "",
-      key: "actions",
-      width: 100,
-      render: (_: any, record: ContentCategory) => (
-        <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => onRemove?.(record.id)}>
+      header: "",
+      id: "actions",
+      size: 100,
+      cell: ({ row }) => (
+        <Button variant="ghost" size="sm" onClick={() => onRemove?.(row.original.id)}>
+          <Trash2 />
           {t("safety.contentFilter.delete")}
         </Button>
       ),
-    } as any);
+    });
   }
 
   if (categories.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 0", color: "#999" }}>
-        {t("safety.contentFilter.noCategories")}
-      </div>
-    );
+    return <div className="py-10 text-center text-muted-foreground">{t("safety.contentFilter.noCategories")}</div>;
   }
 
-  return <Table dataSource={categories} columns={columns} rowKey="id" pagination={false} size="small" />;
+  return <DataTable data={categories} columns={columns} getRowId={(row) => row.id} size="compact" />;
 };
 
 export default CategoryTable;

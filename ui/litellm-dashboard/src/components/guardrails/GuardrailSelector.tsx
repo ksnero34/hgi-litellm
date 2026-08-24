@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Select } from "antd";
 import { useTranslation } from "react-i18next";
 import { Guardrail } from "./types";
 import { getGuardrailsList } from "../networking";
+import { MultiSelect } from "@/components/shared/MultiSelect";
 
 interface GuardrailSelectorProps {
   onChange: (selectedGuardrails: string[]) => void;
@@ -42,27 +42,23 @@ const GuardrailSelector: React.FC<GuardrailSelectorProps> = ({ onChange, value, 
   };
 
   return (
-    <div>
-      <Select
-        mode="multiple"
+    <div className="min-w-0">
+      <MultiSelect
         disabled={disabled}
         placeholder={
           disabled ? t("gateway.guardrailSelector.disabledPlaceholder") : t("gateway.guardrailSelector.placeholder")
         }
-        onChange={handleGuardrailChange}
+        onValueChange={handleGuardrailChange}
         value={value}
         loading={loading}
         className={className}
-        allowClear
-        options={guardrails.map((guardrail) => {
-          return {
-            label: `${guardrail.guardrail_name}`,
-            value: guardrail.guardrail_name,
-          };
+        options={guardrails.flatMap((guardrail) => {
+          const name = guardrail.guardrail_name;
+          if (name == null || name === "") {
+            return [];
+          }
+          return [{ label: name, value: name }];
         })}
-        optionFilterProp="label"
-        showSearch
-        style={{ width: "100%" }}
       />
     </div>
   );

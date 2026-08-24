@@ -78,4 +78,4 @@ export const getAuditActionLabel = (t: TFunction, action: string): string =>
   t(AUDIT_ACTION_LABEL_KEYS[action] ?? "observabilityExtra.audit.action.unknown");
 
 export const getAuditTableNameLabel = (t: TFunction, tableName: string): string =>
-  t(AUDIT_TABLE_LABEL_KEYS[tableName] ?? "observabilityExtra.audit.tableName.unknown");
+  AUDIT_TABLE_LABEL_KEYS[tableName] ? t(AUDIT_TABLE_LABEL_KEYS[tableName]) : tableName;

@@ -1,12 +1,19 @@
+import { Tooltip } from "@/components/atoms/Tooltip";
 import { Member } from "@/components/networking";
-import { CrownOutlined, InfoCircleOutlined, UserAddOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Space, Table, Tag, Tooltip, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { StatusBadge } from "@/components/shared/table_cells";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Crown, Info, User, UserPlus } from "lucide-react";
 import React from "react";
 import { useTranslation } from "react-i18next";
 import TableIconActionButton from "./IconActionButton/TableIconActionButtons/TableIconActionButton";
 
-const { Text } = Typography;
+export interface MemberTableColumn {
+  title: React.ReactNode;
+  key: React.Key;
+  dataIndex?: keyof Member;
+  render?: (value: Member[keyof Member], member: Member, index: number) => React.ReactNode;
+}
 
 export interface MemberTableProps {
   members: Member[];
@@ -16,10 +23,17 @@ export interface MemberTableProps {
   onAddMember?: () => void;
   roleColumnTitle?: string;
   roleTooltip?: string;
-  extraColumns?: ColumnsType<Member>;
+  extraColumns?: MemberTableColumn[];
   showDeleteForMember?: (member: Member) => boolean;
   emptyText?: string;
 }
+
+const extraColumnCell = (column: MemberTableColumn, member: Member, index: number): React.ReactNode => {
+  const value = column.dataIndex ? member[column.dataIndex] : undefined;
+  return column.render ? column.render(value, member, index) : value;
+};
+
+const STICKY_ACTIONS_CLASS = "sticky right-0 w-[120px] bg-background";
 
 export default function MemberTable({
   members,
@@ -34,102 +48,98 @@ export default function MemberTable({
   emptyText,
 }: MemberTableProps) {
   const { t } = useTranslation();
-  const resolvedRoleColumnTitle =
-    roleColumnTitle === "Role" ? t("identityAdmin.team.memberTable.role", { defaultValue: "Role" }) : roleColumnTitle;
-  const baseColumns: ColumnsType<Member> = [
-    {
-      title: t("identityAdmin.team.memberTable.userEmail", { defaultValue: "User Email" }),
-      dataIndex: "user_email",
-      key: "user_email",
-      render: (email: string | null) => <Text>{email || "-"}</Text>,
-    },
-    {
-      title: t("identityAdmin.team.memberTable.userId", { defaultValue: "User ID" }),
-      dataIndex: "user_id",
-      key: "user_id",
-      render: (userId: string | null) =>
-        userId === "default_user_id" ? (
-          <Tag color="blue">
-            {t("identityAdmin.team.memberTable.defaultProxyAdmin", { defaultValue: "Default Proxy Admin" })}
-          </Tag>
-        ) : (
-          <Text>{userId || "-"}</Text>
-        ),
-    },
-    {
-      title: roleTooltip ? (
-        <Space direction="horizontal">
-          {resolvedRoleColumnTitle}
-          <Tooltip title={roleTooltip}>
-            <InfoCircleOutlined />
-          </Tooltip>
-        </Space>
-      ) : (
-        resolvedRoleColumnTitle
-      ),
-      dataIndex: "role",
-      key: "role",
-      render: (role: string) => (
-        <Space>
-          {role?.toLowerCase() === "admin" || role?.toLowerCase() === "org_admin" ? (
-            <CrownOutlined />
-          ) : (
-            <UserOutlined />
-          )}
-          <Text style={{ textTransform: "capitalize" }}>{role || "-"}</Text>
-        </Space>
-      ),
-    },
-    ...extraColumns,
-    {
-      title: t("identityAdmin.team.memberTable.actions", { defaultValue: "Actions" }),
-      key: "actions",
-      fixed: "right" as const,
-      width: 120,
-      render: (_: unknown, record: Member) =>
-        canEdit ? (
-          <Space>
-            <TableIconActionButton
-              variant="Edit"
-              tooltipText={t("identityAdmin.team.memberTable.editMember", { defaultValue: "Edit member" })}
-              dataTestId="edit-member"
-              onClick={() => onEdit(record)}
-            />
-            {(!showDeleteForMember || showDeleteForMember(record)) && (
-              <TableIconActionButton
-                variant="Delete"
-                tooltipText={t("identityAdmin.team.memberTable.deleteMember", { defaultValue: "Delete member" })}
-                dataTestId="delete-member"
-                onClick={() => onDelete(record)}
-              />
-            )}
-          </Space>
-        ) : null,
-    },
-  ];
-
+  const translatedRoleColumnTitle =
+    roleColumnTitle === "Role" ? t("identityAdmin.team.memberTable.role") : roleColumnTitle;
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <div className="flex w-full flex-col gap-2">
       <span className="inline-flex text-sm text-gray-700">
-        {t("identityAdmin.team.memberTable.memberCount", {
-          defaultValue: members.length === 1 ? "{{count}} Member" : "{{count}} Members",
-          count: members.length,
-        })}
+        {t("identityAdmin.team.memberTable.memberCount", { count: members.length })}
       </span>
-      <Table
-        columns={baseColumns}
-        dataSource={members}
-        rowKey={(record) => record.user_id ?? record.user_email ?? JSON.stringify(record)}
-        pagination={false}
-        size="small"
-        scroll={{ x: "max-content" }}
-        locale={emptyText ? { emptyText } : undefined}
-      />
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("identityAdmin.team.memberTable.userEmail")}</TableHead>
+            <TableHead>{t("identityAdmin.team.memberTable.userId")}</TableHead>
+            <TableHead>
+              {roleTooltip ? (
+                <span className="inline-flex items-center gap-2">
+                  {translatedRoleColumnTitle}
+                  <Tooltip content={roleTooltip}>
+                    <Info className="size-3.5" />
+                  </Tooltip>
+                </span>
+              ) : (
+                translatedRoleColumnTitle
+              )}
+            </TableHead>
+            {extraColumns.map((column) => (
+              <TableHead key={column.key}>{column.title}</TableHead>
+            ))}
+            <TableHead className={STICKY_ACTIONS_CLASS}>{t("identityAdmin.team.memberTable.actions")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={extraColumns.length + 4} className="text-center text-muted-foreground">
+                {emptyText ?? t("identityAdmin.team.memberTable.noData")}
+              </TableCell>
+            </TableRow>
+          ) : (
+            members.map((member, memberIndex) => (
+              <TableRow key={member.user_id ?? member.user_email ?? JSON.stringify(member)}>
+                <TableCell>{member.user_email || "-"}</TableCell>
+                <TableCell>
+                  {member.user_id === "default_user_id" ? (
+                    <StatusBadge tone="info" label={t("identityAdmin.team.memberTable.defaultProxyAdmin")} />
+                  ) : (
+                    member.user_id || "-"
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-2">
+                    {member.role?.toLowerCase() === "admin" || member.role?.toLowerCase() === "org_admin" ? (
+                      <Crown className="size-3.5" />
+                    ) : (
+                      <User className="size-3.5" />
+                    )}
+                    <span className="capitalize">{member.role || "-"}</span>
+                  </span>
+                </TableCell>
+                {extraColumns.map((column) => (
+                  <TableCell key={column.key}>{extraColumnCell(column, member, memberIndex)}</TableCell>
+                ))}
+                <TableCell className={STICKY_ACTIONS_CLASS}>
+                  {canEdit ? (
+                    <span className="inline-flex items-center gap-2">
+                      <TableIconActionButton
+                        variant="Edit"
+                        tooltipText={t("identityAdmin.team.memberTable.editMember")}
+                        dataTestId="edit-member"
+                        onClick={() => onEdit(member)}
+                      />
+                      {(!showDeleteForMember || showDeleteForMember(member)) && (
+                        <TableIconActionButton
+                          variant="Delete"
+                          tooltipText={t("identityAdmin.team.memberTable.deleteMember")}
+                          dataTestId="delete-member"
+                          onClick={() => onDelete(member)}
+                        />
+                      )}
+                    </span>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
       {onAddMember && canEdit && (
-        <Button icon={<UserAddOutlined />} type="primary" onClick={onAddMember}>
-          {t("identityAdmin.team.memberTable.addMember", { defaultValue: "Add Member" })}
+        <Button onClick={onAddMember} className="self-start">
+          <UserPlus className="size-4" />
+          {t("identityAdmin.team.memberTable.addMember")}
         </Button>
       )}
-    </Space>
+    </div>
   );
 }

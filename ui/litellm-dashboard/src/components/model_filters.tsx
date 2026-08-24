@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Card, Text } from "@tremor/react";
+import { Card } from "@/components/ui/card";
 import { useTranslation } from "react-i18next";
 
 interface ModelGroupInfo {
@@ -127,7 +127,7 @@ const ModelFilters: React.FC<ModelFiltersProps> = ({
   const filtersContent = (
     <div className="flex flex-wrap gap-4 items-center">
       <div>
-        <Text className="text-sm font-medium mb-2">{t("modelManagement.searchModels")}</Text>
+        <p className="text-sm font-medium mb-2">{t("modelManagement.searchModels")}</p>
         <input
           type="text"
           placeholder={t("modelManagement.searchModelNames")}
@@ -137,7 +137,7 @@ const ModelFilters: React.FC<ModelFiltersProps> = ({
         />
       </div>
       <div>
-        <Text className="text-sm font-medium mb-2">{t("modelManagement.provider")}</Text>
+        <p className="text-sm font-medium mb-2">{t("modelManagement.provider")}</p>
         <select
           value={selectedProvider}
           onChange={(e) => setSelectedProvider(e.target.value)}
@@ -155,7 +155,7 @@ const ModelFilters: React.FC<ModelFiltersProps> = ({
         </select>
       </div>
       <div>
-        <Text className="text-sm font-medium mb-2">{t("modelManagement.mode")}</Text>
+        <p className="text-sm font-medium mb-2">{t("modelManagement.mode")}</p>
         <select
           value={selectedMode}
           onChange={(e) => setSelectedMode(e.target.value)}
@@ -173,7 +173,7 @@ const ModelFilters: React.FC<ModelFiltersProps> = ({
         </select>
       </div>
       <div>
-        <Text className="text-sm font-medium mb-2">{t("modelManagement.features")}</Text>
+        <p className="text-sm font-medium mb-2">{t("modelManagement.features")}</p>
         <select
           value={selectedFeature}
           onChange={(e) => setSelectedFeature(e.target.value)}
@@ -206,7 +206,7 @@ const ModelFilters: React.FC<ModelFiltersProps> = ({
   );
 
   if (showFiltersCard) {
-    return <Card className={`mb-6 ${className}`}>{filtersContent}</Card>;
+    return <Card className={`mb-6 px-6 ${className}`}>{filtersContent}</Card>;
   }
 
   return <div className={className}>{filtersContent}</div>;

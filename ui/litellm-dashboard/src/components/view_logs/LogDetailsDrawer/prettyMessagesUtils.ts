@@ -179,6 +179,9 @@ const parseResponsesInputItem = (item: unknown): ParsedMessage[] => {
     ];
   }
   if (item.type === "reasoning") return [];
+  if (item.type === "input_text") {
+    return [{ role: "user", content: asString(item.text) }];
+  }
   if ("role" in item || "content" in item) {
     return [{ role: toRole(item.role, "user"), content: parseMessageContent(item.content) }];
   }

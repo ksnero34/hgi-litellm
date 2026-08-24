@@ -6,15 +6,15 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { clearTokenCookies } from "@/utils/cookieUtils";
 import { clearStoredReturnUrl, getLoginUrl } from "@/utils/returnUrlUtils";
 import useProxySettings from "@/app/(dashboard)/hooks/proxySettings/useProxySettings";
-import { MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
-import { Tag } from "antd";
+import { Badge } from "@/components/ui/badge";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { NotificationsBell } from "./Navbar/NotificationsBell/NotificationsBell";
 import UserDropdown from "./Navbar/UserDropdown/UserDropdown";
 import ViewSwitcher from "./Navbar/ViewSwitcher";
 import WorkerDropdown from "./Navbar/WorkerDropdown/WorkerDropdown";
-import { useTranslation } from "react-i18next";
 
 interface NavbarProps {
   accessToken: string | null;
@@ -66,7 +66,13 @@ const Navbar: React.FC<NavbarProps> = ({
                 className="mr-2 flex h-9 w-9 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
                 title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
               >
-                <span className="text-lg">{sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}</span>
+                <span className="text-lg">
+                  {sidebarCollapsed ? (
+                    <PanelLeftOpen className="size-[18px]" />
+                  ) : (
+                    <PanelLeftClose className="size-[18px]" />
+                  )}
+                </span>
               </button>
             )}
 
@@ -82,7 +88,11 @@ const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
               </Link>
-              {version && <Tag className="text-xs font-medium">v{version}</Tag>}
+              {version && (
+                <Badge variant="outline" className="text-xs font-medium">
+                  v{version}
+                </Badge>
+              )}
             </div>
           </div>
 

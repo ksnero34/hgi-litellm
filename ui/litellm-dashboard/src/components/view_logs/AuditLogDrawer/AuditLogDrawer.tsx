@@ -1,16 +1,16 @@
-import { Drawer, Tag, Typography } from "antd";
-import { CheckOutlined, CloseOutlined, CopyOutlined } from "@ant-design/icons";
+import { Check, Copy } from "lucide-react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
-import { useTranslation } from "react-i18next";
 import moment from "moment";
-
-import DefaultProxyAdminTag from "../../common_components/DefaultProxyAdminTag";
-import { uiAuditLogByIdCall } from "../../networking";
+import { useTranslation } from "react-i18next";
 import { AuditLogEntry, getAuditLogSuccess } from "../AuditLogsTableColumns";
 import { AUDIT_ACTION_TONE, getAuditActionLabel, getAuditTableNameLabel } from "../auditLogLabels";
-
-const { Text } = Typography;
+import DefaultProxyAdminTag from "../../common_components/DefaultProxyAdminTag";
+import { uiAuditLogByIdCall } from "../../networking";
+import CopyButton from "@/components/shared/CopyButton";
+import { StatusBadge, type StatusTone } from "@/components/shared/table_cells/status_badge";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 interface AuditLogDrawerProps {
   open: boolean;
@@ -19,27 +19,15 @@ interface AuditLogDrawerProps {
   accessToken: string | null;
 }
 
-const ACTION_COLOR: Record<string, string> = {
-  success: "green",
-  info: "blue",
-  error: "red",
-  warning: "orange",
-  neutral: "default",
-};
-
 const getSuccessLabel = (success: boolean | null, t: ReturnType<typeof useTranslation>["t"]): string => {
-  if (success === true) {
-    return t("observabilityExtra.audit.success.success");
-  }
-  if (success === false) {
-    return t("observabilityExtra.audit.success.failure");
-  }
+  if (success === true) return t("observabilityExtra.audit.success.success");
+  if (success === false) return t("observabilityExtra.audit.success.failure");
   return t("observabilityExtra.audit.success.unknown");
 };
 
-function CopyableJsonBlock({ label, value }: { label: string; value: Record<string, unknown> }) {
-  const { t } = useTranslation();
+function CopyableJsonBlock({ label, value }: { label: string; value: Record<string, any> }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
 
   const handleCopy = useCallback(async () => {
     try {
@@ -65,18 +53,20 @@ function CopyableJsonBlock({ label, value }: { label: string; value: Record<stri
   }, [value]);
 
   return (
-    <div className="overflow-hidden rounded-sm border bg-white">
-      <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-2">
-        <span className="text-xs font-semibold text-gray-600">{label}</span>
-        <button
+    <div className="overflow-hidden rounded-sm border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border bg-muted px-3 py-2">
+        <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={handleCopy}
-          className="rounded-sm p-1 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
           title={t("observabilityExtra.audit.copyJson")}
+          aria-label={t("observabilityExtra.audit.copyJson")}
         >
-          {copied ? <CheckOutlined className="text-green-600" /> : <CopyOutlined />}
-        </button>
+          {copied ? <Check className="text-green-600" /> : <Copy />}
+        </Button>
       </div>
-      <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-all bg-white p-3 font-mono text-xs">
+      <pre className="m-0 max-h-96 overflow-auto bg-card p-3 font-mono text-xs break-all whitespace-pre-wrap">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>
@@ -86,90 +76,99 @@ function CopyableJsonBlock({ label, value }: { label: string; value: Record<stri
 function MetadataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2 py-1.5">
-      <span className="w-36 shrink-0 text-xs text-gray-500">{label}</span>
-      <span className="break-all text-xs text-gray-900">{value}</span>
-    </div>
-  );
-}
-
-function renderEmptyBlock(label: string, emptyLabel: string) {
-  return (
-    <div className="overflow-hidden rounded-sm border bg-white">
-      <div className="flex items-center border-b bg-gray-50 px-3 py-2">
-        <span className="text-xs font-semibold text-gray-600">{label}</span>
-      </div>
-      <p className="m-0 px-3 py-3 text-xs italic text-gray-400">{emptyLabel}</p>
+      <span className="w-36 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs break-all text-foreground">{value}</span>
     </div>
   );
 }
 
 function DiffSection({ log }: { log: AuditLogEntry }) {
   const { t } = useTranslation();
-  const beforeValue = log.before_value ?? {};
-  const updatedValues = log.updated_values ?? {};
-  const isKeyTable = log.table_name === "LiteLLM_VerificationToken";
-  const isUpdateAction = log.action === "updated" || log.action === "rotated";
+  const { action, table_name, before_value, updated_values } = log;
+  const isKeyTable = table_name === "LiteLLM_VerificationToken";
+  const isUpdateAction = action === "updated" || action === "rotated";
 
-  let displayBefore: Record<string, unknown> = beforeValue;
-  let displayAfter: Record<string, unknown> = updatedValues;
+  let displayBefore = before_value;
+  let displayAfter = updated_values;
 
-  if (isUpdateAction) {
-    const changedBefore: Record<string, unknown> = {};
-    const changedAfter: Record<string, unknown> = {};
-    const allKeys = new Set([...Object.keys(beforeValue), ...Object.keys(updatedValues)]);
+  if (isUpdateAction && before_value && updated_values) {
+    const changedBefore: Record<string, any> = {};
+    const changedAfter: Record<string, any> = {};
+    const allKeys = new Set([...Object.keys(before_value), ...Object.keys(updated_values)]);
 
     allKeys.forEach((key) => {
-      const beforeString = JSON.stringify(beforeValue[key]);
-      const afterString = JSON.stringify(updatedValues[key]);
-      if (beforeString !== afterString) {
-        if (key in beforeValue) {
-          changedBefore[key] = beforeValue[key];
-        }
-        if (key in updatedValues) {
-          changedAfter[key] = updatedValues[key];
-        }
+      const bStr = JSON.stringify(before_value[key]);
+      const aStr = JSON.stringify(updated_values[key]);
+      if (bStr !== aStr) {
+        if (key in before_value) changedBefore[key] = before_value[key];
+        if (key in updated_values) changedAfter[key] = updated_values[key];
       }
     });
 
-    displayBefore =
-      Object.keys(changedBefore).length > 0 ? changedBefore : { note: t("observabilityExtra.audit.noDifferingFields") };
-    displayAfter =
-      Object.keys(changedAfter).length > 0 ? changedAfter : { note: t("observabilityExtra.audit.noDifferingFields") };
+    // Fields only in before (removed)
+    Object.keys(before_value).forEach((key) => {
+      if (!(key in updated_values) && !(key in changedBefore)) {
+        changedBefore[key] = before_value[key];
+        changedAfter[key] = undefined;
+      }
+    });
+
+    // Fields only in after (added)
+    Object.keys(updated_values).forEach((key) => {
+      if (!(key in before_value) && !(key in changedAfter)) {
+        changedAfter[key] = updated_values[key];
+        changedBefore[key] = undefined;
+      }
+    });
+
+    const noDiff = t("observabilityExtra.audit.noDifferingFields");
+    displayBefore = Object.keys(changedBefore).length > 0 ? changedBefore : { note: noDiff };
+    displayAfter = Object.keys(changedAfter).length > 0 ? changedAfter : { note: noDiff };
   }
 
-  const renderValue = (label: string, value: Record<string, unknown>) => {
-    if (Object.keys(value).length === 0) {
-      return renderEmptyBlock(label, t("observabilityExtra.audit.notAvailable"));
+  const renderValue = (label: string, value: Record<string, any> | null | undefined) => {
+    if (!value || Object.keys(value).length === 0) {
+      return (
+        <div className="overflow-hidden rounded-sm border border-border bg-card">
+          <div className="flex items-center border-b border-border bg-muted px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+          </div>
+          <p className="m-0 px-3 py-3 text-xs text-muted-foreground italic">
+            {t("observabilityExtra.audit.notAvailable")}
+          </p>
+        </div>
+      );
     }
 
+    // For key table updates, show only meaningful fields as plain text
     if (isKeyTable && isUpdateAction) {
       const knownKeyFields = ["token", "spend", "max_budget"];
-      const hasOnlyKnown = Object.keys(value).every((key) => knownKeyFields.includes(key));
+      const hasOnlyKnown = Object.keys(value).every((k) => knownKeyFields.includes(k));
       if (hasOnlyKnown && !("note" in value)) {
         return (
-          <div className="overflow-hidden rounded-sm border bg-white">
-            <div className="flex items-center border-b bg-gray-50 px-3 py-2">
-              <span className="text-xs font-semibold text-gray-600">{label}</span>
+          <div className="overflow-hidden rounded-sm border border-border bg-card">
+            <div className="flex items-center border-b border-border bg-muted px-3 py-2">
+              <span className="text-xs font-semibold text-muted-foreground">{label}</span>
             </div>
             <div className="space-y-1 px-3 py-3 text-xs">
-              {"token" in value ? (
+              {value.token !== undefined && (
                 <p>
-                  <span className="text-gray-500">{t("observabilityExtra.audit.token")}:</span>{" "}
-                  {String(value.token ?? t("observabilityExtra.audit.notAvailable"))}
+                  <span className="text-muted-foreground">{t("observabilityExtra.audit.token")}:</span>{" "}
+                  {value.token ?? t("observabilityExtra.audit.notAvailable")}
                 </p>
-              ) : null}
-              {"spend" in value ? (
+              )}
+              {value.spend !== undefined && (
                 <p>
-                  <span className="text-gray-500">{t("observabilityExtra.audit.spend")}:</span> $
+                  <span className="text-muted-foreground">{t("observabilityExtra.audit.spend")}:</span> $
                   {Number(value.spend).toFixed(6)}
                 </p>
-              ) : null}
-              {"max_budget" in value ? (
+              )}
+              {value.max_budget !== undefined && (
                 <p>
-                  <span className="text-gray-500">{t("observabilityExtra.audit.maxBudget")}:</span> $
+                  <span className="text-muted-foreground">{t("observabilityExtra.audit.maxBudget")}:</span> $
                   {Number(value.max_budget).toFixed(6)}
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
         );
@@ -192,107 +191,88 @@ export function AuditLogDrawer({ open, onClose, log, accessToken }: AuditLogDraw
   const detailQuery = useQuery({
     queryKey: ["audit_log_detail", log?.id],
     queryFn: async () => {
-      if (!accessToken || !log?.id) {
-        return null;
-      }
+      if (!accessToken || !log?.id) return null;
       return uiAuditLogByIdCall({ accessToken, auditId: log.id });
     },
     enabled: open && !!accessToken && !!log?.id,
   });
-
-  if (!log) {
-    return null;
-  }
+  if (!log) return null;
 
   const detailedLog = detailQuery.data ?? log;
   const tableDisplay = getAuditTableNameLabel(t, detailedLog.table_name);
-  const actionColor = ACTION_COLOR[AUDIT_ACTION_TONE[detailedLog.action] ?? "neutral"] ?? "default";
-  const actionLabel = getAuditActionLabel(t, detailedLog.action);
   const success = getAuditLogSuccess(detailedLog);
-  const successLabel = getSuccessLabel(success, t);
 
   return (
-    <Drawer
-      placement="right"
-      width="60%"
-      open={open}
-      onClose={onClose}
-      closable={false}
-      mask
-      maskClosable
-      styles={{ body: { padding: 0, display: "flex", flexDirection: "column" }, header: { display: "none" } }}
-    >
-      <div className="shrink-0 border-b bg-white px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Tag color={actionColor} className="m-0 capitalize">
-              {actionLabel}
-            </Tag>
-            <span className="text-sm text-gray-500">
-              {moment.utc(detailedLog.updated_at).local().format("MMM D, YYYY HH:mm:ss")}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-sm text-gray-500 hover:bg-gray-100"
-            aria-label={t("observabilityExtra.audit.close")}
-          >
-            <CloseOutlined />
-          </button>
-        </div>
-      </div>
+    <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <SheetContent side="right" className="w-[60%] gap-0 overflow-y-auto p-0 sm:max-w-none">
+        <SheetTitle className="sr-only">{t("observabilityExtra.audit.details")}</SheetTitle>
 
-      <div className="px-6 py-5">
-        {detailQuery.isLoading ? (
-          <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-            {t("observabilityExtra.audit.detailsLoading")}
-          </div>
-        ) : null}
-        {detailQuery.isError ? (
-          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {t("observabilityExtra.audit.detailsLoadError", {
-              error:
-                detailQuery.error instanceof Error
-                  ? detailQuery.error.message
-                  : t("observabilityExtra.audit.unknownError"),
-            })}
-          </div>
-        ) : null}
-
-        <div className="mb-5 rounded-lg border bg-gray-50 p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
-            {t("observabilityExtra.audit.details")}
-          </p>
-          <MetadataRow label={t("observabilityExtra.audit.resourceType")} value={tableDisplay} />
-          <MetadataRow
-            label={t("observabilityExtra.audit.resourceId")}
-            value={
-              <Text copyable className="font-mono text-xs">
-                {detailedLog.object_id}
-              </Text>
-            }
+        <div className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-6 py-4">
+          <StatusBadge
+            tone={(AUDIT_ACTION_TONE[detailedLog.action] ?? "neutral") as StatusTone}
+            label={getAuditActionLabel(t, detailedLog.action)}
           />
-          <MetadataRow
-            label={t("observabilityExtra.audit.actor")}
-            value={<DefaultProxyAdminTag userId={detailedLog.changed_by} />}
-          />
-          <MetadataRow label={t("observabilityExtra.audit.successLabel")} value={successLabel} />
-          <MetadataRow
-            label={t("observabilityExtra.audit.apiKeyHash")}
-            value={
-              detailedLog.changed_by_api_key ? (
-                <Text copyable className="break-all font-mono text-xs">
-                  {detailedLog.changed_by_api_key}
-                </Text>
-              ) : (
-                t("observabilityExtra.audit.notAvailable")
-              )
-            }
-          />
+          <span className="text-sm text-muted-foreground">
+            {moment.utc(detailedLog.updated_at).local().format("MMM D, YYYY HH:mm:ss")}
+          </span>
         </div>
 
-        <DiffSection log={detailedLog} />
-      </div>
-    </Drawer>
+        <div className="px-6 py-5">
+          {detailQuery.isLoading ? (
+            <div className="mb-4 rounded-lg border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+              {t("observabilityExtra.audit.detailsLoading")}
+            </div>
+          ) : null}
+          {detailQuery.isError ? (
+            <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {t("observabilityExtra.audit.detailsLoadError", {
+                error:
+                  detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : t("observabilityExtra.audit.unknownError"),
+              })}
+            </div>
+          ) : null}
+          <div className="mb-5 rounded-lg border border-border bg-muted p-4">
+            <p className="mb-2 text-xs font-semibold tracking-wide text-foreground uppercase">
+              {t("observabilityExtra.audit.details")}
+            </p>
+            <MetadataRow label={t("observabilityExtra.audit.resourceType")} value={tableDisplay} />
+            <MetadataRow
+              label={t("observabilityExtra.audit.resourceId")}
+              value={
+                <span className="inline-flex items-center gap-1 font-mono text-xs">
+                  {detailedLog.object_id}
+                  <CopyButton value={detailedLog.object_id} label={t("observabilityExtra.audit.resourceId")} />
+                </span>
+              }
+            />
+            <MetadataRow
+              label={t("observabilityExtra.audit.actor")}
+              value={<DefaultProxyAdminTag userId={detailedLog.changed_by} />}
+            />
+            <MetadataRow label={t("observabilityExtra.audit.successLabel")} value={getSuccessLabel(success, t)} />
+            <MetadataRow
+              label={t("observabilityExtra.audit.apiKeyHash")}
+              value={
+                detailedLog.changed_by_api_key ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-xs break-all">
+                    {detailedLog.changed_by_api_key}
+                    <CopyButton
+                      value={detailedLog.changed_by_api_key}
+                      label={t("observabilityExtra.audit.apiKeyHash")}
+                    />
+                  </span>
+                ) : (
+                  t("observabilityExtra.audit.notAvailable")
+                )
+              }
+            />
+          </div>
+
+          <DiffSection log={detailedLog} />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

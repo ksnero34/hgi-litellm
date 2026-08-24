@@ -13,6 +13,10 @@ export const shellMessages: MessageCatalog = {
   "notifications.agentPlatform.title": "LiteLLM 에이전트 플랫폼",
   "notifications.agentPlatform.description":
     "샌드박스, 지속 세션, AWS Fargate 워커를 제공하는 오픈 소스 에이전트 인프라입니다.",
+  "notifications.autoRouter.title": "LiteLLM 자동 라우터",
+  "notifications.autoRouter.description":
+    "프롬프트 변경 없이 모든 요청을 처리할 수 있는 가장 저렴한 모델로 라우팅합니다.",
+  "notifications.autoRouter.readDocs": "문서 보기",
   "notifications.markAsRead": "읽음으로 표시",
   "language.label": "언어",
   "language.ko": "한국어",

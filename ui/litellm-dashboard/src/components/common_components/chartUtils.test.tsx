@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CustomLegend, CustomTooltip } from "./chartUtils";
-import type { CustomTooltipProps } from "@tremor/react";
+import type { ChartTooltipProps } from "@/components/shared/charts/chart_tooltip";
 import { SpendMetrics } from "../UsagePage/types";
+
+type TooltipPayload = NonNullable<ChartTooltipProps["payload"]>;
 
 describe("CustomTooltip", () => {
   const mockPayload = [
@@ -28,9 +30,9 @@ describe("CustomTooltip", () => {
   ];
 
   it("should render", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: mockPayload,
+      payload: mockPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -38,9 +40,9 @@ describe("CustomTooltip", () => {
   });
 
   it("should return null when not active", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: false,
-      payload: mockPayload,
+      payload: mockPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     const { container } = render(<CustomTooltip {...props} />);
@@ -48,9 +50,9 @@ describe("CustomTooltip", () => {
   });
 
   it("should return null when payload is empty", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: [],
+      payload: [] as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     const { container } = render(<CustomTooltip {...props} />);
@@ -58,9 +60,9 @@ describe("CustomTooltip", () => {
   });
 
   it("should display formatted category names", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: mockPayload,
+      payload: mockPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -89,9 +91,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: payloadWithUnderscores,
+      payload: payloadWithUnderscores as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -120,9 +122,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: spendPayload,
+      payload: spendPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -130,9 +132,9 @@ describe("CustomTooltip", () => {
   });
 
   it("should format non-spend numeric values with locale string", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: mockPayload,
+      payload: mockPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -161,9 +163,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: payloadWithUndefined,
+      payload: payloadWithUndefined as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -234,9 +236,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: multiplePayload,
+      payload: multiplePayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -245,9 +247,9 @@ describe("CustomTooltip", () => {
   });
 
   it("should convert color names to hex values", () => {
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: mockPayload,
+      payload: mockPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     const { container } = render(<CustomTooltip {...props} />);
@@ -277,9 +279,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: payloadWithHexColor,
+      payload: payloadWithHexColor as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     const { container } = render(<CustomTooltip {...props} />);
@@ -309,9 +311,9 @@ describe("CustomTooltip", () => {
         },
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: payloadWithoutDataKey as any,
+      payload: payloadWithoutDataKey as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);
@@ -327,9 +329,9 @@ describe("CustomTooltip", () => {
         payload: undefined,
       },
     ];
-    const props: CustomTooltipProps = {
+    const props: ChartTooltipProps = {
       active: true,
-      payload: payloadWithoutPayload as any,
+      payload: payloadWithoutPayload as unknown as TooltipPayload,
       label: "2024-01-15",
     };
     render(<CustomTooltip {...props} />);

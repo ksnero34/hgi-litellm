@@ -35,6 +35,8 @@ interface RequestLogsPanelProps {
   userRole: string;
   userID: string;
   isActive: boolean;
+  selectedTeamId?: string | null;
+  scopeReady?: boolean;
 }
 
 interface SessionComposition {
@@ -43,7 +45,15 @@ interface SessionComposition {
   mcp: number;
 }
 
-export default function RequestLogsPanel({ accessToken, token, userRole, userID, isActive }: RequestLogsPanelProps) {
+export default function RequestLogsPanel({
+  accessToken,
+  token,
+  userRole,
+  userID,
+  isActive,
+  selectedTeamId = null,
+  scopeReady = true,
+}: RequestLogsPanelProps) {
   const { t } = useTranslation();
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
   const [sorting, setSorting] = useState<SortingState>(DEFAULT_LOGS_SORTING);
@@ -84,6 +94,8 @@ export default function RequestLogsPanel({ accessToken, token, userRole, userID,
     userID,
     columnFilters,
     filterByCurrentUser,
+    selectedTeamId,
+    scopeReady,
     activeTab: isActive ? "request logs" : "inactive",
     isLiveTail,
     startTime,

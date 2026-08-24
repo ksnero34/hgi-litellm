@@ -7,6 +7,7 @@ Might include fastapi/proxy requirements.txt related imports
 from typing import Any, Final, cast
 
 from fastapi_sso.sso.base import OpenID
+from pydantic import Field
 
 from litellm.proxy._types import LitellmUserRoles
 
@@ -60,4 +61,4 @@ class CustomOpenID(OpenID):
     extra_fields: dict[str, Any] | None = None
     sso_team_mapping_configured: bool = False
     sso_team_claim_present: bool = False
-    sso_team_claim_values: list[str] = []
+    sso_team_claim_values: list[str] = Field(default_factory=list)

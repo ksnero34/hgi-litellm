@@ -1,14 +1,14 @@
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { Tooltip } from "@/components/atoms/Tooltip";
+import MemberTable from "@/components/common_components/MemberTable";
 import { Member } from "@/components/networking";
 import { DateCell, MoneyCell } from "@/components/shared/table_cells";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import { isProxyAdminRole, isUserTeamAdminForSingleTeam } from "@/utils/roles";
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { Space, Tooltip, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import { useTranslation } from "react-i18next";
-import MemberTable from "@/components/common_components/MemberTable";
+import { CircleHelp } from "lucide-react";
+import type { ComponentProps } from "react";
 import { TeamData } from "./TeamInfo";
 
 interface TeamMemberTabProps {
@@ -105,88 +105,88 @@ export default function TeamMemberTab({
     return membership?.litellm_budget_table?.budget_reset_at ?? null;
   };
 
-  const extraColumns: ColumnsType<Member> = [
+  const extraColumns: NonNullable<ComponentProps<typeof MemberTable>["extraColumns"]> = [
     {
       title: (
-        <Space direction="horizontal">
+        <span className="flex items-center gap-1">
           {t("identityAdmin.team.memberTable.modelScope", { defaultValue: "Model Scope" })}
           <Tooltip
-            title={t("identityAdmin.team.memberTable.modelScopeTooltip", {
+            content={t("identityAdmin.team.memberTable.modelScopeTooltip", {
               defaultValue: "Models this member can access. Empty means they inherit all team models.",
             })}
           >
-            <InfoCircleOutlined />
+            <CircleHelp className="size-4" aria-label="Model scope information" />
           </Tooltip>
-        </Space>
+        </span>
       ),
       key: "model_scope",
       render: (_: unknown, record: Member) => {
         const models = getUserAllowedModels(record.user_id);
         if (!models) {
           return (
-            <Typography.Text type="secondary">
+            <span className="text-muted-foreground">
               {t("identityAdmin.team.memberTable.allTeamModels", { defaultValue: "(all team models)" })}
-            </Typography.Text>
+            </span>
           );
         }
         const displayed = models.slice(0, 2);
         const remaining = models.length - displayed.length;
         return (
-          <Space wrap>
+          <div className="flex flex-wrap gap-1">
             {displayed.map((m) => (
-              <Typography.Text key={m} code style={{ fontSize: "12px" }}>
+              <code key={m} className="rounded bg-muted px-1 py-0.5 text-xs">
                 {m}
-              </Typography.Text>
+              </code>
             ))}
             {remaining > 0 && (
-              <Tooltip title={models.slice(2).join(", ")}>
-                <Typography.Text type="secondary">
+              <Tooltip content={models.slice(2).join(", ")}>
+                <span className="text-muted-foreground">
                   {t("identityAdmin.team.memberTable.moreModels", {
                     defaultValue: "+{{count}} more",
                     count: remaining,
                   })}
-                </Typography.Text>
+                </span>
               </Tooltip>
             )}
-          </Space>
+          </div>
         );
       },
     },
     {
       title: (
-        <Space direction="horizontal">
+        <span className="flex items-center gap-1">
           {t("identityAdmin.team.memberTable.currentCycleSpend", { defaultValue: "Current Cycle Spend (USD)" })}
           <Tooltip
-            title={t("identityAdmin.team.memberTable.currentCycleSpendTooltip", {
+            content={t("identityAdmin.team.memberTable.currentCycleSpendTooltip", {
               defaultValue:
                 "Spend for the current budget cycle. Resets to $0 when the member's budget window rolls over. This is the value checked against the member's budget.",
             })}
           >
-            <InfoCircleOutlined />
+            <CircleHelp className="size-4" aria-label="Current cycle spend information" />
           </Tooltip>
-        </Space>
+        </span>
       ),
       key: "spend",
       render: (_: unknown, record: Member) => (
-        <MoneyCell value={getUserCurrentCycleSpend(record.user_id)} decimals={4} />
+        <MoneyCell value={getUserCurrentCycleSpend(record.user_id)} decimals={2} />
       ),
     },
     {
       title: (
-        <Space direction="horizontal">
+        <span className="flex items-center gap-1">
           {t("identityAdmin.team.memberTable.totalSpend", { defaultValue: "Total Spend (USD)" })}
           <Tooltip
-            title={t("identityAdmin.team.memberTable.totalSpendTooltip", {
+            content={t("identityAdmin.team.memberTable.totalSpendTooltip", {
               defaultValue:
                 "Cumulative spend by this member within this team, across all budget cycles. Tracking began 2026-04-21; spend from before that date is not included.",
             })}
           >
-            <InfoCircleOutlined />
+            <CircleHelp className="size-4" aria-label="Total spend information" />
           </Tooltip>
-        </Space>
+        </span>
       ),
       key: "total_spend",
-      render: (_: unknown, record: Member) => <MoneyCell value={getUserTotalSpend(record.user_id)} decimals={4} />,
+      render: (_: unknown, record: Member) => <MoneyCell value={getUserTotalSpend(record.user_id)} decimals={2} />,
     },
     {
       title: t("identityAdmin.team.memberTable.teamMemberBudget", { defaultValue: "Team Member Budget (USD)" }),
@@ -194,7 +194,7 @@ export default function TeamMemberTab({
       render: (_: unknown, record: Member) => (
         <MoneyCell
           value={getUserBudget(record.user_id)}
-          decimals={4}
+          decimals={2}
           emptyText={t("identityAdmin.team.memberTable.unlimited", { defaultValue: "Unlimited" })}
           showZero
         />
@@ -207,19 +207,19 @@ export default function TeamMemberTab({
     },
     {
       title: (
-        <Space direction="horizontal">
+        <span className="flex items-center gap-1">
           {t("identityAdmin.team.memberTable.teamMemberRateLimits", { defaultValue: "Team Member Rate Limits" })}
           <Tooltip
-            title={t("identityAdmin.team.memberTable.teamMemberRateLimitsTooltip", {
+            content={t("identityAdmin.team.memberTable.teamMemberRateLimitsTooltip", {
               defaultValue: "Rate limits for this member's usage within this team.",
             })}
           >
-            <InfoCircleOutlined />
+            <CircleHelp className="size-4" aria-label="Team member rate limits information" />
           </Tooltip>
-        </Space>
+        </span>
       ),
       key: "rate_limits",
-      render: (_: unknown, record: Member) => <Typography.Text>{getUserRateLimits(record.user_id)}</Typography.Text>,
+      render: (_: unknown, record: Member) => <span>{getUserRateLimits(record.user_id)}</span>,
     },
   ];
 

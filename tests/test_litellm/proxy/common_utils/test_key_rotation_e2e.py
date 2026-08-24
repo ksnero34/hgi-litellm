@@ -33,6 +33,15 @@ from litellm.proxy.utils import (
 )
 
 
+def _db_backed_key_rotation_test_env_unavailable(exc: Exception) -> bool:
+    message = str(exc)
+    return (
+        "Could not connect to the query engine" in message
+        or "All connection attempts failed" in message
+        or "Can't reach database server" in message
+    )
+
+
 class TestMultiPodKeyRotation:
     """
     Simulate two pods sharing one Redis lock to verify only one pod
@@ -592,8 +601,8 @@ class TestDeprecatedKeyLookupDbE2E:
         active_token_hash = f"active-{uuid4().hex}"
         _deprecated_key_cache.clear()
 
-        await prisma_client.connect()
         try:
+            await prisma_client.connect()
             await prisma_client.db.litellm_verificationtoken.create(
                 data={
                     "token": active_token_hash,
@@ -626,7 +635,10 @@ class TestDeprecatedKeyLookupDbE2E:
             assert r1 == active_token_hash
             assert r2 == active_token_hash
             assert r3 == active_token_hash
-
+        except Exception as exc:
+            if _db_backed_key_rotation_test_env_unavailable(exc):
+                pytest.skip("Reachable Prisma database not available; skipping DB-backed key-rotation E2E test.")
+            raise
         finally:
             # Best-effort cleanup for idempotent reruns.
             try:

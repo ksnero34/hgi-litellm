@@ -1,21 +1,18 @@
 import { useProjects } from "@/app/(dashboard)/hooks/projects/useProjects";
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
-import { PlusOutlined } from "@ant-design/icons";
-import { Button, Flex, Input, Layout, Space, theme, Typography } from "antd";
-import { SearchIcon } from "lucide-react";
+import { Plus, SearchIcon, X } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { CreateProjectModal } from "./ProjectModals/CreateProjectModal";
 import { ProjectDetail } from "./ProjectDetailsPage";
 import { ProjectsTable } from "./ProjectsTable";
 
-const { Title, Text } = Typography;
-const { Content } = Layout;
-
 export function ProjectsPage() {
   const { t } = useTranslation();
-  const { token } = theme.useToken();
   const { data: projects, isLoading } = useProjects();
   const { data: teams, isLoading: isTeamsLoading } = useTeams();
 
@@ -25,6 +22,7 @@ export function ProjectsPage() {
   );
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
+
   const teamAliasMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const team of teams ?? []) {
@@ -58,29 +56,43 @@ export function ProjectsPage() {
   }
 
   return (
-    <Content style={{ padding: token.paddingLG, paddingInline: token.paddingLG * 2 }}>
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
-        <Space direction="vertical" size={0}>
-          <Title level={2} style={{ margin: 0 }}>
-            {t("access.projects.title")}
-          </Title>
-          <Text type="secondary">{t("access.projects.subtitle")}</Text>
-        </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalVisible(true)}>
-          {t("access.projects.create")}
-        </Button>
-      </Flex>
-
-      <Flex align="center" style={{ marginBottom: 12 }}>
-        <Input
-          prefix={<SearchIcon size={16} />}
-          placeholder={t("access.projects.search")}
-          style={{ maxWidth: 400 }}
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          allowClear
+    <div className="p-6 px-12">
+      <div className="mb-4">
+        <PageHeader
+          title={t("access.projects.title")}
+          subtitle={t("access.projects.subtitle")}
+          actions={
+            <Button onClick={() => setIsCreateModalVisible(true)}>
+              <Plus className="size-4" />
+              {t("access.projects.create")}
+            </Button>
+          }
         />
-      </Flex>
+      </div>
+
+      <div className="mb-3 flex items-center">
+        <InputGroup className="max-w-[400px]">
+          <InputGroupAddon>
+            <SearchIcon className="size-4 text-muted-foreground" />
+          </InputGroupAddon>
+          <InputGroupInput
+            placeholder={t("access.projects.search")}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+          />
+          {searchText && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label={t("access.projects.clearSearch")}
+                onClick={() => setSearchText("")}
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      </div>
 
       <ProjectsTable
         projects={filteredProjects}
@@ -92,6 +104,6 @@ export function ProjectsPage() {
       />
 
       <CreateProjectModal isOpen={isCreateModalVisible} onClose={() => setIsCreateModalVisible(false)} />
-    </Content>
+    </div>
   );
 }

@@ -2,11 +2,12 @@ import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, vi } from "vitest";
-import { i18n } from "../src/i18n/i18n";
-import { languageStorageKey } from "../src/i18n/resources";
+import { i18n, i18nReady } from "@/i18n/i18n";
+import { languageStorageKey } from "@/i18n/resources";
 
 beforeEach(async () => {
   window.localStorage.setItem(languageStorageKey, "en");
+  await i18nReady;
   await i18n.changeLanguage("en");
 });
 

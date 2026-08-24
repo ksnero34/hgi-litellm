@@ -26,6 +26,7 @@ export const safetyPoliciesMessages: MessageCatalog = {
   "safety.contentFilter.addPrebuiltTitle": "Add prebuilt pattern",
   "safety.contentFilter.patternType": "Pattern type",
   "safety.contentFilter.choosePatternType": "Choose pattern type",
+  "safety.contentFilter.noMatchingPatterns": "No matching patterns",
   "safety.contentFilter.action": "Action",
   "safety.contentFilter.patternActionHelp":
     "Choose what action the guardrail should take when this pattern is detected",
@@ -71,7 +72,9 @@ export const safetyPoliciesMessages: MessageCatalog = {
   "safety.test.submitHelp": "Press Enter to submit. Shift+Enter for new line",
   "safety.test.characters": "Characters: {{count}}",
   "safety.test.testing": "Testing {{count}} guardrail(s)...",
-  "safety.test.run": "Test {{count}} guardrail(s)",
+  "safety.test.run": "Test {{count}} guardrails",
+  "safety.test.run_one": "Test {{count}} guardrail",
+  "safety.test.run_other": "Test {{count}} guardrails",
   "safety.test.results": "Results",
   "safety.test.resultCopied": "Result copied to clipboard",
   "safety.test.copyResultFailed": "Failed to copy result",

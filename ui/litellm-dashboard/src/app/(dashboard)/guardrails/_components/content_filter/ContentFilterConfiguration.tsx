@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Typography, Space, Upload, Card, Button } from "antd";
-import { PlusOutlined, UploadOutlined } from "@ant-design/icons";
+import { Plus, Upload } from "lucide-react";
 import { validateBlockedWordsFile } from "@/components/networking";
 import NotificationsManager from "@/components/molecules/notifications_manager";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import PatternModal from "./PatternModal";
 import CustomPatternModal from "./CustomPatternModal";
 import KeywordModal from "./KeywordModal";
@@ -11,8 +13,6 @@ import PatternTable from "./PatternTable";
 import KeywordTable from "./KeywordTable";
 import ContentCategoryConfiguration from "./ContentCategoryConfiguration";
 import CompetitorIntentConfiguration, { CompetitorIntentConfig } from "./CompetitorIntentConfiguration";
-
-const { Title, Text } = Typography;
 
 interface PrebuiltPattern {
   name: string;
@@ -117,6 +117,7 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
   const [newKeywordAction, setNewKeywordAction] = useState<"BLOCK" | "MASK">("BLOCK");
   const [newKeywordDescription, setNewKeywordDescription] = useState<string>("");
   const [uploadValidating, setUploadValidating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddPrebuiltPattern = () => {
     if (!selectedPatternName) {
@@ -204,6 +205,14 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
     return false;
   };
 
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
   const showPatterns = !showStep || showStep === "patterns";
   const showKeywords = !showStep || showStep === "keywords";
   const showCategories = !showStep || showStep === "categories";
@@ -213,65 +222,71 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
     <div className="space-y-6">
       {!showStep && (
         <div>
-          <Text type="secondary">{t("safety.contentFilter.description")}</Text>
+          <p className="text-muted-foreground">{t("safety.contentFilter.description")}</p>
         </div>
       )}
 
       {showPatterns && (
-        <Card
-          title={
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Title level={5} style={{ margin: 0 }}>
-                {t("safety.contentFilter.patternDetection")}
-              </Title>
-              <Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-                {t("safety.contentFilter.patternHelp")}
-              </Text>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>{t("safety.contentFilter.patternDetection")}</CardTitle>
+              <p className="text-sm font-normal text-muted-foreground">{t("safety.contentFilter.patternHelp")}</p>
             </div>
-          }
-          size="small"
-        >
-          <div style={{ marginBottom: 16 }}>
-            <Space>
-              <Button type="primary" onClick={() => setPatternModalVisible(true)} icon={<PlusOutlined />}>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Button onClick={() => setPatternModalVisible(true)}>
+                <Plus />
                 {t("safety.contentFilter.addPrebuilt")}
               </Button>
-              <Button onClick={() => setCustomPatternModalVisible(true)} icon={<PlusOutlined />}>
+              <Button variant="outline" onClick={() => setCustomPatternModalVisible(true)}>
+                <Plus />
                 {t("safety.contentFilter.addCustom")}
               </Button>
-            </Space>
-          </div>
-          <PatternTable patterns={selectedPatterns} onActionChange={onPatternActionChange} onRemove={onPatternRemove} />
+            </div>
+            <PatternTable
+              patterns={selectedPatterns}
+              onActionChange={onPatternActionChange}
+              onRemove={onPatternRemove}
+            />
+          </CardContent>
         </Card>
       )}
 
       {showKeywords && (
-        <Card
-          title={
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Title level={5} style={{ margin: 0 }}>
-                {t("safety.contentFilter.blockedKeywords")}
-              </Title>
-              <Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-                {t("safety.contentFilter.keywordHelp")}
-              </Text>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>{t("safety.contentFilter.blockedKeywords")}</CardTitle>
+              <p className="text-sm font-normal text-muted-foreground">{t("safety.contentFilter.keywordHelp")}</p>
             </div>
-          }
-          size="small"
-        >
-          <div style={{ marginBottom: 16 }}>
-            <Space>
-              <Button type="primary" onClick={() => setKeywordModalVisible(true)} icon={<PlusOutlined />}>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Button onClick={() => setKeywordModalVisible(true)}>
+                <Plus />
                 {t("safety.contentFilter.addKeyword")}
               </Button>
-              <Upload beforeUpload={handleFileUpload} accept=".yaml,.yml" showUploadList={false}>
-                <Button icon={<UploadOutlined />} loading={uploadValidating}>
-                  {t("safety.contentFilter.uploadYaml")}
-                </Button>
-              </Upload>
-            </Space>
-          </div>
-          <KeywordTable keywords={blockedWords} onActionChange={onBlockedWordUpdate} onRemove={onBlockedWordRemove} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".yaml,.yml"
+                className="hidden"
+                onChange={handleFileInputChange}
+              />
+              <Button
+                variant="outline"
+                disabled={uploadValidating}
+                aria-busy={uploadValidating}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploadValidating ? <UiLoadingSpinner className="size-4" /> : <Upload />}
+                {t("safety.contentFilter.uploadYaml")}
+              </Button>
+            </div>
+            <KeywordTable keywords={blockedWords} onActionChange={onBlockedWordUpdate} onRemove={onBlockedWordRemove} />
+          </CardContent>
         </Card>
       )}
 

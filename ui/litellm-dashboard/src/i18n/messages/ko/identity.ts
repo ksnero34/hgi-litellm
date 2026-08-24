@@ -56,6 +56,8 @@ export const identityMessages: MessageCatalog = {
   "identity.accessGroups.modal.createTitle": "액세스 그룹 생성",
   "identity.accessGroups.modal.createConfirm": "그룹 생성",
   "identity.accessGroups.modal.createSuccess": "액세스 그룹이 생성되었습니다",
+  "identity.accessGroups.modal.createFailed": "액세스 그룹을 생성하지 못했습니다",
+  "identity.accessGroups.modal.creating": "생성 중...",
   "identity.accessGroups.modal.editTitle": "액세스 그룹 수정",
   "identity.accessGroups.modal.editSuccess": "액세스 그룹이 수정되었습니다",
 };

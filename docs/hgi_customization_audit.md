@@ -286,3 +286,52 @@ redaction, actor-key hashing, mandatory failure observation을 사용한다. das
 폐쇄망 production build가 외부 Google Fonts를 요청하지 않도록 원격 font dependency를 제외한다. upstream
 Prisma migration과 lockfile은 1.97 의존성 그래프에서 다시 생성하며 generated API schema와
 `_experimental/out`은 upstream/generated 경계를 따른다.
+
+## 13. v1.98.0 업스트림 통합
+
+`hgi-v1.98.0`은 upstream `v1.98.0`의
+`d8f71d7bdbd7c9873d98293f83d64c6db72847e6`을 두 번째 parent로 병합한다. `v1.98.0`,
+`release/v1.98.0`, `rc/1.98.0`은 같은 commit을 가리키며 tag object가 아닌 lightweight tag이므로 tag 자체의
+GPG 서명은 검증할 수 없다. 1.97 HGI merge commit
+`469b8189b5d166a7875f8442a8d448ab9af0f002`에서 `--no-ff` merge를 시작했고 rebase나 squash를 사용하지
+않았다.
+
+1.98의 bulk daily-spend upsert, access-group 동기화, key/team cache invalidation, dashboard App Router와 새
+component 구조를 수용했다. HGI의 응답시간/TTFT 집계는 새 bulk upsert counter와 spend column으로 옮겼고,
+key 재발급에서는 active token 변경과 deprecated lineage 생성을 동일 transaction에 유지했다. 수동 재발급은
+transaction, cache 무효화, access-group 동기화 뒤 key-management hook을 기다린다. 자동 회전은 내부 job의
+재발급 단계에서 hook을 중복 호출하지 않고 rotation metadata 갱신 뒤 한 번 호출한다.
+
+unrestricted OAuth/OIDC/SSO와 managed-team claim 동기화, 중앙 authorization을 통한 IP allowlist, managed
+personal/service key 보호와 key-list scope, OSS audit repository와 mandatory DB persistence, key-hash 기반
+observability scope, Presidio fail-closed와 Purview, guardrail usage tracking을 유지했다. dashboard는
+Admin Viewer의 Playground를 숨기고 한국어/영어 label과 badge를 분리하며 same-origin API와 폐쇄망 build
+구조를 유지한다. v1.98에서 삭제된 audit table display export는 HGI i18n audit label helper로 대체했고,
+managed personal key edit에서 ownership, team, organization, lifecycle mutation field를 다시 제외했다.
+
+`uv.lock`, dashboard `package-lock.json`, OpenAPI `schema.d.ts`는 v1.98 코드와 Node 24.19.0 환경에서 정식
+명령으로 재생성했다. `litellm-enterprise` dependency와 `enterprise/`, `litellm/proxy/enterprise/` source tree는
+포함하지 않으며 `_experimental/out`은 upstream v1.98 결과와 일치시킨다. 실제 PostgreSQL, Redis 다중 worker,
+OIDC IdP, secret manager, email provider, Purview/Graph API는 로컬 unit/mock 검증을 대체할 수 없으므로 운영
+통합 검증 항목으로 남긴다.
+
+검증에서는 backend collection 1,023건, 기존 auth/IP 144건, HGI focused backend 1,686 passed/4 skipped,
+rotation·hook 재검증 36 passed/1 skipped, Presidio·Purview·guardrail usage focused 261건을 확인했다. HGI focused
+backend의 나머지 1건은 `.env`의 `db:5432` PostgreSQL에 연결할 수 없어 실패한 deprecated-key DB E2E이며 코드
+assertion 실패가 아니다. dashboard는 주 focused 672건, audit 25건, response detail 31건, key-edit refactor 60건을
+각각 통과했다. Node 24.19.0 production build는 외부 proxy를 실패 주소로 고정한 상태에서 TypeScript 검사와
+51개 static page 생성을 통과했고, Turbopack의 AVIF 무최적화 경고 1건만 남았다. 최종 staged `make pre-commit`은
+Node heap을 8GB로 지정해 통과했으며 reviewer 재검토의 blocking finding은 0건이다.
+
+### 13.1 Dashboard post-merge 재감사
+
+v1.97 HGI와 v1.98 upstream을 다시 3-way 비교한 결과, 최초 merge에서 upstream과 동일해진 dashboard 경로를
+추가로 발견했다. 모델별 평균 response time/TTFT 카드와 count-weighted 집계, request-log team/user scope,
+Presidio custom entity, guardrail logging-only 관찰 결과와 UTC 날짜 처리, 비관리자 Usage 범위, Admin Viewer의
+비용 발생 action 제한, 폐쇄망 font/link 정책을 v1.98 component 구조에 다시 이식했다. v1.97에서 번역을 사용하던
+파일은 삭제된 Access Group modal을 제외하고 모두 v1.98 대응 component 또는 대체 Dialog에서 i18n resource를
+사용하도록 복구했다. reviewer가 추가로 찾은 Models + Endpoints table column 번역 주입도 직접 검증해 반영했다.
+
+재검증에서는 핵심 회귀 및 i18n suite 173건과 model table 26건이 통과했다. Node 24.19.0 production build는
+TypeScript 검사와 51개 static page 생성을 다시 통과했고 AVIF 무최적화 경고 1건만 유지됐다. sandbox build는
+Turbopack의 local port bind 제한으로 실패했으며 같은 명령을 제한 없이 재실행해 성공을 확인했다.

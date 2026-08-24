@@ -1,22 +1,13 @@
 import { DonutChart } from "@/components/shared/charts";
+import { DataTable } from "@/components/shared/DataTable";
 import { MoneyCell } from "@/components/shared/table_cells";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
-import { InfoCircleOutlined } from "@ant-design/icons";
-import {
-  Card,
-  Col,
-  Grid,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  Title,
-} from "@tremor/react";
-import { Tooltip } from "antd";
-import React, { useState } from "react";
+import { Info } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProviderLogo } from "@/components/molecules/models/ProviderLogo";
 import { ChartLoader } from "@/components/shared/chart_loader";
@@ -40,6 +31,45 @@ const SpendByProvider: React.FC<SpendByProviderProps> = ({ loading, isDateChangi
   const { t } = useTranslation();
   const [includeZeroSpend, setIncludeZeroSpend] = useState(false);
   const [includeUnknown, setIncludeUnknown] = useState(false);
+  const columns = useMemo<ColumnDef<ProviderSpendData>[]>(
+    () => [
+      {
+        header: t("observability.usage.provider"),
+        accessorKey: "provider",
+        cell: ({ row }) => (
+          <div className="flex items-center space-x-2">
+            {row.original.provider && <ProviderLogo provider={row.original.provider} className="size-4" />}
+            <span>{row.original.provider}</span>
+          </div>
+        ),
+      },
+      {
+        header: t("observability.usage.spend"),
+        accessorKey: "spend",
+        meta: { numeric: true },
+        cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={2} />,
+      },
+      {
+        header: t("observability.usage.successful"),
+        accessorKey: "successful_requests",
+        meta: { numeric: true, className: "text-green-600" },
+        cell: ({ row }) => row.original.successful_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.failed"),
+        accessorKey: "failed_requests",
+        meta: { numeric: true, className: "text-red-600" },
+        cell: ({ row }) => row.original.failed_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.tokens"),
+        accessorKey: "tokens",
+        meta: { numeric: true },
+        cell: ({ row }) => row.original.tokens.toLocaleString(),
+      },
+    ],
+    [t],
+  );
 
   const filteredProviderSpend = providerSpend.filter((provider) => {
     const isUnknown = provider.provider?.toLowerCase() === "unknown";
@@ -60,29 +90,30 @@ const SpendByProvider: React.FC<SpendByProviderProps> = ({ loading, isDateChangi
 
   return (
     <Card className="h-full">
-      <div className="flex justify-between items-center mb-4">
-        <Title>{t("observability.usage.spend_by_provider")}</Title>
-        <div className="flex items-center gap-4">
+      <CardHeader>
+        <CardTitle>{t("observability.usage.spend_by_provider")}</CardTitle>
+        <CardAction className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-700">{t("observability.usage.show_zero_spend")}</label>
-            <Switch checked={includeZeroSpend} onChange={setIncludeZeroSpend} />
+            <Switch checked={includeZeroSpend} onCheckedChange={setIncludeZeroSpend} />
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               <label className="text-sm text-gray-700">{t("observability.usage.show_unknown")}</label>
-              <Tooltip title={t("observability.usage.show_unknown_tooltip")}>
-                <InfoCircleOutlined className="text-gray-400 hover:text-gray-600" />
+              <Tooltip>
+                <TooltipTrigger render={<Info className="size-4 text-gray-400 hover:text-gray-600" />} />
+                <TooltipContent>{t("observability.usage.show_unknown_tooltip")}</TooltipContent>
               </Tooltip>
             </div>
-            <Switch checked={includeUnknown} onChange={setIncludeUnknown} />
+            <Switch checked={includeUnknown} onCheckedChange={setIncludeUnknown} />
           </div>
-        </div>
-      </div>
-      {loading ? (
-        <ChartLoader isDateChanging={isDateChanging} />
-      ) : (
-        <Grid numItems={2}>
-          <Col numColSpan={1}>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <ChartLoader isDateChanging={isDateChanging} />
+        ) : (
+          <div className="grid grid-cols-2">
             <DonutChart
               className="mt-4 h-40"
               data={filteredProviderSpend}
@@ -94,40 +125,16 @@ const SpendByProvider: React.FC<SpendByProviderProps> = ({ loading, isDateChangi
               startAngle={90}
               endAngle={-270}
             />
-          </Col>
-          <Col numColSpan={1}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell>{t("observability.usage.provider")}</TableHeaderCell>
-                  <TableHeaderCell>{t("observability.usage.spend")}</TableHeaderCell>
-                  <TableHeaderCell className="text-green-600">{t("observability.usage.successful")}</TableHeaderCell>
-                  <TableHeaderCell className="text-red-600">{t("observability.usage.failed")}</TableHeaderCell>
-                  <TableHeaderCell>{t("observability.usage.tokens")}</TableHeaderCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredProviderSpend.map((provider) => (
-                  <TableRow key={provider.provider}>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {provider.provider && <ProviderLogo provider={provider.provider} className="w-4 h-4" />}
-                        <span>{provider.provider}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <MoneyCell value={provider.spend} decimals={2} />
-                    </TableCell>
-                    <TableCell className="text-green-600">{provider.successful_requests.toLocaleString()}</TableCell>
-                    <TableCell className="text-red-600">{provider.failed_requests.toLocaleString()}</TableCell>
-                    <TableCell>{provider.tokens.toLocaleString()}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Col>
-        </Grid>
-      )}
+            <DataTable
+              columns={columns}
+              data={filteredProviderSpend}
+              getRowId={(row) => row.provider}
+              noDataMessage={t("observability.usage.no_provider_usage_data")}
+              size="compact"
+            />
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 };

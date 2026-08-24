@@ -332,4 +332,15 @@ export const playgroundAgentsMessages: MessageCatalog = {
   "playgroundAgents.chat.vectorStore": "Vector Store",
   "playgroundAgents.chat.vectorStoreHelp":
     "Select vector store(s) to use for this LLM API call. You can set up your vector store",
+  "playgroundAgents.chat.loading": "Loading...",
+  "playgroundAgents.chat.loadingModels": "Loading models...",
+  "playgroundAgents.chat.noMcpServers": "No MCP servers",
+  "playgroundAgents.chat.mode": "Mode: {{mode}}",
+  "playgroundAgents.chat.imageEditUploadHelp": "Supports PNG, JPG, JPEG, GIF, and WebP. Multiple images are supported.",
+  "playgroundAgents.chat.removeFile": "Remove {{fileName}}",
+  "playgroundAgents.chat.notifications.copyFailed": "Unable to copy to clipboard",
+  "playgroundAgents.chat.modelEmpty.noModelsForKey": "No models available for this key",
+  "playgroundAgents.chat.modelEmpty.loadFailed": "Unable to load models for this key",
+  "playgroundAgents.chat.modelEmpty.enterKey": "Enter a Virtual Key to load models",
+  "playgroundAgents.chat.modelEmpty.noModelsForEndpoint": "No models available for this endpoint",
 };

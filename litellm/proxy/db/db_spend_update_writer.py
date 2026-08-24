@@ -12,9 +12,7 @@ import os
 import random
 import time
 import traceback
-from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Literal, cast, overload
 
 import litellm
@@ -23,6 +21,7 @@ from litellm.caching import RedisCache
 from litellm.constants import (
     DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME,
     DB_SPEND_UPDATE_JOB_NAME,
+    INTERNAL_CALL_ORIGIN_METADATA_KEY,
 )
 from litellm.litellm_core_utils.safe_json_loads import safe_json_loads
 from litellm.proxy._types import (
@@ -40,6 +39,11 @@ from litellm.proxy._types import (
     SpendLogsPayload,
     SpendUpdateQueueItem,
     ToolDiscoveryQueueItem,
+)
+from litellm.proxy.db.daily_spend_bulk_upsert import (
+    DAILY_SPEND_TABLES,
+    build_bulk_upsert,
+    merge_by_conflict_key,
 )
 from litellm.proxy.db.db_transaction_queue.daily_spend_update_queue import (
     DailySpendUpdateQueue,
@@ -70,12 +74,6 @@ else:
 
 LOGGING_ONLY_GUARDRAILS_PENDING = "logging_only_guardrails_pending"
 LOGGING_ONLY_GUARDRAILS_PENDING_KWARG = "_logging_only_guardrails_pending"
-
-
-# Only tag rows carry a request_id, so the other entity types spread nothing. Built
-# once here rather than as an empty literal per transaction, and read-only so it cannot
-# be filled in by accident from one of the call sites that spreads it.
-_NO_TAG_REQUEST_ID: Final[Mapping[str, Any]] = MappingProxyType({})
 
 
 def _get_llm_router():
@@ -897,8 +895,9 @@ class DBSpendUpdateWriter:
             )
         )
         if prisma_client is not None and spend_logs_url is not None or prisma_client is not None:
-            async with prisma_client._spend_log_transactions_lock:
-                prisma_client.spend_log_transactions.append(payload)
+            from litellm.proxy.utils import enqueue_spend_logs
+
+            await enqueue_spend_logs(prisma_client, (payload,))
         else:
             verbose_proxy_logger.debug("prisma_client is None. Skipping writing spend logs to db.")
 
@@ -971,6 +970,8 @@ class DBSpendUpdateWriter:
         ):
             verbose_proxy_logger.debug("acquired lock for spend updates")
 
+            uncommitted: dict[str, Any] = {}  # mutable-ok: tracks popped categories still needing commit
+
             try:
                 (
                     db_spend_update_transactions,
@@ -980,6 +981,15 @@ class DBSpendUpdateWriter:
                     daily_end_user_spend_update_transactions,
                     daily_agent_spend_update_transactions,
                 ) = await self.redis_update_buffer.get_all_transactions_from_redis_buffer_pipeline()
+
+                uncommitted = {  # mutable-ok: drives which popped categories still need re-queuing
+                    "db_spend_update_transactions": db_spend_update_transactions,
+                    "daily_spend_update_transactions": daily_spend_update_transactions,
+                    "daily_team_spend_update_transactions": daily_team_spend_update_transactions,
+                    "daily_org_spend_update_transactions": daily_org_spend_update_transactions,
+                    "daily_end_user_spend_update_transactions": daily_end_user_spend_update_transactions,
+                    "daily_agent_spend_update_transactions": daily_agent_spend_update_transactions,
+                }
 
                 if db_spend_update_transactions is not None:
                     verbose_proxy_logger.info(
@@ -1000,6 +1010,7 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         db_spend_update_transactions=db_spend_update_transactions,
                     )
+                uncommitted.pop("db_spend_update_transactions", None)
 
                 if daily_spend_update_transactions is not None:
                     await DBSpendUpdateWriter.update_daily_user_spend(
@@ -1008,6 +1019,8 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         daily_spend_transactions=daily_spend_update_transactions,
                     )
+                uncommitted.pop("daily_spend_update_transactions", None)
+
                 if daily_team_spend_update_transactions is not None:
                     await DBSpendUpdateWriter.update_daily_team_spend(
                         n_retry_times=n_retry_times,
@@ -1015,6 +1028,7 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         daily_spend_transactions=daily_team_spend_update_transactions,
                     )
+                uncommitted.pop("daily_team_spend_update_transactions", None)
 
                 if daily_org_spend_update_transactions is not None:
                     await DBSpendUpdateWriter.update_daily_org_spend(
@@ -1023,6 +1037,7 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         daily_spend_transactions=daily_org_spend_update_transactions,
                     )
+                uncommitted.pop("daily_org_spend_update_transactions", None)
 
                 if daily_end_user_spend_update_transactions is not None:
                     await DBSpendUpdateWriter.update_daily_end_user_spend(
@@ -1031,6 +1046,8 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         daily_spend_transactions=daily_end_user_spend_update_transactions,
                     )
+                uncommitted.pop("daily_end_user_spend_update_transactions", None)
+
                 if daily_agent_spend_update_transactions is not None:
                     await DBSpendUpdateWriter.update_daily_agent_spend(
                         n_retry_times=n_retry_times,
@@ -1038,14 +1055,20 @@ class DBSpendUpdateWriter:
                         proxy_logging_obj=proxy_logging_obj,
                         daily_spend_transactions=daily_agent_spend_update_transactions,
                     )
+                uncommitted.pop("daily_agent_spend_update_transactions", None)
             except Exception as e:
                 spend_log_error(
                     "Spend tracking - failed to commit spend updates from Redis to DB. "
-                    "Data already popped from Redis may be lost. Error: %s",
+                    "Re-queuing uncommitted transactions to Redis for retry on next tick. Error: %s",
                     str(e),
                     exc=e,
                 )
             finally:
+                to_restore = {  # mutable-ok: transient kwargs payload consumed immediately below
+                    name: txns for name, txns in uncommitted.items() if txns is not None
+                }
+                if to_restore:
+                    await self.redis_update_buffer.restore_transactions_to_redis(**to_restore)
                 await self.pod_lock_manager.release_lock(
                     cronjob_id=DB_SPEND_UPDATE_JOB_NAME,
                 )
@@ -1195,21 +1218,15 @@ class DBSpendUpdateWriter:
         ):
             verbose_proxy_logger.debug("acquired lock for daily tag spend updates")
             try:
-                daily_tag_spend_update_transactions: Final = (
-                    await self.redis_update_buffer.get_all_daily_tag_spend_update_transactions_from_redis_buffer()
+                await self._drain_and_commit_daily_tag_spend_from_redis(
+                    prisma_client=prisma_client,
+                    n_retry_times=n_retry_times,
+                    proxy_logging_obj=proxy_logging_obj,
                 )
-
-                if daily_tag_spend_update_transactions:
-                    await DBSpendUpdateWriter.update_daily_tag_spend(
-                        n_retry_times=n_retry_times,
-                        prisma_client=prisma_client,
-                        proxy_logging_obj=proxy_logging_obj,
-                        daily_spend_transactions=daily_tag_spend_update_transactions,
-                    )
             except Exception as e:
                 spend_log_error(
                     "Spend tracking - failed to commit daily tag spend updates from Redis to DB. "
-                    "Data already popped from Redis may be lost. Error: %s",
+                    "Re-queuing to Redis for retry on next tick. Error: %s",
                     str(e),
                     exc=e,
                 )
@@ -1217,6 +1234,37 @@ class DBSpendUpdateWriter:
                 await self.pod_lock_manager.release_lock(
                     cronjob_id=DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME,
                 )
+
+    async def _drain_and_commit_daily_tag_spend_from_redis(
+        self,
+        prisma_client: PrismaClient,
+        n_retry_times: int,
+        proxy_logging_obj: ProxyLogging,
+    ) -> None:
+        """
+        Drain the Redis tag spend buffer and commit it, restoring the drained transactions if the commit fails.
+
+        The drain is destructive, so a failed commit must push the transactions back for the next tick
+        or their spend is lost permanently.
+        """
+        daily_tag_spend_update_transactions: Final = (
+            await self.redis_update_buffer.get_all_daily_tag_spend_update_transactions_from_redis_buffer()
+        )
+        if not daily_tag_spend_update_transactions:
+            return
+
+        try:
+            await DBSpendUpdateWriter.update_daily_tag_spend(
+                n_retry_times=n_retry_times,
+                prisma_client=prisma_client,
+                proxy_logging_obj=proxy_logging_obj,
+                daily_spend_transactions=daily_tag_spend_update_transactions,
+            )
+        except Exception:
+            await self.redis_update_buffer.restore_transactions_to_redis(
+                daily_tag_spend_update_transactions=daily_tag_spend_update_transactions,
+            )
+            raise
 
     async def _flush_tool_discovery_queue(
         self,
@@ -1545,8 +1593,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyUserSpendTransaction],
         entity_type: Literal["user"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None: 
         ...
 
@@ -1559,8 +1605,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyTeamSpendTransaction],
         entity_type: Literal["team"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None:
         ...
 
@@ -1573,8 +1617,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyOrganizationSpendTransaction],
         entity_type: Literal["org"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None:
         ...
 
@@ -1587,8 +1629,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyEndUserSpendTransaction],
         entity_type: Literal["end_user"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None:
         ...
 
@@ -1601,8 +1641,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyAgentSpendTransaction],
         entity_type: Literal["agent"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None:
         ...
 
@@ -1615,8 +1653,6 @@ class DBSpendUpdateWriter:
         daily_spend_transactions: dict[str, DailyTagSpendTransaction],
         entity_type: Literal["tag"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None: 
         ...
     # fmt: on
@@ -1634,8 +1670,6 @@ class DBSpendUpdateWriter:
         | dict[str, DailyAgentSpendTransaction],
         entity_type: Literal["user", "team", "org", "tag", "end_user", "agent"],
         entity_id_field: str,
-        table_name: str,
-        unique_constraint_name: str,
     ) -> None:
         """
         Generic function to update daily spend for any entity type (user, team, org, tag, end_user, agent)
@@ -1681,130 +1715,23 @@ class DBSpendUpdateWriter:
                             )
                             return
 
+                        table = DAILY_SPEND_TABLES[entity_type]
                         try:
-                            async with (
-                                prisma_client.db.tx(timeout=timedelta(seconds=60)) as db_transaction,
-                                db_transaction.batch_() as batcher,
-                            ):
-                                for _, transaction in transactions_to_process.items():
-                                    entity_id = transaction.get(entity_id_field)
-
-                                    # Construct the where clause dynamically
-                                    where_clause = {
-                                        unique_constraint_name: {
-                                            entity_id_field: entity_id,
-                                            "date": transaction["date"],
-                                            "api_key": transaction["api_key"],
-                                            "model": transaction["model"],
-                                            "custom_llm_provider": transaction.get("custom_llm_provider") or "",
-                                            "mcp_namespaced_tool_name": transaction.get("mcp_namespaced_tool_name")
-                                            or "",
-                                            "endpoint": transaction.get("endpoint") or "",
-                                        }
-                                    }
-
-                                    # Get the table dynamically
-                                    table = getattr(batcher, table_name)
-
-                                    # Additive metrics that older queued rows may omit; one
-                                    # enumeration feeds both the create and the increment below
-                                    optional_metrics = {
-                                        field: value
-                                        for field, value in (
-                                            ("cache_read_input_tokens", transaction.get("cache_read_input_tokens")),
-                                            (
-                                                "cache_creation_input_tokens",
-                                                transaction.get("cache_creation_input_tokens"),
-                                            ),
-                                            ("compression_saved_tokens", transaction.get("compression_saved_tokens")),
-                                            (
-                                                "compression_savings_spend",
-                                                transaction.get("compression_savings_spend"),
-                                            ),
-                                            (
-                                                "prompt_caching_savings_spend",
-                                                transaction.get("prompt_caching_savings_spend"),
-                                            ),
-                                            ("autorouter_savings_spend", transaction.get("autorouter_savings_spend")),
-                                        )
-                                        if value is not None
-                                    }
-
-                                    # Only tag rows carry a request_id. Resolved to a spreadable
-                                    # value here so both payloads are built in one shot: a dict
-                                    # appended to after construction is one nobody can reason about
-                                    # by reading its literal.
-                                    tag_request_id: Mapping[str, Any] = (
-                                        MappingProxyType({"request_id": transaction["request_id"]})
-                                        if entity_type == "tag" and "request_id" in transaction
-                                        else _NO_TAG_REQUEST_ID
-                                    )
-
-                                    # Common data structure for both create and update
-                                    common_data = {
-                                        entity_id_field: entity_id,
-                                        "date": transaction["date"],
-                                        "api_key": transaction["api_key"],
-                                        "model": transaction.get("model"),
-                                        "model_group": transaction.get("model_group"),
-                                        "mcp_namespaced_tool_name": transaction.get("mcp_namespaced_tool_name") or "",
-                                        "custom_llm_provider": transaction.get("custom_llm_provider"),
-                                        "endpoint": transaction.get("endpoint") or "",
-                                        "prompt_tokens": transaction["prompt_tokens"],
-                                        "completion_tokens": transaction["completion_tokens"],
-                                        "spend": transaction["spend"],
-                                        "api_requests": transaction["api_requests"],
-                                        "successful_requests": transaction["successful_requests"],
-                                        "failed_requests": transaction["failed_requests"],
-                                        **optional_metrics,
-                                        **tag_request_id,
-                                    }
-                                    if "response_time_ms_sum" in transaction:
-                                        common_data["response_time_ms_sum"] = transaction["response_time_ms_sum"]
-                                        common_data["response_time_count"] = transaction.get("response_time_count", 0)
-                                    if "ttft_ms_sum" in transaction:
-                                        common_data["ttft_ms_sum"] = transaction["ttft_ms_sum"]
-                                        common_data["ttft_count"] = transaction.get("ttft_count", 0)
-
-                                    update_data = {
-                                        "prompt_tokens": {"increment": transaction["prompt_tokens"]},
-                                        "completion_tokens": {"increment": transaction["completion_tokens"]},
-                                        "spend": {"increment": transaction["spend"]},
-                                        "api_requests": {"increment": transaction["api_requests"]},
-                                        "successful_requests": {"increment": transaction["successful_requests"]},
-                                        "failed_requests": {"increment": transaction["failed_requests"]},
-                                        **{field: {"increment": value} for field, value in optional_metrics.items()},
-                                        # An existing row predating the endpoint column gets it filled in here
-                                        "endpoint": transaction.get("endpoint") or "",
-                                        **tag_request_id,
-                                    }
-                                    if "response_time_ms_sum" in transaction:
-                                        update_data["response_time_ms_sum"] = {
-                                            "increment": transaction["response_time_ms_sum"]
-                                        }
-                                        update_data["response_time_count"] = {
-                                            "increment": transaction.get("response_time_count", 0)
-                                        }
-                                    if "ttft_ms_sum" in transaction:
-                                        update_data["ttft_ms_sum"] = {"increment": transaction["ttft_ms_sum"]}
-                                        update_data["ttft_count"] = {"increment": transaction.get("ttft_count", 0)}
-
-                                    table.upsert(
-                                        where=where_clause,
-                                        data={
-                                            "create": common_data,
-                                            "update": update_data,
-                                        },
-                                    )
+                            # One statement per batch rather than per key: the same rows are
+                            # aggregated, but concurrent writers no longer hold a batch's worth
+                            # of row locks across a hundred round trips.
+                            merged_batch = merge_by_conflict_key(
+                                table=table, transactions=tuple(transactions_to_process.values())
+                            )
+                            sql, params = build_bulk_upsert(table=table, batch=merged_batch)
+                            await prisma_client.db.execute_raw(sql, *params)
                         except Exception as batch_error:
                             # Log detailed error information for debugging batch upsert failures
                             # This helps diagnose issues like unique constraint violations
                             spend_log_error(
-                                "Daily %s spend batch upsert failed. "
-                                "Table: %s, Constraint: %s, Batch size: %d, Error: %s",
+                                "Daily %s spend batch upsert failed. Table: %s, Rows: %d, Error: %s",
                                 entity_type,
-                                table_name,
-                                unique_constraint_name,
+                                table.name,
                                 len(transactions_to_process),
                                 str(batch_error),
                                 exc=batch_error,
@@ -1838,9 +1765,6 @@ class DBSpendUpdateWriter:
                         )
 
         except Exception as e:
-            if "transactions_to_process" in locals():
-                for key in transactions_to_process:
-                    daily_spend_transactions.pop(key, None)
             _raise_failed_update_spend_exception(e=e, start_time=start_time, proxy_logging_obj=proxy_logging_obj)
 
     @staticmethod
@@ -1860,8 +1784,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="user",
             entity_id_field="user_id",
-            table_name="litellm_dailyuserspend",
-            unique_constraint_name="user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     @staticmethod
@@ -1881,8 +1803,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="team",
             entity_id_field="team_id",
-            table_name="litellm_dailyteamspend",
-            unique_constraint_name="team_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     @staticmethod
@@ -1902,8 +1822,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="org",
             entity_id_field="organization_id",
-            table_name="litellm_dailyorganizationspend",
-            unique_constraint_name="organization_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     @staticmethod
@@ -1923,8 +1841,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="end_user",
             entity_id_field="end_user_id",
-            table_name="litellm_dailyenduserspend",
-            unique_constraint_name="end_user_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     @staticmethod
@@ -1944,8 +1860,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="agent",
             entity_id_field="agent_id",
-            table_name="litellm_dailyagentspend",
-            unique_constraint_name="agent_id_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     @staticmethod
@@ -1965,8 +1879,6 @@ class DBSpendUpdateWriter:
             daily_spend_transactions=daily_spend_transactions,
             entity_type="tag",
             entity_id_field="tag",
-            table_name="litellm_dailytagspend",
-            unique_constraint_name="tag_date_api_key_model_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
         )
 
     async def _common_add_spend_log_transaction_to_daily_transaction(
@@ -2038,6 +1950,7 @@ class DBSpendUpdateWriter:
             if call_type:
                 endpoint = ROUTE_ENDPOINT_MAPPING.get(call_type, None)
 
+            is_internal_call: Final = bool(_metadata.get(INTERNAL_CALL_ORIGIN_METADATA_KEY))
             cache_read_input_tokens: Final = extract_cache_read_tokens(usage_obj)
             compression_saved_tokens: Final = extract_compression_saved_tokens(_metadata)
             savings_spend: Final = compute_savings_spend(
@@ -2062,16 +1975,21 @@ class DBSpendUpdateWriter:
                 prompt_tokens=payload["prompt_tokens"],
                 completion_tokens=payload["completion_tokens"],
                 spend=payload["spend"],
-                api_requests=1,
-                successful_requests=1 if request_status == "success" else 0,
-                failed_requests=1 if request_status != "success" else 0,
+                # Internal sub-calls (auto-router classifier, shadow eval's shadow and
+                # judge) bill real spend and tokens to the key, but they are not
+                # requests the caller made: counting them inflates request-volume
+                # readers, and an auto-router savings figure computed on a shadow
+                # duplicate credits savings for traffic no user sent.
+                api_requests=0 if is_internal_call else 1,
+                successful_requests=1 if not is_internal_call and request_status == "success" else 0,
+                failed_requests=1 if not is_internal_call and request_status != "success" else 0,
                 cache_read_input_tokens=cache_read_input_tokens,
                 cache_creation_input_tokens=extract_cache_creation_tokens(usage_obj),
                 compression_saved_tokens=compression_saved_tokens,
                 compression_savings_spend=savings_spend.compression,
                 prompt_caching_savings_spend=savings_spend.prompt_caching,
                 **_performance_metrics(payload, request_status == "success"),
-                autorouter_savings_spend=savings_spend.autorouter,
+                autorouter_savings_spend=0.0 if is_internal_call else savings_spend.autorouter,
             )
             return daily_transaction
         except Exception as e:

@@ -329,4 +329,16 @@ export const playgroundAgentsMessages: MessageCatalog = {
   "playgroundAgents.chat.validation.toolSchemaLoading": "도구 스키마를 불러올 때까지 기다려 주세요",
   "playgroundAgents.chat.vectorStore": "벡터 저장소",
   "playgroundAgents.chat.vectorStoreHelp": "이 LLM API 호출에 사용할 벡터 저장소를 선택하세요. 벡터 저장소는",
+  "playgroundAgents.chat.loading": "불러오는 중...",
+  "playgroundAgents.chat.loadingModels": "모델을 불러오는 중...",
+  "playgroundAgents.chat.noMcpServers": "MCP 서버 없음",
+  "playgroundAgents.chat.mode": "모드: {{mode}}",
+  "playgroundAgents.chat.imageEditUploadHelp":
+    "PNG, JPG, JPEG, GIF, WebP를 지원합니다. 여러 이미지를 업로드할 수 있습니다.",
+  "playgroundAgents.chat.removeFile": "{{fileName}} 제거",
+  "playgroundAgents.chat.notifications.copyFailed": "클립보드에 복사할 수 없습니다",
+  "playgroundAgents.chat.modelEmpty.noModelsForKey": "이 키에 사용할 수 있는 모델이 없습니다",
+  "playgroundAgents.chat.modelEmpty.loadFailed": "이 키의 모델을 불러올 수 없습니다",
+  "playgroundAgents.chat.modelEmpty.enterKey": "모델을 불러오려면 Virtual Key를 입력하세요",
+  "playgroundAgents.chat.modelEmpty.noModelsForEndpoint": "이 엔드포인트에 사용할 수 있는 모델이 없습니다",
 };

@@ -2,7 +2,7 @@
 
 import { PropsWithChildren, useEffect } from "react";
 import { I18nextProvider } from "react-i18next";
-import { i18n } from "./i18n";
+import { i18n, i18nReady } from "./i18n";
 import { defaultLanguage, languageStorageKey, supportedLanguages, type SupportedLanguage } from "./resources";
 
 const isSupported = (value: string | null): value is SupportedLanguage =>
@@ -18,7 +18,7 @@ export default function I18nProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const stored = window.localStorage.getItem(languageStorageKey);
     const language = resolveLanguage(stored);
-    void i18n.changeLanguage(language);
+    void i18nReady.then(() => i18n.changeLanguage(language));
     document.documentElement.lang = language;
     const updateDocument = (next: string) => {
       document.documentElement.lang = next;

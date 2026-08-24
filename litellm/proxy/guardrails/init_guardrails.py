@@ -125,9 +125,17 @@ def initialize_guardrails(
                     if callback not in litellm.callbacks:
                         default_on_callbacks.add(callback)
 
-                    if guardrail.logging_only is True:
-                        if callback == "presidio":
-                            callback_specific_params["presidio"] = {"logging_only": True}
+                    if callback == "presidio":
+                        presidio_params = dict(callback_specific_params.get("presidio", {}))
+                        presidio_params.update(
+                            {
+                                "guardrail_name": guardrail.guardrail_name,
+                                "default_on": True,
+                            }
+                        )
+                        if guardrail.logging_only is True:
+                            presidio_params["logging_only"] = True
+                        callback_specific_params["presidio"] = presidio_params
 
         default_on_callbacks_list: Final = list(default_on_callbacks)
         if len(default_on_callbacks_list) > 0:

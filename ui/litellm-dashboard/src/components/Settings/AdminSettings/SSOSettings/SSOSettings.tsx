@@ -1,11 +1,16 @@
 "use client";
 
-import { useSSOSettings, type SSOSettingsValues } from "@/app/(dashboard)/hooks/sso/useSSOSettings";
-import { Logo } from "@/components/molecules/logo/Logo";
-import { Button, Card, Descriptions, Space, Tag, Typography } from "antd";
-import { Edit, Shield, Trash2 } from "lucide-react";
+import { Copy, Edit, Shield, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { useSSOSettings, type SSOSettingsValues } from "@/app/(dashboard)/hooks/sso/useSSOSettings";
+import { Logo } from "@/components/molecules/logo/Logo";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { copyToClipboard } from "@/utils/dataUtils";
+
 import AddSSOSettingsModal from "./Modals/AddSSOSettingsModal";
 import DeleteSSOSettingsModal from "./Modals/DeleteSSOSettingsModal";
 import EditSSOSettingsModal from "./Modals/EditSSOSettingsModal";
@@ -16,7 +21,37 @@ import SSOSettingsLoadingSkeleton from "./SSOSettingsLoadingSkeleton";
 import { ssoProviderDisplayNames, ssoProviderLogoMap } from "./constants";
 import { detectSSOProvider } from "./utils";
 
-const { Title, Text } = Typography;
+function NotConfigured({ label }: { label: string }) {
+  return <span className="text-muted-foreground italic">{label}</span>;
+}
+
+function DetailRow({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3">
+      <dt className="bg-muted/50 px-4 py-3 text-sm font-medium text-foreground">{label}</dt>
+      <dd className="min-w-0 px-4 py-3 text-sm text-foreground sm:col-span-2">{children}</dd>
+    </div>
+  );
+}
+
+function EndpointValue({ value }: { value?: string | null }) {
+  if (!value) return <span className="font-mono text-muted-foreground">-</span>;
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="truncate font-mono text-sm text-muted-foreground">{value}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Copy value"
+        onClick={() => void copyToClipboard(value, "Copied to clipboard")}
+      >
+        <Copy className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
 
 export default function SSOSettings() {
   const { t } = useTranslation();
@@ -31,47 +66,18 @@ export default function SSOSettings() {
     ssoSettings?.values.saml_idp_metadata_url,
     ssoSettings?.values.saml_idp_metadata_xml,
   ].some(Boolean);
-
   const selectedProvider = ssoSettings?.values ? detectSSOProvider(ssoSettings.values) : null;
-  const roleMappings = ssoSettings?.values.role_mappings;
+  const isRoleMappingsEnabled = Boolean(ssoSettings?.values.role_mappings);
   const isTeamMappingsEnabled = Boolean(ssoSettings?.values.team_mappings);
 
-  const renderEndpointValue = (value?: string | null) => (
-    <Text className="font-mono text-gray-600 text-sm" copyable={!!value}>
-      {value || "-"}
-    </Text>
-  );
-
-  const renderSimpleValue = (value?: string | null) =>
-    value ? (
-      value
+  const notConfiguredLabel = t("settings.sso.notConfigured", { defaultValue: "Not configured" });
+  const renderSimpleValue = (value?: string | null) => value || <NotConfigured label={notConfiguredLabel} />;
+  const renderTeamMappingsField = (values: SSOSettingsValues) =>
+    values.team_mappings?.team_ids_jwt_field ? (
+      <Badge variant="secondary">{values.team_mappings.team_ids_jwt_field}</Badge>
     ) : (
-      <span className="text-gray-400 italic">
-        {t("settings.sso.notConfigured", { defaultValue: "Not configured" })}
-      </span>
+      <NotConfigured label={notConfiguredLabel} />
     );
-
-  const renderTeamMappingsField = (values: SSOSettingsValues) => {
-    if (!values.team_mappings?.team_ids_jwt_field) {
-      return (
-        <span className="text-gray-400 italic">
-          {t("settings.sso.notConfigured", { defaultValue: "Not configured" })}
-        </span>
-      );
-    }
-    return <Tag>{values.team_mappings.team_ids_jwt_field}</Tag>;
-  };
-
-  const descriptionsConfig = {
-    column: {
-      xxl: 1,
-      xl: 1,
-      lg: 1,
-      md: 1,
-      sm: 1,
-      xs: 1,
-    },
-  };
 
   const providerConfigs = {
     google: {
@@ -124,20 +130,16 @@ export default function SSOSettings() {
           render: (values: SSOSettingsValues) => <RedactableField value={values.generic_client_secret} />,
         },
         {
-          label: t("settings.sso.discoveryUrl", { defaultValue: "Discovery URL" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_discovery_url),
-        },
-        {
           label: t("settings.sso.authorizationEndpoint", { defaultValue: "Authorization Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_authorization_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_authorization_endpoint} />,
         },
         {
           label: t("settings.sso.tokenEndpoint", { defaultValue: "Token Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_token_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_token_endpoint} />,
         },
         {
           label: t("settings.sso.userInfoEndpoint", { defaultValue: "User Info Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_userinfo_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_userinfo_endpoint} />,
         },
         {
           label: t("settings.sso.scopes", { defaultValue: "Scopes" }),
@@ -167,20 +169,16 @@ export default function SSOSettings() {
           render: (values: SSOSettingsValues) => <RedactableField value={values.generic_client_secret} />,
         },
         {
-          label: t("settings.sso.discoveryUrl", { defaultValue: "Discovery URL" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_discovery_url),
-        },
-        {
           label: t("settings.sso.authorizationEndpoint", { defaultValue: "Authorization Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_authorization_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_authorization_endpoint} />,
         },
         {
           label: t("settings.sso.tokenEndpoint", { defaultValue: "Token Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_token_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_token_endpoint} />,
         },
         {
           label: t("settings.sso.userInfoEndpoint", { defaultValue: "User Info Endpoint" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.generic_userinfo_endpoint),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.generic_userinfo_endpoint} />,
         },
         {
           label: t("settings.sso.scopes", { defaultValue: "Scopes" }),
@@ -203,33 +201,31 @@ export default function SSOSettings() {
       fields: [
         {
           label: t("settings.sso.samlIdpMetadataUrl", { defaultValue: "IdP Metadata URL" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.saml_idp_metadata_url),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.saml_idp_metadata_url} />,
         },
         {
           label: t("settings.sso.samlIdpMetadataXml", { defaultValue: "IdP Metadata XML" }),
           render: (values: SSOSettingsValues) =>
             values.saml_idp_metadata_xml ? (
-              <Tag>{t("settings.sso.provided", { defaultValue: "Provided" })}</Tag>
+              <Badge variant="secondary">{t("settings.sso.provided", { defaultValue: "Provided" })}</Badge>
             ) : (
-              <span className="text-gray-400 italic">
-                {t("settings.sso.notConfigured", { defaultValue: "Not configured" })}
-              </span>
+              <NotConfigured label={notConfiguredLabel} />
             ),
         },
         {
           label: t("settings.sso.samlSpEntityId", { defaultValue: "SP Entity ID" }),
-          render: (values: SSOSettingsValues) => renderEndpointValue(values.saml_sp_entity_id),
+          render: (values: SSOSettingsValues) => <EndpointValue value={values.saml_sp_entity_id} />,
         },
         {
           label: t("settings.sso.samlAllowUnsolicited", {
             defaultValue: "Allow IdP-initiated (unsolicited) responses",
           }),
           render: (values: SSOSettingsValues) => (
-            <Tag color={values.saml_allow_unsolicited === "true" ? "green" : "default"}>
+            <Badge variant={values.saml_allow_unsolicited === "true" ? "default" : "secondary"}>
               {values.saml_allow_unsolicited === "true"
                 ? t("settings.sso.enabled", { defaultValue: "Enabled" })
                 : t("settings.sso.disabled", { defaultValue: "Disabled" })}
-            </Tag>
+            </Badge>
           ),
         },
         {
@@ -242,35 +238,32 @@ export default function SSOSettings() {
 
   const renderSSOSettings = () => {
     if (!ssoSettings?.values || !selectedProvider) return null;
-
-    const { values } = ssoSettings;
     const config = providerConfigs[selectedProvider as keyof typeof providerConfigs];
-
     if (!config) return null;
 
     return (
-      <Descriptions bordered {...descriptionsConfig}>
-        <Descriptions.Item label={t("settings.sso.provider", { defaultValue: "Provider" })}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <dl className="divide-y divide-border overflow-hidden rounded-md border border-border">
+        <DetailRow label={t("settings.sso.provider", { defaultValue: "Provider" })}>
+          <div className="flex items-center gap-2">
             {ssoProviderLogoMap[selectedProvider] && (
               <Logo
                 src={ssoProviderLogoMap[selectedProvider]}
                 label={ssoProviderDisplayNames[selectedProvider] || selectedProvider}
-                className="h-6 w-6 object-contain"
+                className="size-6 object-contain"
               />
             )}
             <span>{config.providerText}</span>
           </div>
-        </Descriptions.Item>
+        </DetailRow>
         {config.fields.map(
-          (field, index) =>
+          (field) =>
             field && (
-              <Descriptions.Item key={index} label={field.label}>
-                {field.render(values)}
-              </Descriptions.Item>
+              <DetailRow key={field.label} label={field.label}>
+                {field.render(ssoSettings.values)}
+              </DetailRow>
             ),
         )}
-      </Descriptions>
+      </dl>
     );
   };
 
@@ -279,49 +272,43 @@ export default function SSOSettings() {
       {isLoading ? (
         <SSOSettingsLoadingSkeleton />
       ) : (
-        <Space direction="vertical" size="large" className="w-full">
+        <div className="space-y-6">
           <Card>
-            <Space direction="vertical" size="large" className="w-full">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-6 h-6 text-gray-400" />
-                  <div>
-                    <Title level={3}>{t("settings.sso.title", { defaultValue: "SSO Configuration" })}</Title>
-                    <Text type="secondary">
-                      {t("settings.sso.subtitle", {
-                        defaultValue: "Manage Single Sign-On authentication settings",
-                      })}
-                    </Text>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {isSSOConfigured && (
-                    <>
-                      <Button icon={<Edit className="w-4 h-4" />} onClick={() => setIsEditModalVisible(true)}>
-                        {t("settings.sso.edit", { defaultValue: "Edit SSO Settings" })}
-                      </Button>
-                      <Button
-                        danger
-                        icon={<Trash2 className="w-4 h-4" />}
-                        onClick={() => setIsDeleteModalVisible(true)}
-                      >
-                        {t("settings.sso.delete", { defaultValue: "Delete SSO Settings" })}
-                      </Button>
-                    </>
-                  )}
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Shield className="size-6 text-muted-foreground" />
+                <div>
+                  <CardTitle>
+                    <h3>{t("settings.sso.title", { defaultValue: "SSO Configuration" })}</h3>
+                  </CardTitle>
+                  <CardDescription>
+                    {t("settings.sso.subtitle", { defaultValue: "Manage Single Sign-On authentication settings" })}
+                  </CardDescription>
                 </div>
               </div>
-
+              {isSSOConfigured && (
+                <CardAction className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setIsEditModalVisible(true)}>
+                    <Edit />
+                    {t("settings.sso.edit", { defaultValue: "Edit SSO Settings" })}
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={() => setIsDeleteModalVisible(true)}>
+                    <Trash2 />
+                    {t("settings.sso.delete", { defaultValue: "Delete SSO Settings" })}
+                  </Button>
+                </CardAction>
+              )}
+            </CardHeader>
+            <CardContent>
               {isSSOConfigured ? (
                 renderSSOSettings()
               ) : (
                 <SSOSettingsEmptyPlaceholder onAdd={() => setIsAddModalVisible(true)} />
               )}
-            </Space>
+            </CardContent>
           </Card>
-          {roleMappings && <RoleMappings roleMappings={roleMappings} />}
-        </Space>
+          {isRoleMappingsEnabled && <RoleMappings roleMappings={ssoSettings?.values.role_mappings ?? undefined} />}
+        </div>
       )}
 
       <DeleteSSOSettingsModal
@@ -329,7 +316,6 @@ export default function SSOSettings() {
         onCancel={() => setIsDeleteModalVisible(false)}
         onSuccess={() => refetch()}
       />
-
       <AddSSOSettingsModal
         isVisible={isAddModalVisible}
         onCancel={() => setIsAddModalVisible(false)}
@@ -338,7 +324,6 @@ export default function SSOSettings() {
           refetch();
         }}
       />
-
       <EditSSOSettingsModal
         isVisible={isEditModalVisible}
         onCancel={() => setIsEditModalVisible(false)}

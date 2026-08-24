@@ -108,4 +108,17 @@ export const interactionExtraMessages: MessageCatalog = {
   "interactionExtra.playground.uiSessionReady": "UI 세션: 준비됨",
   "interactionExtra.playground.responseId": "응답 ID",
   "interactionExtra.playground.uiSession": "UI 세션",
+  "interactionExtra.playground.sendMessage": "메시지 보내기",
+  "interactionExtra.playground.responseIdCopyFailed": "응답 ID를 복사할 수 없습니다",
+  "interactionExtra.playground.sessionManagement": "세션 관리",
+  "interactionExtra.playground.aboutSessionManagement": "세션 관리 정보",
+  "interactionExtra.playground.sessionManagementHelp":
+    "이전 response ID를 사용하는 LiteLLM API 세션 관리와 채팅 기록을 사용하는 UI 세션 관리 중에서 선택합니다.",
+  "interactionExtra.playground.useApiSessionManagement": "API 세션 관리 사용",
+  "interactionExtra.playground.apiSessionPending": "LiteLLM이 previous_response_id를 사용해 세션을 관리합니다",
+  "interactionExtra.playground.uiSessionPending": "UI가 채팅 기록을 사용해 세션을 관리합니다",
+  "interactionExtra.playground.apiSessionActive": "LiteLLM API 세션 활성화됨 - 서버에서 컨텍스트 유지",
+  "interactionExtra.playground.uiSessionActive": "UI 세션 활성화됨 - 클라이언트에서 컨텍스트 유지",
+  "interactionExtra.playground.copyResponseId": "응답 ID 복사",
+  "interactionExtra.playground.copyResponseIdHelp": "세션을 계속하려면 응답 ID를 복사하세요:",
 };

@@ -1,13 +1,12 @@
 import React, { useState } from "react";
+import { Copy, Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@tremor/react";
-import { Input, Typography, Tooltip } from "antd";
-import { CopyOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import NotificationsManager from "@/components/molecules/notifications_manager";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import GuardrailTestResults from "./GuardrailTestResults";
-
-const { TextArea } = Input;
-const { Text } = Typography;
 
 interface GuardrailTestPanelProps {
   guardrailNames: string[];
@@ -110,66 +109,90 @@ export function GuardrailTestPanel({
   return (
     <div className="space-y-4 h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+      <div className="flex items-center justify-between border-b border-border pb-3">
         <div className="flex items-center space-x-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2 mb-1">
-              <h2 className="text-lg font-semibold text-gray-900">{t("safety.test.title")}</h2>
+            <div className="mb-1 flex items-center space-x-2">
+              <h2 className="text-lg font-semibold">{t("safety.test.title")}</h2>
               <div className="flex flex-wrap gap-2">
                 {guardrailNames.map((name) => (
                   <div
                     key={name}
-                    className="inline-flex items-center space-x-1 bg-blue-50 px-3 py-1 rounded-md border border-blue-200"
+                    className="inline-flex items-center space-x-1 rounded-md border border-blue-200 bg-blue-50 px-3 py-1"
                   >
-                    <span className="font-mono text-blue-700 font-medium text-sm">{name}</span>
+                    <span className="font-mono text-sm font-medium text-blue-700">{name}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <p className="text-sm text-gray-500">{t("safety.test.compare", { count: guardrailNames.length })}</p>
+            <p className="text-sm text-muted-foreground">
+              {t("safety.test.compare", {
+                count: guardrailNames.length > 1 ? "guardrails" : "guardrail",
+              })}
+            </p>
           </div>
         </div>
       </div>
 
       {/* Input Section */}
-      <div className="flex-1 overflow-auto space-y-4">
+      <div className="flex-1 space-y-4 overflow-auto px-1">
         <div className="space-y-3">
           <div>
-            <div className="flex justify-between items-center mb-2">
+            <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">{t("safety.test.input")}</label>
-                <Tooltip title={t("safety.test.inputHelp")}>
-                  <InfoCircleOutlined className="text-gray-400 cursor-help" />
+                <label className="text-sm font-medium">{t("safety.test.input")}</label>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="cursor-help text-muted-foreground">
+                        <Info className="size-3.5" />
+                      </span>
+                    }
+                  />
+                  <TooltipContent>{t("safety.test.inputHelp")}</TooltipContent>
                 </Tooltip>
               </div>
               {inputText && (
-                <Button size="xs" variant="secondary" icon={CopyOutlined} onClick={handleCopyInput}>
+                <Button size="sm" variant="secondary" onClick={handleCopyInput}>
+                  <Copy />
                   {t("safety.test.copyInput")}
                 </Button>
               )}
             </div>
-            <TextArea
+            <Textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t("safety.test.inputPlaceholder")}
               rows={8}
-              className="font-mono text-sm"
+              className="font-mono text-sm field-sizing-fixed"
             />
-            <div className="flex justify-between items-center mt-1">
-              <Text className="text-xs text-gray-500">{t("safety.test.submitHelp")}</Text>
-              <Text className="text-xs text-gray-500">{t("safety.test.characters", { count: inputText.length })}</Text>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{t("safety.test.submitHelp")}</span>
+              <span className="text-xs text-muted-foreground">
+                {t("safety.test.characters", { count: inputText.length })}
+              </span>
             </div>
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <label className="text-sm font-medium text-gray-700">Metadata (optional)</label>
-              <Tooltip title="JSON object forwarded to the guardrail as request_data['metadata']. Custom guardrails can read per-request configuration from it.">
-                <InfoCircleOutlined className="text-gray-400 cursor-help" />
+            <div className="mb-2 flex items-center gap-2">
+              <label className="text-sm font-medium">Metadata (optional)</label>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="cursor-help text-muted-foreground">
+                      <Info className="size-3.5" />
+                    </span>
+                  }
+                />
+                <TooltipContent>
+                  JSON object forwarded to the guardrail as request_data[&apos;metadata&apos;]. Custom guardrails can
+                  read per-request configuration from it.
+                </TooltipContent>
               </Tooltip>
             </div>
-            <TextArea
+            <Textarea
               value={metadataText}
               onChange={(e) => {
                 setMetadataText(e.target.value);
@@ -179,18 +202,20 @@ export function GuardrailTestPanel({
               }}
               placeholder='{"forbidden_topics": ["tax", "finance"]}'
               rows={3}
-              className="font-mono text-sm"
-              status={metadataError ? "error" : undefined}
+              className="font-mono text-sm field-sizing-fixed"
+              aria-invalid={metadataError ? true : undefined}
             />
-            {metadataError && (
-              <Text type="danger" className="text-xs">
-                {metadataError}
-              </Text>
-            )}
+            {metadataError && <span className="text-xs text-destructive">{metadataError}</span>}
           </div>
 
           <div className="pt-2">
-            <Button onClick={handleSubmit} loading={isLoading} disabled={!inputText.trim()} className="w-full">
+            <Button
+              onClick={handleSubmit}
+              disabled={!inputText.trim() || isLoading}
+              aria-busy={isLoading}
+              className="w-full"
+            >
+              {isLoading && <UiLoadingSpinner className="size-4" />}
               {isLoading
                 ? t("safety.test.testing", { count: guardrailNames.length })
                 : t("safety.test.run", { count: guardrailNames.length })}

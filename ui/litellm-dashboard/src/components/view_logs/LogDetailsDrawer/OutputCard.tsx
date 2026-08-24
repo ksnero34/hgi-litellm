@@ -4,13 +4,11 @@
  */
 
 import { useState } from "react";
-import { Typography } from "antd";
 import MessageManager from "@/components/molecules/message_manager";
+import { COLOR_BORDER } from "./constants";
 import { ParsedMessage, ParsedResponseItem, ParsedResponseState } from "./prettyMessagesTypes";
 import { SectionHeader } from "./SectionHeader";
 import { ResponseItemsView } from "./ResponseItemsView";
-
-const { Text } = Typography;
 
 interface OutputCardProps {
   message: ParsedMessage | null;
@@ -41,50 +39,8 @@ export function OutputCard({
     MessageManager.success("Output copied");
   };
 
-  if (normalizedItems.length === 0 && !responseState) {
-    return (
-      <div
-        style={{
-          border: "1px solid #f0f0f0",
-          borderRadius: 6,
-          overflow: "hidden",
-        }}
-      >
-        <SectionHeader
-          type="output"
-          tokens={completionTokens}
-          cost={outputCost}
-          onCopy={handleCopy}
-          isCollapsed={isCollapsed}
-          onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
-        />
-        <div
-          style={{
-            maxHeight: isCollapsed ? "0px" : "10000px",
-            overflow: "hidden",
-            transition: "max-height 0.3s ease-out, opacity 0.3s ease-out",
-            opacity: isCollapsed ? 0 : 1,
-          }}
-        >
-          <div style={{ padding: "12px 16px" }}>
-            <Text type="secondary" style={{ fontSize: 13, fontStyle: "italic" }}>
-              No response data available
-            </Text>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div
-      style={{
-        border: "1px solid #f0f0f0",
-        borderRadius: 6,
-        overflow: "hidden",
-      }}
-    >
-      {/* Datadog-style Header */}
+    <div className="overflow-hidden rounded-md" style={{ border: `1px solid ${COLOR_BORDER}` }}>
       <SectionHeader
         type="output"
         tokens={completionTokens}
@@ -94,17 +50,16 @@ export function OutputCard({
         onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
       />
 
-      {/* Content */}
       <div
-        style={{
-          maxHeight: isCollapsed ? "0px" : "10000px",
-          overflow: "hidden",
-          transition: "max-height 0.3s ease-out, opacity 0.3s ease-out",
-          opacity: isCollapsed ? 0 : 1,
-        }}
+        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-out"
+        style={{ maxHeight: isCollapsed ? "0px" : "10000px", opacity: isCollapsed ? 0 : 1 }}
       >
-        <div style={{ padding: "12px 16px" }}>
-          <ResponseItemsView items={normalizedItems} state={responseState} />
+        <div className="px-4 py-3">
+          {normalizedItems.length > 0 || responseState ? (
+            <ResponseItemsView items={normalizedItems} state={responseState} />
+          ) : (
+            <span className="text-[13px] text-muted-foreground italic">No response data available</span>
+          )}
         </div>
       </div>
     </div>

@@ -1,32 +1,37 @@
 import useTeams from "@/app/(dashboard)/hooks/useTeams";
 import { BarChart, DonutChart } from "@/components/shared/charts";
+import { DataTable } from "@/components/shared/DataTable";
+import {
+  getProviderSpend,
+  getTopAgents,
+  getTopAPIKeys,
+  getTopModels,
+  type ExtendedDailyData,
+  type ProviderSpendRow,
+} from "./entityUsageAggregations";
+import {
+  buildCostBreakdownTiles,
+  buildSummaryTiles,
+  FLAT_COST_TOOLTIP,
+  hasFlatCost,
+  REQUEST_COST_TOOLTIP,
+  type SummaryTile,
+  TOTAL_COST_TOOLTIP,
+} from "./entityUsageSummary";
 import { MoneyCell } from "@/components/shared/table_cells";
 import { Card as ShadcnCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { hasCapability, type Capability } from "@/utils/capabilities";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
-import {
-  Card,
-  Col,
-  DateRangePickerValue,
-  Grid,
-  Subtitle,
-  Tab,
-  TabGroup,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  TabList,
-  TabPanel,
-  TabPanels,
-  Text,
-  Title,
-} from "@tremor/react";
-import { ExportOutlined, LoadingOutlined } from "@ant-design/icons";
-import { Alert, Button, Select } from "antd";
+import type { DateRangePickerValue } from "@/components/shared/date_picker_types";
+import { ChevronDown, ChevronRight, ExternalLink, Info, Loader2 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Alert, AlertDescription } from "@/components/shared/Alert";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import React, { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import TeamMultiSelect from "@/components/common_components/team_multi_select";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import { UsageExportHeader } from "@/components/EntityUsageExport";
 import type { EntityType } from "@/components/EntityUsageExport/types";
@@ -40,19 +45,12 @@ import {
 } from "@/components/networking";
 import { Logo } from "@/components/molecules/logo/Logo";
 import { usePaginatedDailyActivity } from "../../hooks/usePaginatedDailyActivity";
-import {
-  BreakdownMetrics,
-  DailyData,
-  EntityMetricWithMetadata,
-  KeyMetricWithMetadata,
-  TagUsage,
-} from "@/components/UsagePage/types";
+import { EntityMetricWithMetadata } from "@/components/UsagePage/types";
 import { valueFormatterSpend } from "@/components/UsagePage/utils/value_formatters";
 import EndpointUsage from "../EndpointUsage/EndpointUsage";
 import ModelViewToggle, { ModelViewType } from "../ModelViewToggle";
 import TopKeyView from "@/components/UsagePage/components/EntityUsage/TopKeyView";
 import TopModelView from "./TopModelView";
-import { all_admin_roles } from "@/utils/roles";
 
 interface EntityMetrics {
   metrics: {
@@ -69,14 +67,11 @@ interface EntityMetrics {
   metadata: Record<string, any>;
 }
 
-type ExtendedDailyData = DailyData & {
-  breakdown: BreakdownMetrics;
-};
-
 interface EntitySpendData {
   results: ExtendedDailyData[];
   metadata: {
     total_spend: number;
+    total_flat_cost?: number;
     total_api_requests: number;
     total_successful_requests: number;
     total_failed_requests: number;
@@ -109,13 +104,18 @@ const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
   user: userDailyActivityCall,
 };
 
+const ENTITY_CAPABILITIES: Partial<Record<EntityType, Capability>> = {
+  organization: "viewOrganizationUsage",
+  agent: "viewAgentUsage",
+};
+
 const EntityUsage: React.FC<EntityUsageProps> = ({
   accessToken,
   entityType,
   entityId,
   entityList,
-  dateValue,
   userRole,
+  dateValue,
 }) => {
   const { t } = useTranslation();
   const { teams } = useTeams();
@@ -124,6 +124,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   const [topKeysLimit, setTopKeysLimit] = useState<number>(5);
   const [topModelsLimit, setTopModelsLimit] = useState<number>(5);
   const [topAgentsLimit, setTopAgentsLimit] = useState<number>(5);
+  const [showCostBreakdown, setShowCostBreakdown] = useState(false);
 
   const startTime = useMemo(() => (dateValue.from ? new Date(dateValue.from) : null), [dateValue.from]);
   const endTime = useMemo(() => (dateValue.to ? new Date(dateValue.to) : null), [dateValue.to]);
@@ -134,8 +135,11 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   }, [entityType, selectedTags]);
 
   const fetchFn = ENTITY_FETCH_FNS[entityType];
-  const enabled = !!accessToken && !!startTime && !!endTime && (entityType !== "team" || selectedTags.length > 0);
-  const isAdmin = all_admin_roles.includes(userRole || "");
+  const entityCapability = ENTITY_CAPABILITIES[entityType];
+  const canViewEntity = entityCapability === undefined || hasCapability(userRole, entityCapability);
+  const showAgentBreakdown = entityType === "team" && hasCapability(userRole, "viewAgentUsage");
+  const hasRequestWindow = !!accessToken && !!startTime && !!endTime;
+  const enabled = hasRequestWindow && canViewEntity;
 
   const {
     data: spendDataRaw,
@@ -143,8 +147,6 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     progress,
     cancelled,
     cancel,
-    error,
-    retry,
   } = usePaginatedDailyActivity({
     fetchFn,
     args: [accessToken, startTime, endTime, entityFilterArg],
@@ -159,12 +161,10 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     progress: agentProgress,
     cancelled: agentCancelled,
     cancel: agentCancel,
-    error: agentError,
-    retry: agentRetry,
   } = usePaginatedDailyActivity({
     fetchFn: agentDailyActivityCall,
     args: [accessToken, startTime, endTime, null],
-    enabled: enabled && entityType === "team" && isAdmin,
+    enabled: enabled && showAgentBreakdown,
   });
 
   const agentSpendData = agentSpendDataRaw as unknown as EntitySpendData;
@@ -172,164 +172,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   const modelBreakdownKey = modelViewType === "groups" ? "model_groups" : "models";
   const modelMetrics = processActivityData(spendData, modelBreakdownKey, teams || []);
   const keyMetrics = processActivityData(spendData, "api_keys", teams || []);
-  const agentMetrics = entityType === "team" ? processActivityData(agentSpendData, "entities", teams || []) : {};
-
-  const getTopModels = () => {
-    const modelSpend: { [key: string]: any } = {};
-    spendData.results.forEach((day) => {
-      Object.entries(day.breakdown[modelBreakdownKey] || {}).forEach(([model, metrics]) => {
-        if (!modelSpend[model]) {
-          modelSpend[model] = {
-            spend: 0,
-            requests: 0,
-            successful_requests: 0,
-            failed_requests: 0,
-            tokens: 0,
-          };
-        }
-        try {
-          modelSpend[model].spend += metrics.metrics.spend;
-        } catch (e) {
-          console.error(`Error adding spend for ${model}: ${e}, got metrics: ${JSON.stringify(metrics)}`);
-        }
-        modelSpend[model].requests += metrics.metrics.api_requests;
-        modelSpend[model].successful_requests += metrics.metrics.successful_requests;
-        modelSpend[model].failed_requests += metrics.metrics.failed_requests;
-        modelSpend[model].tokens += metrics.metrics.total_tokens;
-      });
-    });
-
-    return Object.entries(modelSpend)
-      .map(([model, metrics]) => ({
-        key: model,
-        ...metrics,
-      }))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, topModelsLimit);
-  };
-
-  const getTopAgents = () => {
-    const agentSpend: { [key: string]: any } = {};
-    agentSpendData.results.forEach((day) => {
-      Object.entries(day.breakdown.entities || {}).forEach(([agentId, data]) => {
-        if (!agentSpend[agentId]) {
-          agentSpend[agentId] = {
-            spend: 0,
-            requests: 0,
-            successful_requests: 0,
-            failed_requests: 0,
-            tokens: 0,
-            agent_name: (data.metadata as any)?.agent_name || agentId,
-          };
-        }
-        agentSpend[agentId].spend += data.metrics.spend;
-        agentSpend[agentId].requests += data.metrics.api_requests;
-        agentSpend[agentId].successful_requests += data.metrics.successful_requests;
-        agentSpend[agentId].failed_requests += data.metrics.failed_requests;
-        agentSpend[agentId].tokens += data.metrics.total_tokens;
-      });
-    });
-
-    return Object.entries(agentSpend)
-      .map(([agentId, metrics]) => ({
-        key: metrics.agent_name,
-        ...metrics,
-      }))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, topAgentsLimit);
-  };
-
-  const getTopAPIKeys = () => {
-    const keySpend: { [key: string]: KeyMetricWithMetadata } = {};
-    spendData.results.forEach((day) => {
-      const { breakdown } = day;
-      const { entities } = breakdown;
-      const tagDictionary = Object.keys(entities).reduce((acc: { [key: string]: TagUsage[] }, entity) => {
-        const { api_key_breakdown } = entities[entity];
-        Object.keys(api_key_breakdown).forEach((key) => {
-          const tagUsage = { tag: entity, usage: api_key_breakdown[key].metrics.spend };
-          if (acc[key]) {
-            acc[key].push(tagUsage);
-          } else {
-            acc[key] = [tagUsage];
-          }
-        });
-        return acc;
-      }, {});
-      Object.entries(day.breakdown.api_keys || {}).forEach(([key, metrics]) => {
-        if (!keySpend[key]) {
-          keySpend[key] = {
-            metrics: {
-              spend: 0,
-              prompt_tokens: 0,
-              completion_tokens: 0,
-              total_tokens: 0,
-              api_requests: 0,
-              successful_requests: 0,
-              failed_requests: 0,
-              cache_read_input_tokens: 0,
-              cache_creation_input_tokens: 0,
-            },
-            metadata: {
-              key_alias: metrics.metadata.key_alias,
-              team_id: metrics.metadata.team_id || null,
-              tags: tagDictionary[key] || [],
-            },
-          };
-        }
-        keySpend[key].metrics.spend += metrics.metrics.spend;
-        keySpend[key].metrics.prompt_tokens += metrics.metrics.prompt_tokens;
-        keySpend[key].metrics.completion_tokens += metrics.metrics.completion_tokens;
-        keySpend[key].metrics.total_tokens += metrics.metrics.total_tokens;
-        keySpend[key].metrics.api_requests += metrics.metrics.api_requests;
-        keySpend[key].metrics.successful_requests += metrics.metrics.successful_requests;
-        keySpend[key].metrics.failed_requests += metrics.metrics.failed_requests;
-        keySpend[key].metrics.cache_read_input_tokens += metrics.metrics.cache_read_input_tokens || 0;
-        keySpend[key].metrics.cache_creation_input_tokens += metrics.metrics.cache_creation_input_tokens || 0;
-      });
-    });
-
-    return Object.entries(keySpend)
-      .map(([api_key, metrics]) => ({
-        api_key,
-        key_alias: metrics.metadata.key_alias || "-", // Using truncated key as alias
-        tags: metrics.metadata.tags || "-",
-        spend: metrics.metrics.spend,
-      }))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, topKeysLimit);
-  };
-
-  const getProviderSpend = () => {
-    const providerSpend: { [key: string]: any } = {};
-    spendData.results.forEach((day) => {
-      Object.entries(day.breakdown.providers || {}).forEach(([provider, metrics]) => {
-        if (!providerSpend[provider]) {
-          providerSpend[provider] = {
-            provider,
-            spend: 0,
-            requests: 0,
-            successful_requests: 0,
-            failed_requests: 0,
-            tokens: 0,
-          };
-        }
-        try {
-          providerSpend[provider].spend += metrics.metrics.spend;
-          providerSpend[provider].requests += metrics.metrics.api_requests;
-          providerSpend[provider].successful_requests += metrics.metrics.successful_requests;
-          providerSpend[provider].failed_requests += metrics.metrics.failed_requests;
-          providerSpend[provider].tokens += metrics.metrics.total_tokens;
-        } catch (e) {
-          console.error(`Error processing provider ${provider}: ${e}`);
-        }
-      });
-    });
-
-    return Object.values(providerSpend)
-      .filter((provider) => provider.spend > 0)
-      .sort((a, b) => b.spend - a.spend);
-  };
+  const agentMetrics = showAgentBreakdown ? processActivityData(agentSpendData, "entities", teams || []) : {};
 
   const getAllTags = () => {
     if (entityList) {
@@ -418,78 +261,230 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   const getFilterPlaceholder = (entityType: string) => t("observability.usage.select_entity_to_filter", { entityType });
 
   const capitalizedEntityLabel = t(`observability.usage.entity.${entityType}`);
+  const showFlatCost = entityType === "team" && hasFlatCost(spendData.metadata);
+  const providerSpend = useMemo(() => getProviderSpend(spendData.results), [spendData.results]);
+  const entityBreakdownColumns = useMemo<ColumnDef<EntityMetricWithMetadata>[]>(
+    () => [
+      {
+        header: capitalizedEntityLabel,
+        accessorKey: "metadata.alias",
+        cell: ({ row }) => row.original.metadata.alias,
+      },
+      {
+        header: t("observability.usage.spend"),
+        accessorKey: "metrics.spend",
+        meta: { numeric: true },
+        cell: ({ row }) => <MoneyCell value={row.original.metrics.spend} decimals={4} />,
+      },
+      {
+        header: t("observability.usage.successful"),
+        accessorKey: "metrics.successful_requests",
+        meta: { numeric: true, className: "text-green-600" },
+        cell: ({ row }) => row.original.metrics.successful_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.failed"),
+        accessorKey: "metrics.failed_requests",
+        meta: { numeric: true, className: "text-red-600" },
+        cell: ({ row }) => row.original.metrics.failed_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.tokens"),
+        accessorKey: "metrics.total_tokens",
+        meta: { numeric: true },
+        cell: ({ row }) => row.original.metrics.total_tokens.toLocaleString(),
+      },
+    ],
+    [capitalizedEntityLabel, t],
+  );
+  const providerSpendColumns = useMemo<ColumnDef<ProviderSpendRow>[]>(
+    () => [
+      {
+        header: t("observability.usage.provider"),
+        accessorKey: "provider",
+        cell: ({ row }) => (
+          <div className="flex items-center space-x-2">
+            {row.original.provider && <Logo provider={row.original.provider} className="size-4" />}
+            <span>{row.original.provider}</span>
+          </div>
+        ),
+      },
+      {
+        header: t("observability.usage.spend"),
+        accessorKey: "spend",
+        meta: { numeric: true },
+        cell: ({ row }) => <MoneyCell value={row.original.spend} decimals={2} />,
+      },
+      {
+        header: t("observability.usage.successful"),
+        accessorKey: "successful_requests",
+        meta: { numeric: true, className: "text-green-600" },
+        cell: ({ row }) => row.original.successful_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.failed"),
+        accessorKey: "failed_requests",
+        meta: { numeric: true, className: "text-red-600" },
+        cell: ({ row }) => row.original.failed_requests.toLocaleString(),
+      },
+      {
+        header: t("observability.usage.tokens"),
+        accessorKey: "tokens",
+        meta: { numeric: true },
+        cell: ({ row }) => row.original.tokens.toLocaleString(),
+      },
+    ],
+    [t],
+  );
 
-  const modelViewTitle = modelViewType === "groups" ? "Top Public Model Names" : "Top Litellm Models";
+  const chev = "size-3 text-gray-400";
+  const expandIcon = showCostBreakdown ? <ChevronDown className={chev} /> : <ChevronRight className={chev} />;
+
+  const renderSummaryTile = ({ title, value, className, tooltip, expandable }: SummaryTile) => (
+    <ShadcnCard
+      key={title}
+      className={expandable ? "cursor-pointer hover:bg-gray-50 transition-colors" : undefined}
+      onClick={expandable ? () => setShowCostBreakdown(!showCostBreakdown) : undefined}
+    >
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-medium text-foreground">{title}</h3>
+          {tooltip ? (
+            <Tooltip>
+              <TooltipTrigger render={<Info className="size-4 text-gray-400 hover:text-gray-600" />} />
+              <TooltipContent>{tooltip}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {expandable ? expandIcon : null}
+        </div>
+        <p className={`text-2xl font-bold mt-2 ${className ?? ""}`}>{value}</p>
+      </CardContent>
+    </ShadcnCard>
+  );
+
+  const localizeSummaryTile = (tile: SummaryTile): SummaryTile => {
+    const title = {
+      "Total Cost": t("observability.usage.total_cost_label"),
+      "Total Spend": t("observability.usage.total_spend_label"),
+      "Total Requests": t("observability.usage.total_requests_label"),
+      "Successful Requests": t("observability.usage.successful_requests_label"),
+      "Failed Requests": t("observability.usage.failed_requests_label"),
+      "Total Tokens": t("observability.usage.total_tokens_label"),
+      "Request Cost": t("observability.usage.request_cost_label"),
+      "Flat Cost": t("observability.usage.flat_cost_label"),
+    }[tile.title];
+    const tooltip = {
+      [TOTAL_COST_TOOLTIP]: t("observability.usage.total_cost_tooltip"),
+      [REQUEST_COST_TOOLTIP]: t("observability.usage.request_cost_tooltip"),
+      [FLAT_COST_TOOLTIP]: t("observability.usage.flat_cost_tooltip"),
+    }[tile.tooltip ?? ""];
+    return { ...tile, title: title ?? tile.title, tooltip: tooltip ?? tile.tooltip };
+  };
+  const breakdownTiles = showFlatCost && showCostBreakdown ? buildCostBreakdownTiles(spendData.metadata) : [];
+  const summaryTiles = [...buildSummaryTiles(spendData.metadata, showFlatCost), ...breakdownTiles].map(
+    localizeSummaryTile,
+  );
+
+  const modelViewTitle =
+    modelViewType === "groups"
+      ? t("observability.usage.top_public_model_names")
+      : t("observability.usage.top_litellm_models");
 
   const costPanel = (
-    <Grid numItems={2} className="gap-2 w-full">
-      {/* Total Spend Card */}
-      <Col numColSpan={2}>
-        <Card>
-          <Title>{capitalizedEntityLabel} Spend Overview</Title>
-          <Grid numItems={5} className="gap-4 mt-4">
-            <Card>
-              <Title>Total Spend</Title>
-              <Text className="text-2xl font-bold mt-2">
-                ${formatNumberWithCommas(spendData.metadata.total_spend, 2)}
-              </Text>
-            </Card>
-            <Card>
-              <Title>Total Requests</Title>
-              <Text className="text-2xl font-bold mt-2">{spendData.metadata.total_api_requests.toLocaleString()}</Text>
-            </Card>
-            <Card>
-              <Title>Successful Requests</Title>
-              <Text className="text-2xl font-bold mt-2 text-green-600">
-                {spendData.metadata.total_successful_requests.toLocaleString()}
-              </Text>
-            </Card>
-            <Card>
-              <Title>Failed Requests</Title>
-              <Text className="text-2xl font-bold mt-2 text-red-600">
-                {spendData.metadata.total_failed_requests.toLocaleString()}
-              </Text>
-            </Card>
-            <Card>
-              <Title>Total Tokens</Title>
-              <Text className="text-2xl font-bold mt-2">{spendData.metadata.total_tokens.toLocaleString()}</Text>
-            </Card>
-          </Grid>
-        </Card>
-      </Col>
+    <div className="grid grid-cols-2 gap-2 w-full">
+      <div className="col-span-2">
+        <ShadcnCard>
+          <CardContent>
+            <h3 className="text-lg font-medium text-foreground">
+              {t("observability.usage.entity_spend_overview", { entityLabel: capitalizedEntityLabel })}
+            </h3>
+            <div className="grid grid-cols-5 gap-4 mt-4">{summaryTiles.map(renderSummaryTile)}</div>
+          </CardContent>
+        </ShadcnCard>
+      </div>
 
       {/* Daily Spend Chart */}
-      <Col numColSpan={2}>
+      <div className="col-span-2">
         <ShadcnCard>
           <CardHeader>
-            <CardTitle className="text-base font-semibold">Daily Spend</CardTitle>
+            <CardTitle className="text-base font-semibold">{t("observability.usage.daily_spend")}</CardTitle>
           </CardHeader>
           <CardContent>
             <BarChart
-              data={[...spendData.results].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())}
+              data={[...spendData.results]
+                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                .map((row) => ({
+                  ...row,
+                  [t("observability.usage.request_cost_label")]: row.metrics.spend ?? 0,
+                  [t("observability.usage.flat_cost_label")]: row.metrics.flat_cost ?? 0,
+                }))}
               index="date"
-              categories={["metrics.spend"]}
-              colors={["cyan"]}
+              categories={
+                showFlatCost
+                  ? [t("observability.usage.request_cost_label"), t("observability.usage.flat_cost_label")]
+                  : ["metrics.spend"]
+              }
+              colors={showFlatCost ? ["cyan", "violet"] : ["cyan"]}
+              stack={showFlatCost}
               valueFormatter={valueFormatterSpend}
               yAxisWidth={100}
-              showLegend={false}
+              showLegend={showFlatCost}
               customTooltip={({ payload, active }) => {
                 if (!active || !payload?.[0]) return null;
                 const data = payload[0].payload;
                 const entityCount = Object.keys(data.breakdown.entities || {}).length;
+                const requestSpend = data.metrics.spend ?? 0;
+                const flatCost = data.metrics.flat_cost ?? 0;
                 return (
                   <div className="bg-white p-4 shadow-lg rounded-lg border">
                     <p className="font-bold">{data.date}</p>
-                    <p className="text-cyan-500">Total Spend: ${formatNumberWithCommas(data.metrics.spend, 2)}</p>
-                    <p className="text-gray-600">Total Requests: {data.metrics.api_requests}</p>
-                    <p className="text-gray-600">Successful: {data.metrics.successful_requests}</p>
-                    <p className="text-gray-600">Failed: {data.metrics.failed_requests}</p>
-                    <p className="text-gray-600">Total Tokens: {data.metrics.total_tokens}</p>
+                    {showFlatCost ? (
+                      <>
+                        <p className="text-cyan-500">
+                          {t("observability.usage.daily_request_cost", {
+                            amount: `$${formatNumberWithCommas(requestSpend, 2)}`,
+                          })}
+                        </p>
+                        <p className="text-violet-500">
+                          {t("observability.usage.daily_flat_cost", {
+                            amount: `$${formatNumberWithCommas(flatCost, 2)}`,
+                          })}
+                        </p>
+                        <p className="font-semibold">
+                          {t("observability.usage.daily_total_cost", {
+                            amount: `$${formatNumberWithCommas(requestSpend + flatCost, 2)}`,
+                          })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-cyan-500">
+                        {t("observability.usage.daily_total_spend", {
+                          amount: `$${formatNumberWithCommas(data.metrics.spend, 2)}`,
+                        })}
+                      </p>
+                    )}
                     <p className="text-gray-600">
-                      Total {capitalizedEntityLabel}s: {entityCount}
+                      {t("observability.usage.daily_total_requests", { count: data.metrics.api_requests })}
+                    </p>
+                    <p className="text-gray-600">
+                      {t("observability.usage.daily_successful", { count: data.metrics.successful_requests })}
+                    </p>
+                    <p className="text-gray-600">
+                      {t("observability.usage.daily_failed", { count: data.metrics.failed_requests })}
+                    </p>
+                    <p className="text-gray-600">
+                      {t("observability.usage.daily_total_tokens", { count: data.metrics.total_tokens })}
+                    </p>
+                    <p className="text-gray-600">
+                      {t("observability.usage.daily_total_entities", {
+                        entityLabel: capitalizedEntityLabel,
+                        count: entityCount,
+                      })}
                     </p>
                     <div className="mt-2 border-t pt-2">
-                      <p className="font-semibold">Spend by {capitalizedEntityLabel}:</p>
+                      <p className="font-semibold">
+                        {t("observability.usage.daily_spend_by_entity", { entityLabel: capitalizedEntityLabel })}
+                      </p>
                       {Object.entries(data.breakdown.entities || {})
                         .sort(([, a], [, b]) => {
                           const spendA = (a as EntityMetrics).metrics.spend;
@@ -506,7 +501,11 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                             </p>
                           );
                         })}
-                      {entityCount > 5 && <p className="text-sm text-gray-500 italic">...and {entityCount - 5} more</p>}
+                      {entityCount > 5 && (
+                        <p className="text-sm text-gray-500 italic">
+                          {t("observability.usage.daily_more_entities", { count: entityCount - 5 })}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
@@ -514,27 +513,33 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
             />
           </CardContent>
         </ShadcnCard>
-      </Col>
+      </div>
 
       {/* Entity Breakdown Section */}
-      <Col numColSpan={2}>
-        <Card>
-          <div className="flex flex-col space-y-4">
+      <div className="col-span-2">
+        <ShadcnCard>
+          <CardContent className="flex flex-col space-y-4">
             <div className="flex flex-col space-y-2">
-              <Title>Spend Per {capitalizedEntityLabel}</Title>
-              <Subtitle className="text-xs">Showing Top 5 by Spend</Subtitle>
+              <h3 className="text-lg font-medium text-foreground">
+                {t("observability.usage.spend_per_entity", { entityLabel: capitalizedEntityLabel })}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {t("observability.usage.showing_top_by_spend", { count: 5 })}
+              </p>
               <div className="flex items-center text-sm text-gray-500">
-                <span>Get Started by Tracking cost per {capitalizedEntityLabel} </span>
+                <span>
+                  {t("observability.usage.get_started_tracking_cost", { entityLabel: capitalizedEntityLabel })}{" "}
+                </span>
                 <a
                   href="https://docs.litellm.ai/docs/proxy/enterprise#spend-tracking"
                   className="text-blue-500 hover:text-blue-700 ml-1"
                 >
-                  here
+                  {t("observability.usage.here")}
                 </a>
               </div>
             </div>
-            <Grid numItems={2} className="gap-6">
-              <Col numColSpan={1}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
                 <BarChart
                   className="mt-4 h-52"
                   data={getProcessedEntityBreakdownForChart()}
@@ -551,110 +556,113 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                     return (
                       <div className="bg-white p-4 shadow-lg rounded-lg border">
                         <p className="font-bold">{data.metadata.alias}</p>
-                        <p className="text-cyan-500">Spend: ${formatNumberWithCommas(data.metrics.spend, 4)}</p>
-                        <p className="text-gray-600">Requests: {data.metrics.api_requests.toLocaleString()}</p>
-                        <p className="text-green-600">
-                          Successful: {data.metrics.successful_requests.toLocaleString()}
+                        <p className="text-cyan-500">
+                          {t("observability.usage.daily_spend_value", {
+                            amount: `$${formatNumberWithCommas(data.metrics.spend, 4)}`,
+                          })}
                         </p>
-                        <p className="text-red-600">Failed: {data.metrics.failed_requests.toLocaleString()}</p>
-                        <p className="text-gray-600">Tokens: {data.metrics.total_tokens.toLocaleString()}</p>
+                        <p className="text-gray-600">
+                          {t("observability.usage.daily_requests", {
+                            count: data.metrics.api_requests.toLocaleString(),
+                          })}
+                        </p>
+                        <p className="text-green-600">
+                          {t("observability.usage.daily_successful", {
+                            count: data.metrics.successful_requests.toLocaleString(),
+                          })}
+                        </p>
+                        <p className="text-red-600">
+                          {t("observability.usage.daily_failed", {
+                            count: data.metrics.failed_requests.toLocaleString(),
+                          })}
+                        </p>
+                        <p className="text-gray-600">
+                          {t("observability.usage.daily_tokens", {
+                            count: data.metrics.total_tokens.toLocaleString(),
+                          })}
+                        </p>
                       </div>
                     );
                   }}
                 />
-              </Col>
-              <Col numColSpan={1}>
-                <div className="h-52 overflow-y-auto">
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableHeaderCell>{capitalizedEntityLabel}</TableHeaderCell>
-                        <TableHeaderCell>Spend</TableHeaderCell>
-                        <TableHeaderCell className="text-green-600">Successful</TableHeaderCell>
-                        <TableHeaderCell className="text-red-600">Failed</TableHeaderCell>
-                        <TableHeaderCell>Tokens</TableHeaderCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {getEntityBreakdown()
-                        .filter((entity) => entity.metrics.spend > 0)
-                        .map((entity) => (
-                          <TableRow key={entity.metadata.id}>
-                            <TableCell>{entity.metadata.alias}</TableCell>
-                            <TableCell>
-                              <MoneyCell value={entity.metrics.spend} decimals={4} />
-                            </TableCell>
-                            <TableCell className="text-green-600">
-                              {entity.metrics.successful_requests.toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-red-600">
-                              {entity.metrics.failed_requests.toLocaleString()}
-                            </TableCell>
-                            <TableCell>{entity.metrics.total_tokens.toLocaleString()}</TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Col>
-            </Grid>
-          </div>
-        </Card>
-      </Col>
+              </div>
+              <div>
+                <DataTable
+                  columns={entityBreakdownColumns}
+                  data={getEntityBreakdown().filter((entity) => entity.metrics.spend > 0)}
+                  getRowId={(row) => row.metadata.id}
+                  maxBodyHeight={208}
+                  noDataMessage={t("observability.usage.no_entity_spend_data", { entityType: capitalizedEntityLabel })}
+                  size="compact"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </ShadcnCard>
+      </div>
 
       {/* Top API Keys */}
-      <Col numColSpan={1}>
-        <Card>
-          <Title>Top Virtual Keys</Title>
-          <TopKeyView
-            topKeys={getTopAPIKeys()}
-            teams={null}
-            showTags={entityType === "tag"}
-            topKeysLimit={topKeysLimit}
-            setTopKeysLimit={setTopKeysLimit}
-          />
-        </Card>
-      </Col>
+      <div>
+        <ShadcnCard>
+          <CardContent>
+            <h3 className="text-lg font-medium text-foreground">{t("observability.usage.top_virtual_keys")}</h3>
+            <TopKeyView
+              topKeys={getTopAPIKeys(spendData.results, topKeysLimit)}
+              teams={null}
+              showTags={entityType === "tag"}
+              topKeysLimit={topKeysLimit}
+              setTopKeysLimit={setTopKeysLimit}
+            />
+          </CardContent>
+        </ShadcnCard>
+      </div>
 
       {/* Top Models */}
-      <Col numColSpan={1}>
-        <Card>
-          <div className="flex justify-between items-center">
-            <Title>{entityType === "agent" ? "Top Agents" : modelViewTitle}</Title>
-            <ModelViewToggle value={modelViewType} onChange={setModelViewType} />
-          </div>
-          <TopModelView
-            topModels={getTopModels()}
-            topModelsLimit={topModelsLimit}
-            setTopModelsLimit={setTopModelsLimit}
-          />
-        </Card>
-      </Col>
-
-      {/* Top Agents - only for team entity type */}
-      {entityType === "team" && (
-        <Col numColSpan={2}>
-          <Card>
-            <Title>Top Agents Driving Spend</Title>
+      <div>
+        <ShadcnCard>
+          <CardContent>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-medium text-foreground">
+                {entityType === "agent" ? t("observability.usage.top_agents") : modelViewTitle}
+              </h3>
+              <ModelViewToggle value={modelViewType} onChange={setModelViewType} />
+            </div>
             <TopModelView
-              topModels={getTopAgents()}
-              topModelsLimit={topAgentsLimit}
-              setTopModelsLimit={setTopAgentsLimit}
+              topModels={getTopModels(spendData.results, modelBreakdownKey, topModelsLimit)}
+              topModelsLimit={topModelsLimit}
+              setTopModelsLimit={setTopModelsLimit}
             />
-          </Card>
-        </Col>
+          </CardContent>
+        </ShadcnCard>
+      </div>
+
+      {showAgentBreakdown && (
+        <div className="col-span-2">
+          <ShadcnCard>
+            <CardContent>
+              <h3 className="text-lg font-medium text-foreground">
+                {t("observability.usage.top_agents_driving_spend")}
+              </h3>
+              <TopModelView
+                topModels={getTopAgents(agentSpendData.results, topAgentsLimit)}
+                topModelsLimit={topAgentsLimit}
+                setTopModelsLimit={setTopAgentsLimit}
+              />
+            </CardContent>
+          </ShadcnCard>
+        </div>
       )}
 
       {/* Spend by Provider */}
-      <Col numColSpan={2}>
-        <Card>
-          <div className="flex flex-col space-y-4">
-            <Title>Provider Usage</Title>
-            <Grid numItems={2}>
-              <Col numColSpan={1}>
+      <div className="col-span-2">
+        <ShadcnCard>
+          <CardContent className="flex flex-col space-y-4">
+            <h3 className="text-lg font-medium text-foreground">{t("observability.usage.provider_usage")}</h3>
+            <div className="grid grid-cols-2">
+              <div>
                 <DonutChart
                   className="mt-4 h-40"
-                  data={getProviderSpend()}
+                  data={providerSpend}
                   index="provider"
                   category="spend"
                   valueFormatter={(value) => `$${formatNumberWithCommas(value, 2)}`}
@@ -663,45 +671,21 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                   startAngle={90}
                   endAngle={-270}
                 />
-              </Col>
-              <Col numColSpan={1}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableHeaderCell>Provider</TableHeaderCell>
-                      <TableHeaderCell>Spend</TableHeaderCell>
-                      <TableHeaderCell className="text-green-600">Successful</TableHeaderCell>
-                      <TableHeaderCell className="text-red-600">Failed</TableHeaderCell>
-                      <TableHeaderCell>Tokens</TableHeaderCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {getProviderSpend().map((provider) => (
-                      <TableRow key={provider.provider}>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            {provider.provider && <Logo provider={provider.provider} className="w-4 h-4" />}
-                            <span>{provider.provider}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <MoneyCell value={provider.spend} decimals={2} />
-                        </TableCell>
-                        <TableCell className="text-green-600">
-                          {provider.successful_requests.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-red-600">{provider.failed_requests.toLocaleString()}</TableCell>
-                        <TableCell>{provider.tokens.toLocaleString()}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Col>
-            </Grid>
-          </div>
-        </Card>
-      </Col>
-    </Grid>
+              </div>
+              <div>
+                <DataTable
+                  columns={providerSpendColumns}
+                  data={providerSpend}
+                  getRowId={(row) => row.provider}
+                  noDataMessage={t("observability.usage.no_provider_usage_data")}
+                  size="compact"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </ShadcnCard>
+      </div>
+    </div>
   );
 
   const tabs: readonly { key: string; label: string; content: ReactNode }[] = [
@@ -721,7 +705,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
         </>
       ),
     },
-    ...(entityType === "team"
+    ...(showAgentBreakdown
       ? [
           {
             key: "agents",
@@ -745,127 +729,74 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   return (
     <div style={{ width: "100%" }} className="relative">
       {isFetchingMore && (
-        <Alert
-          banner
-          type="warning"
-          className="mb-2"
-          message={
-            <div className="flex items-center justify-between">
-              <span>
-                <LoadingOutlined spin className="mr-2" />
-                {t("observability.usage.fetching_spend_data", {
-                  current: progress.currentPage,
-                  total: progress.totalPages,
-                })}{" "}
-                <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  {t("observability.usage.open_new_tab")} <ExportOutlined />
-                </a>
-                .
-              </span>
-              <Button type="primary" danger onClick={cancel}>
-                {t("observability.usage.stop")}
-              </Button>
-            </div>
-          }
-        />
-      )}
-      {cancelled && (
-        <Alert
-          banner
-          type="info"
-          className="mb-2"
-          message={
+        <Alert variant="warning" className="mb-2">
+          <AlertDescription className="flex items-center justify-between text-inherit">
             <span>
-              {t("observability.usage.showing_partial_data", {
+              <Loader2 className="mr-2 inline size-4 animate-spin align-text-bottom" />
+              {t("observability.usage.fetching_spend_data", {
                 current: progress.currentPage,
                 total: progress.totalPages,
-              })}
+              })}{" "}
+              <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+                {t("observability.usage.open_new_tab")} <ExternalLink className="inline size-3.5 align-text-bottom" />
+              </a>
+              .
             </span>
-          }
-        />
+            <Button variant="destructive" onClick={cancel}>
+              {t("observability.usage.stop")}
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
-      {error && (
-        <Alert
-          banner
-          type="error"
-          className="mb-2"
-          message={t("observability.usage.load_failed")}
-          description={error.message}
-          action={<Button onClick={retry}>{t("observability.usage.retry")}</Button>}
-        />
+      {cancelled && (
+        <Alert variant="info" className="mb-2">
+          <AlertDescription className="text-inherit">
+            {t("observability.usage.showing_partial_data", {
+              current: progress.currentPage,
+              total: progress.totalPages,
+            })}
+          </AlertDescription>
+        </Alert>
       )}
-      {agentIsFetchingMore && entityType === "team" && (
-        <Alert
-          banner
-          type="warning"
-          className="mb-2"
-          message={
-            <div className="flex items-center justify-between">
-              <span>
-                <LoadingOutlined spin className="mr-2" />
-                {t("observability.usage.fetching_agent_data", {
-                  current: agentProgress.currentPage,
-                  total: agentProgress.totalPages,
-                })}{" "}
-                <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                  {t("observability.usage.open_new_tab")} <ExportOutlined />
-                </a>
-                .
-              </span>
-              <Button type="primary" danger onClick={agentCancel}>
-                {t("observability.usage.stop")}
-              </Button>
-            </div>
-          }
-        />
-      )}
-      {agentCancelled && entityType === "team" && (
-        <Alert
-          banner
-          type="info"
-          className="mb-2"
-          message={
+      {agentIsFetchingMore && showAgentBreakdown && (
+        <Alert variant="warning" className="mb-2">
+          <AlertDescription className="flex items-center justify-between text-inherit">
             <span>
-              {t("observability.usage.showing_partial_agent_data", {
+              <Loader2 className="mr-2 inline size-4 animate-spin align-text-bottom" />
+              {t("observability.usage.fetching_agent_data", {
                 current: agentProgress.currentPage,
                 total: agentProgress.totalPages,
-              })}
+              })}{" "}
+              <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+                {t("observability.usage.open_new_tab")} <ExternalLink className="inline size-3.5 align-text-bottom" />
+              </a>
+              .
             </span>
-          }
-        />
+            <Button variant="destructive" onClick={agentCancel}>
+              {t("observability.usage.stop")}
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
-      {agentError && entityType === "team" && isAdmin && (
-        <Alert
-          banner
-          type="error"
-          className="mb-2"
-          message={t("observability.usage.agent_load_failed")}
-          description={agentError.message}
-          action={<Button onClick={agentRetry}>{t("observability.usage.retry")}</Button>}
-        />
-      )}
-      {entityType === "team" && (
-        <div className="mb-4">
-          <Text className="mb-2">{t("observability.usage.filter_by_team")}</Text>
-          <Select
-            mode="multiple"
-            value={selectedTags}
-            onChange={setSelectedTags}
-            options={entityList ?? []}
-            placeholder={t("observability.usage.select_team")}
-            className="w-full"
-          />
-          {selectedTags.length === 0 && (
-            <Text className="mt-2 text-gray-500">{t("observability.usage.team_required")}</Text>
-          )}
-        </div>
+      {agentCancelled && showAgentBreakdown && (
+        <Alert variant="info" className="mb-2">
+          <AlertDescription className="text-inherit">
+            {t("observability.usage.showing_partial_agent_data", {
+              current: agentProgress.currentPage,
+              total: agentProgress.totalPages,
+            })}
+          </AlertDescription>
+        </Alert>
       )}
       <UsageExportHeader
         dateValue={dateValue}
         entityType={entityType}
         spendData={spendData}
         showFilters={entityType !== "team" && entityList !== null && entityList.length > 0}
-        filterLabel={getFilterLabel(entityType)}
+        filterSlot={
+          entityType === "team" ? <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} /> : undefined
+        }
+        filterLabel={entityType === "team" ? t("observability.usage.filter_by_team") : getFilterLabel(entityType)}
         filterPlaceholder={getFilterPlaceholder(entityType)}
         selectedFilters={selectedTags}
         onFiltersChange={setSelectedTags}
@@ -873,18 +804,20 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
         filterMode={entityType === "user" ? "single" : "multiple"}
         teams={teams || []}
       />
-      <TabGroup>
-        <TabList variant="solid" className="mt-1">
+      <Tabs defaultValue={tabs[0].key}>
+        <TabsList className="mt-1">
           {tabs.map(({ key, label }) => (
-            <Tab key={key}>{label}</Tab>
+            <TabsTrigger key={key} value={key} className="flex-none px-3">
+              {label}
+            </TabsTrigger>
           ))}
-        </TabList>
-        <TabPanels>
-          {tabs.map(({ key, content }) => (
-            <TabPanel key={key}>{content}</TabPanel>
-          ))}
-        </TabPanels>
-      </TabGroup>
+        </TabsList>
+        {tabs.map(({ key, content }) => (
+          <TabsContent key={key} value={key} keepMounted>
+            {content}
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 };

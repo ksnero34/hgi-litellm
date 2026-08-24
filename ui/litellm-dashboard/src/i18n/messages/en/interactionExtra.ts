@@ -107,4 +107,17 @@ export const interactionExtraMessages: MessageCatalog = {
   "interactionExtra.playground.uiSessionReady": "UI Session: Ready",
   "interactionExtra.playground.responseId": "Response ID",
   "interactionExtra.playground.uiSession": "UI Session",
+  "interactionExtra.playground.sendMessage": "Send message",
+  "interactionExtra.playground.responseIdCopyFailed": "Unable to copy response ID",
+  "interactionExtra.playground.sessionManagement": "Session Management",
+  "interactionExtra.playground.aboutSessionManagement": "About session management",
+  "interactionExtra.playground.sessionManagementHelp":
+    "Choose between LiteLLM API session management (using previous_response_id) or UI-based session management (using chat history)",
+  "interactionExtra.playground.useApiSessionManagement": "Use API session management",
+  "interactionExtra.playground.apiSessionPending": "LiteLLM will manage session using previous_response_id",
+  "interactionExtra.playground.uiSessionPending": "UI will manage session using chat history",
+  "interactionExtra.playground.apiSessionActive": "LiteLLM API session active - context maintained server-side",
+  "interactionExtra.playground.uiSessionActive": "UI session active - context maintained client-side",
+  "interactionExtra.playground.copyResponseId": "Copy response ID",
+  "interactionExtra.playground.copyResponseIdHelp": "Copy response ID to continue session:",
 };

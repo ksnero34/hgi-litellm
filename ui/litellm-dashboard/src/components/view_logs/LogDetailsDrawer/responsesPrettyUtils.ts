@@ -30,6 +30,9 @@ const parseResponseObject = (response: JsonObject): ResponsesPrettyResult => {
 
   const fallback = safeStringify(response);
   const responseState = parseResponseState(response);
+  if (Array.isArray(response.output)) {
+    return { responseItems: [], responseState };
+  }
   return {
     responseItems: responseState
       ? []

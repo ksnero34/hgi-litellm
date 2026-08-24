@@ -11,8 +11,34 @@ export const settingsExtraMessages: MessageCatalog = {
   "settingsExtra.logging.retentionDescription":
     "Set the maximum retention period for spend logs (e.g., '7d' for 7 days, '30d' for 30 days). Leave empty for no limit.",
   "settingsExtra.logging.retentionPlaceholder": "e.g., 7d, 30d",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.label":
+    "Maximum Spend Logs Retention Period (Optional)",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.description":
+    "Set the maximum retention period for spend logs (e.g., '7d' for 7 days, '30d' for 30 days). Leave empty for no limit.",
+  "settingsExtra.logging.optional.maximum_spend_logs_retention_period.placeholder": "e.g., 7d, 30d",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.label":
+    "Spend Logs Cleanup Batch Size (Optional)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.description":
+    "Rows deleted per DELETE statement during cleanup. Leave empty to use the default of 1000.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_size.placeholder": "e.g., 1000",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.label":
+    "Spend Logs Cleanup Max Batches (Optional)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.description":
+    "Maximum number of DELETE statements run per table per cleanup run. Leave empty to use the default of 500.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_max_batches.placeholder": "e.g., 500",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.label":
+    "Spend Logs Cleanup Run Budget (Optional)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.description":
+    "Wall-clock budget for a whole cleanup run, shared across every table it cleans (e.g., '5m'). Leave empty to use the default of 5m.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_run_budget.placeholder": "e.g., 5m",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.label":
+    "Spend Logs Cleanup Batch Timeout (Optional)",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.description":
+    "Postgres statement and lock timeout applied to each cleanup batch, so cleanup never monopolizes a connection (e.g., '30s'). Leave empty to use the default of 30s.",
+  "settingsExtra.logging.optional.maximum_spend_logs_cleanup_batch_timeout.placeholder": "e.g., 30s",
   "settingsExtra.logging.updated": "Spend logs settings updated successfully",
   "settingsExtra.logging.saveFailed": "Failed to save spend logs settings: {{message}}",
+  "settingsExtra.logging.clearFailed": "Failed to clear saved value for: {{fields}}",
   "settingsExtra.common.saving": "Saving...",
   "settingsExtra.common.saveSettings": "Save Settings",
   "settingsExtra.common.actions": "Actions",
@@ -78,6 +104,7 @@ export const settingsExtraMessages: MessageCatalog = {
   "settingsExtra.fallbacks.modelName": "Model Name",
   "settingsExtra.fallbacks.fallbacks": "Fallbacks",
   "settingsExtra.fallbacks.test": "Test fallback",
+  "settingsExtra.fallbacks.edit": "Edit fallback",
   "settingsExtra.fallbacks.delete": "Delete fallback",
   "settingsExtra.fallbacks.deleteTitle": "Delete Fallback?",
   "settingsExtra.fallbacks.deleteConfirm":

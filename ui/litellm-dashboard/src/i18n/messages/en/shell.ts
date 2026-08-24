@@ -13,6 +13,10 @@ export const shellMessages: MessageCatalog = {
   "notifications.agentPlatform.title": "LiteLLM Agent Platform",
   "notifications.agentPlatform.description":
     "Open-source agent infrastructure with sandboxes, durable sessions, and workers on AWS Fargate.",
+  "notifications.autoRouter.title": "LiteLLM Auto Router",
+  "notifications.autoRouter.description":
+    "Route every request to the cheapest model that can handle it, no prompt changes needed.",
+  "notifications.autoRouter.readDocs": "Read the docs",
   "notifications.markAsRead": "Mark as read",
   "language.label": "Language",
   "language.ko": "한국어",

@@ -1,10 +1,12 @@
-import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@tremor/react";
+import { parseAsString, useQueryState } from "nuqs";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, Skeleton } from "antd";
 import BulkEditUserModal from "./BulkEditUsers";
 import { CreateUserButton } from "@/components/CreateUserButton";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import EditUserModal from "./edit_user";
 import {
   getPossibleUserRoles,
@@ -46,7 +48,9 @@ interface ViewUserDashboardProps {
 }
 
 const DEFAULT_PAGE_SIZE = 25;
+
 const DEFAULT_SORT_BY = "created_at";
+
 const DEFAULT_SORTING: SortingState = [{ id: DEFAULT_SORT_BY, desc: true }];
 
 const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
@@ -71,7 +75,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const [selectionMode, setSelectionMode] = useState(false);
   const [isBulkEditModalVisible, setIsBulkEditModalVisible] = useState(false);
 
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useQueryState("user", parseAsString.withOptions({ history: "push" }));
   const [openInEditMode, setOpenInEditMode] = useState(false);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -88,6 +92,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
     setBaseUrl(getProxyBaseUrl());
   }, []);
 
+  // Fetch available models for bulk edit
   useEffect(() => {
     const fetchUserModels = async () => {
       try {
@@ -96,7 +101,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         }
 
         const model_available = await modelAvailableCall(accessToken, userID, userRole);
-        const available_model_names = model_available["data"].map((element: { id: string }) => element.id);
+        let available_model_names = model_available["data"].map((element: { id: string }) => element.id);
         setUserModels(available_model_names);
       } catch (error) {
         console.error("Error fetching user models:", error);
@@ -137,15 +142,18 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
     setRowSelection({});
   }, []);
 
-  const handleUserClick = useCallback((userId: string, openInEdit: boolean = false) => {
-    setSelectedUserId(userId);
-    setOpenInEditMode(openInEdit);
-  }, []);
+  const handleUserClick = useCallback(
+    (userId: string, openInEdit: boolean = false) => {
+      void setSelectedUserId(userId);
+      setOpenInEditMode(openInEdit);
+    },
+    [setSelectedUserId],
+  );
 
   const handleCloseUserInfo = useCallback(() => {
-    setSelectedUserId(null);
+    void setSelectedUserId(null);
     setOpenInEditMode(false);
-  }, []);
+  }, [setSelectedUserId]);
 
   const handleDelete = useCallback((user: UserInfo) => {
     setUserToDelete(user);
@@ -176,6 +184,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         setIsDeletingUser(true);
         await userDeleteCall(accessToken, [userToDelete.user_id]);
 
+        // Update the user list after deletion
         queryClient.setQueriesData<UserListResponse>({ queryKey: ["userList"] }, (previousData) => {
           if (previousData === undefined) return previousData;
           const updatedUsers = previousData.users.filter((user) => user.user_id !== userToDelete.user_id);
@@ -229,6 +238,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
     }
     setSelectedUser(null);
     setEditModalVisible(false);
+    // Close the modal
   };
 
   const handleToggleSelectionMode = () => {
@@ -237,6 +247,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   };
 
   const handleBulkEditSuccess = () => {
+    // Refresh the user list
     queryClient.invalidateQueries({ queryKey: ["userList"] });
     setRowSelection({});
     setSelectionMode(false);
@@ -343,14 +354,14 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   );
 
   return (
-    <div className="w-full p-8 overflow-hidden">
-      <div className="flex items-center justify-between mb-4">
+    <div className="w-full overflow-hidden p-8">
+      <div className="mb-4 flex items-center justify-between">
         <div className="flex space-x-3">
           {userListQuery.isLoading && (
             <>
-              <Skeleton.Button active size="default" shape="default" style={{ width: 110, height: 36 }} />
-              <Skeleton.Button active size="default" shape="default" style={{ width: 145, height: 36 }} />
-              <Skeleton.Button active size="default" shape="default" style={{ width: 110, height: 36 }} />
+              <Skeleton className="h-9 w-28" />
+              <Skeleton className="h-9 w-36" />
+              <Skeleton className="h-9 w-28" />
             </>
           )}
           {!userListQuery.isLoading && userID && accessToken && (
@@ -366,9 +377,9 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
 
               {isProxyAdmin && (
                 <Button
+                  type="button"
                   onClick={handleToggleSelectionMode}
-                  type={selectionMode ? "primary" : "default"}
-                  className="flex items-center"
+                  variant={selectionMode ? "default" : "outline"}
                   data-testid="toggle-user-selection"
                 >
                   {selectionMode ? t("identityAdmin.users.cancelSelection") : t("identityAdmin.users.select")}
@@ -377,10 +388,9 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
 
               {isProxyAdmin && selectionMode && (
                 <Button
-                  type="primary"
+                  type="button"
                   onClick={() => setIsBulkEditModalVisible(true)}
                   disabled={selectedUsers.length === 0}
-                  className="flex items-center"
                   data-testid="bulk-edit-users"
                 >
                   {t("identityAdmin.users.bulkEdit", { count: selectedUsers.length })}
@@ -392,30 +402,44 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       </div>
 
       {isProxyAdmin ? (
-        <TabGroup defaultIndex={0}>
-          <TabList className="mb-4">
-            <Tab>{t("identityAdmin.users.title")}</Tab>
-            <Tab>{t("identityAdmin.users.defaultSettings")}</Tab>
-          </TabList>
+        <Tabs defaultValue="users" className="gap-0">
+          <TabsList variant="line" className="mb-4">
+            <TabsTrigger value="users" className="flex-none data-active:text-primary after:bg-primary">
+              {t("identityAdmin.users.title")}
+            </TabsTrigger>
+            <TabsTrigger value="default-settings" className="flex-none data-active:text-primary after:bg-primary">
+              {t("identityAdmin.users.defaultSettings")}
+            </TabsTrigger>
+          </TabsList>
 
-          <TabPanels>
-            <TabPanel>{usersTable}</TabPanel>
+          <TabsContent value="users" keepMounted>
+            {usersTable}
+          </TabsContent>
 
-            <TabPanel>
-              {!userID || !userRole || !accessToken ? (
-                <div className="flex justify-center items-center h-64">
-                  <Skeleton active paragraph={{ rows: 4 }} />
+          <TabsContent value="default-settings" keepMounted>
+            {!userID || !userRole || !accessToken ? (
+              <div
+                className="flex h-64 items-center justify-center"
+                role="status"
+                aria-label={t("identityAdmin.users.loadingDefaultSettings")}
+              >
+                <div className="w-full max-w-lg space-y-3">
+                  <Skeleton className="h-5 w-1/3" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-2/3" />
                 </div>
-              ) : (
-                <DefaultUserSettingsForm possibleUIRoles={possibleUIRoles} />
-              )}
-            </TabPanel>
-          </TabPanels>
-        </TabGroup>
+              </div>
+            ) : (
+              <DefaultUserSettingsForm possibleUIRoles={possibleUIRoles} />
+            )}
+          </TabsContent>
+        </Tabs>
       ) : (
         usersTable
       )}
 
+      {/* Existing Modals */}
       <EditUserModal
         visible={editModalVisible}
         possibleUIRoles={possibleUIRoles}

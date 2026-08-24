@@ -1,7 +1,6 @@
 import React from "react";
-import { Text } from "@tremor/react";
-import { useTranslation } from "react-i18next";
 import LoggingSettings from "../team/LoggingSettings";
+import { useTranslation } from "react-i18next";
 
 interface PremiumLoggingSettingsProps {
   value: any[];
@@ -19,7 +18,6 @@ export function PremiumLoggingSettings({
   onDisabledCallbacksChange,
 }: PremiumLoggingSettingsProps) {
   const { t } = useTranslation();
-
   if (!premiumUser) {
     return (
       <div>
@@ -32,7 +30,7 @@ export function PremiumLoggingSettings({
           </div>
         </div>
         <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <Text className="text-sm text-yellow-800">{t("settings.premiumLogging.upgradeMessage")}</Text>
+          <p className="text-sm text-yellow-800">{t("settings.premiumLogging.upgradeMessage")}</p>
         </div>
       </div>
     );

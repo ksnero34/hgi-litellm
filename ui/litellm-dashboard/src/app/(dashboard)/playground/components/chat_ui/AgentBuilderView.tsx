@@ -1,17 +1,24 @@
 "use client";
 
-import {
-  CommentOutlined,
-  DeleteOutlined,
-  ExperimentOutlined,
-  LinkOutlined,
-  PlusOutlined,
-  RobotOutlined,
-  SaveOutlined,
-} from "@ant-design/icons";
-import { Button, Input, Modal, Select, Spin, Tabs } from "antd";
+import { Bot, FlaskConical, Link as LinkIcon, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
+import { MultiSelect } from "@/components/shared/MultiSelect";
+import { useVisitedTabs } from "@/hooks/useVisitedTabs";
 import CodeBlock from "@/components/CodeBlock";
 import NotificationsManager from "@/components/molecules/notifications_manager";
 import {
@@ -27,8 +34,7 @@ import { AgentModel, fetchAvailableAgentModels, MCPToolEntry } from "../../llm_c
 import { fetchAvailableModels, ModelGroup } from "@/components/llm_calls/fetch_models";
 import ComplianceUI from "../complianceUI/ComplianceUI";
 import ChatUI from "./ChatUI";
-
-const { TextArea } = Input;
+import { useTranslation } from "react-i18next";
 
 export interface AgentBuilderViewProps {
   accessToken: string | null;
@@ -45,6 +51,8 @@ export interface AgentBuilderViewProps {
 }
 
 const NEW_AGENT_ID = "__new__";
+
+type AgentTab = "configure" | "chat" | "test" | "connect";
 
 function getConnectTabBaseUrl(
   proxySettings: AgentBuilderViewProps["proxySettings"],
@@ -119,7 +127,7 @@ function ConnectTabContent({
         <p className="text-sm text-gray-600 mb-3">
           {t("playgroundAgents.builder.connect.createKeyDescription", { agentName })}
         </p>
-        <Button type="primary" onClick={onCreateKey} loading={creatingKey} disabled={disabledPersonalKeyCreation}>
+        <Button onClick={onCreateKey} disabled={creatingKey || disabledPersonalKeyCreation}>
           {t("playgroundAgents.builder.connect.createKey")}
         </Button>
         {disabledPersonalKeyCreation && (
@@ -192,7 +200,12 @@ export default function AgentBuilderView({
   const [modelGroups, setModelGroups] = useState<ModelGroup[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"configure" | "chat" | "test" | "connect">("configure");
+  const [activeTab, setActiveTab] = useState<AgentTab>("configure");
+  const { onTabChange, hasVisited } = useVisitedTabs("configure");
+  const goToTab = (tab: AgentTab) => {
+    setActiveTab(tab);
+    onTabChange(tab);
+  };
   const [creatingKey, setCreatingKey] = useState(false);
   const [createdKeyValue, setCreatedKeyValue] = useState<string | null>(null);
 
@@ -209,6 +222,7 @@ export default function AgentBuilderView({
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const effectiveApiKey = apiKey || accessToken || "";
   const selectedAgent =
@@ -233,7 +247,7 @@ export default function AgentBuilderView({
     } finally {
       setLoadingAgents(false);
     }
-  }, [accessToken, userID, userRole]);
+  }, [accessToken, userID, userRole, selectedId, t]);
 
   const loadModels = useCallback(async () => {
     if (!effectiveApiKey) return;
@@ -316,7 +330,7 @@ export default function AgentBuilderView({
     setDraftTemperature(0.7);
     setDraftMaxTokens(4096);
     setDraftTools([]);
-    setActiveTab("configure");
+    goToTab("configure");
   };
 
   const handleSaveAgent = async () => {
@@ -346,7 +360,7 @@ export default function AgentBuilderView({
         ? list.find((a) => getAgentModelId(a) === createdId) ?? list.find((a) => a.model_name === draftName.trim())
         : list.find((a) => a.model_name === draftName.trim());
       setSelectedId(created ? getAgentSelectionKey(created) : list[0] ? getAgentSelectionKey(list[0]) : null);
-      setActiveTab("chat");
+      goToTab("chat");
     } catch (e) {
       NotificationsManager.fromBackend(t("playgroundAgents.builder.notifications.saveFailed"));
     } finally {
@@ -413,27 +427,24 @@ export default function AgentBuilderView({
 
   const handleDeleteAgent = () => {
     if (!selectedAgent || !selectedAgentModelId || !accessToken) return;
-    Modal.confirm({
-      title: t("playgroundAgents.builder.delete.title"),
-      content: t("playgroundAgents.builder.delete.content", { name: selectedAgent.model_name }),
-      okText: t("playgroundAgents.builder.delete.confirm"),
-      okType: "danger",
-      cancelText: t("playgroundAgents.builder.delete.cancel"),
-      onOk: async () => {
-        setDeleting(true);
-        try {
-          await modelDeleteCall(accessToken, selectedAgentModelId);
-          NotificationsManager.success(t("playgroundAgents.builder.notifications.deleteSuccess"));
-          const list = await loadAgents();
-          const remaining = list.filter((a) => getAgentModelId(a) !== selectedAgentModelId);
-          setSelectedId(remaining.length > 0 ? getAgentSelectionKey(remaining[0]) : null);
-        } catch (e) {
-          NotificationsManager.fromBackend(t("playgroundAgents.builder.notifications.deleteFailed"));
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
+    setConfirmingDelete(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedAgent || !selectedAgentModelId || !accessToken) return;
+    setDeleting(true);
+    try {
+      await modelDeleteCall(accessToken, selectedAgentModelId);
+      NotificationsManager.success(t("playgroundAgents.builder.notifications.deleteSuccess"));
+      const list = await loadAgents();
+      const remaining = list.filter((a) => getAgentModelId(a) !== selectedAgentModelId);
+      setSelectedId(remaining.length > 0 ? getAgentSelectionKey(remaining[0]) : null);
+    } catch (e) {
+      NotificationsManager.fromBackend(t("playgroundAgents.builder.notifications.deleteFailed"));
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
   };
 
   if (!accessToken || !userID || !userRole) {
@@ -450,13 +461,8 @@ export default function AgentBuilderView({
         <div className="flex h-12 items-center justify-between px-4">
           <span className="text-sm font-medium text-gray-900">{t("playgroundAgents.builder.title")}</span>
           {isNewAgent ? (
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              onClick={handleSaveAgent}
-              loading={saving}
-              disabled={!draftName?.trim() || !draftUnderlyingModel}
-            >
+            <Button onClick={handleSaveAgent} disabled={saving || !draftName?.trim() || !draftUnderlyingModel}>
+              <Save />
               {t("playgroundAgents.builder.save")}
             </Button>
           ) : (
@@ -464,13 +470,12 @@ export default function AgentBuilderView({
           )}
         </div>
         <div className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-          <ExperimentOutlined className="shrink-0 text-amber-600" />
+          <FlaskConical className="size-4 shrink-0 text-amber-600" />
           <span>
-            {t("playgroundAgents.builder.experimental")}
+            {t("playgroundAgents.builder.experimental")}{" "}
             <a href="mailto:product@berri.ai" className="font-medium text-amber-900 underline hover:text-amber-700">
               product@berri.ai
             </a>
-            .
           </span>
         </div>
       </div>
@@ -483,17 +488,18 @@ export default function AgentBuilderView({
               {t("playgroundAgents.builder.rosterTitle")}
             </span>
             <Button
-              type="text"
-              size="small"
-              icon={<PlusOutlined />}
+              variant="ghost"
+              size="icon-sm"
               onClick={handleAddAgent}
               aria-label={t("playgroundAgents.builder.addAgent")}
-            />
+            >
+              <Plus />
+            </Button>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {loadingAgents ? (
-              <div className="flex justify-center py-4">
-                <Spin size="small" />
+              <div className="flex justify-center py-4" aria-busy="true">
+                <UiLoadingSpinner className="size-4 text-gray-400" />
               </div>
             ) : (
               <>
@@ -522,7 +528,7 @@ export default function AgentBuilderView({
                   onClick={handleAddAgent}
                   className="mb-1 w-full rounded-md border border-dashed border-gray-300 px-3 py-2 text-left text-sm text-gray-500 hover:border-blue-400 hover:bg-blue-50/50 hover:text-gray-700"
                 >
-                  <PlusOutlined className="mr-1" /> {t("playgroundAgents.builder.newAgent")}
+                  <Plus className="mr-1 inline size-4" /> {t("playgroundAgents.builder.newAgent")}
                 </button>
               </>
             )}
@@ -539,236 +545,242 @@ export default function AgentBuilderView({
           {(selectedId !== null || isNewAgent) && (
             <>
               <Tabs
-                activeKey={activeTab}
-                onChange={(k) => setActiveTab(k as "configure" | "chat" | "test" | "connect")}
-                className="flex-1 overflow-hidden [&_.ant-tabs-content]:h-full [&_.ant-tabs-tabpane]:h-full [&_.ant-tabs-nav]:pl-4"
-                items={[
-                  {
-                    key: "configure",
-                    label: (
-                      <span>
-                        <RobotOutlined className="mr-1" /> {t("playgroundAgents.builder.tab.configure")}
-                      </span>
-                    ),
-                    children: (
-                      <div className="h-full overflow-y-auto p-6">
-                        {isNewAgent || selectedAgent ? (
-                          <div className="mx-auto max-w-xl space-y-4">
-                            {!selectedAgentModelId && selectedAgent && (
-                              <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                {t("playgroundAgents.builder.missingModelId")}
-                              </div>
-                            )}
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-gray-700">
-                                {t("playgroundAgents.builder.field.agentName")}
-                              </label>
-                              <Input
-                                value={draftName}
-                                onChange={(e) => setDraftName(e.target.value)}
-                                placeholder={t("playgroundAgents.builder.field.agentNamePlaceholder")}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-gray-700">
-                                {t("playgroundAgents.builder.field.systemPrompt")}
-                              </label>
-                              <TextArea
-                                value={draftSystemPrompt}
-                                onChange={(e) => setDraftSystemPrompt(e.target.value)}
-                                placeholder={t("playgroundAgents.builder.field.systemPromptPlaceholder")}
-                                rows={6}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-gray-700">
-                                {t("playgroundAgents.builder.field.underlyingModel")}
-                              </label>
-                              <Select
-                                value={draftUnderlyingModel}
-                                onChange={setDraftUnderlyingModel}
-                                className="w-full"
-                                options={modelGroups.map((m) => ({ value: m.model_group, label: m.model_group }))}
-                                placeholder={t("playgroundAgents.builder.field.selectModel")}
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="mb-1 block text-sm font-medium text-gray-700">
-                                  {t("playgroundAgents.builder.field.temperature")}
-                                </label>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={2}
-                                  step={0.1}
-                                  value={draftTemperature}
-                                  onChange={(e) => setDraftTemperature(Number(e.target.value))}
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-sm font-medium text-gray-700">
-                                  {t("playgroundAgents.builder.field.maxTokens")}
-                                </label>
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  value={draftMaxTokens}
-                                  onChange={(e) => setDraftMaxTokens(Number(e.target.value))}
-                                />
-                              </div>
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-gray-700">
-                                {t("playgroundAgents.builder.field.mcpServers")}
-                              </label>
-                              <Select
-                                mode="multiple"
-                                placeholder={t("playgroundAgents.builder.field.mcpServersPlaceholder")}
-                                value={selectedMCPServerIds}
-                                onChange={handleMCPServerChange}
-                                loading={loadingMCPServers}
-                                className="w-full"
-                                allowClear
-                                showSearch
-                                optionFilterProp="label"
-                                options={mcpServers.map((s) => ({
-                                  value: s.server_id,
-                                  label: s.alias || s.server_name || s.server_id,
-                                }))}
-                              />
-                              {selectedAgent && draftTools.length > 0 && (
-                                <p className="mt-1 text-xs text-gray-500">
-                                  {t("playgroundAgents.builder.savedMcpServers", { count: draftTools.length })}
-                                </p>
-                              )}
-                            </div>
-                            {selectedAgent && (
-                              <div className="flex flex-wrap items-center gap-2 pt-2">
-                                {selectedAgentModelId && (
-                                  <>
-                                    <Button
-                                      type="primary"
-                                      icon={<SaveOutlined />}
-                                      onClick={handleUpdateAgent}
-                                      loading={saving}
-                                      disabled={!draftName?.trim() || !draftUnderlyingModel}
-                                    >
-                                      {t("playgroundAgents.builder.action.update")}
-                                    </Button>
-                                    <Button
-                                      type="default"
-                                      danger
-                                      icon={<DeleteOutlined />}
-                                      onClick={handleDeleteAgent}
-                                      loading={deleting}
-                                    >
-                                      {t("playgroundAgents.builder.action.delete")}
-                                    </Button>
-                                  </>
-                                )}
-                                <Button type="primary" icon={<CommentOutlined />} onClick={() => setActiveTab("chat")}>
-                                  {t("playgroundAgents.builder.action.testInChat")}
+                value={activeTab}
+                onValueChange={(value) => goToTab(value as AgentTab)}
+                className="flex flex-1 flex-col overflow-hidden"
+              >
+                <TabsList variant="line" className="h-auto w-full justify-start rounded-none border-b p-0 pl-4">
+                  <TabsTrigger value="configure" className="flex-none rounded-none px-4 py-2">
+                    <Bot />
+                    {t("playgroundAgents.builder.tab.configure")}
+                  </TabsTrigger>
+                  <TabsTrigger value="chat" disabled={isNewAgent} className="flex-none rounded-none px-4 py-2">
+                    <MessageSquare />
+                    {t("playgroundAgents.builder.tab.chat")}
+                  </TabsTrigger>
+                  <TabsTrigger value="test" disabled={isNewAgent} className="flex-none rounded-none px-4 py-2">
+                    <FlaskConical />
+                    {t("playgroundAgents.builder.tab.batchTest")}
+                  </TabsTrigger>
+                  <TabsTrigger value="connect" disabled={isNewAgent} className="flex-none rounded-none px-4 py-2">
+                    <LinkIcon />
+                    {t("playgroundAgents.builder.tab.connect")}
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent
+                  value="configure"
+                  keepMounted={hasVisited("configure")}
+                  className="min-h-0 overflow-hidden"
+                >
+                  <div className="h-full overflow-y-auto p-6">
+                    {isNewAgent || selectedAgent ? (
+                      <div className="mx-auto max-w-xl space-y-4">
+                        {!selectedAgentModelId && selectedAgent && (
+                          <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            {t("playgroundAgents.builder.missingModelId")}
+                          </div>
+                        )}
+                        <div>
+                          <label className="mb-1 block text-sm font-medium text-gray-700">
+                            {t("playgroundAgents.builder.field.agentName")}
+                          </label>
+                          <Input
+                            value={draftName}
+                            onChange={(e) => setDraftName(e.target.value)}
+                            placeholder={t("playgroundAgents.builder.field.agentNamePlaceholder")}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-sm font-medium text-gray-700">
+                            {t("playgroundAgents.builder.field.systemPrompt")}
+                          </label>
+                          <Textarea
+                            value={draftSystemPrompt}
+                            onChange={(e) => setDraftSystemPrompt(e.target.value)}
+                            placeholder={t("playgroundAgents.builder.field.systemPromptPlaceholder")}
+                            rows={6}
+                            className="field-sizing-fixed"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-sm font-medium text-gray-700">
+                            {t("playgroundAgents.builder.field.underlyingModel")}
+                          </label>
+                          <Select
+                            value={draftUnderlyingModel ?? null}
+                            onValueChange={(model: string | null) => setDraftUnderlyingModel(model ?? undefined)}
+                          >
+                            <SelectTrigger
+                              className="w-full"
+                              aria-label={t("playgroundAgents.builder.field.underlyingModel")}
+                            >
+                              <SelectValue placeholder={t("playgroundAgents.builder.field.selectModel")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {modelGroups.map((m) => (
+                                <SelectItem key={m.model_group} value={m.model_group}>
+                                  {m.model_group}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                              {t("playgroundAgents.builder.field.temperature")}
+                            </label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={2}
+                              step={0.1}
+                              value={draftTemperature}
+                              onChange={(e) => setDraftTemperature(Number(e.target.value))}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                              {t("playgroundAgents.builder.field.maxTokens")}
+                            </label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={draftMaxTokens}
+                              onChange={(e) => setDraftMaxTokens(Number(e.target.value))}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-sm font-medium text-gray-700">
+                            {t("playgroundAgents.builder.field.mcpServers")}
+                          </label>
+                          <MultiSelect
+                            placeholder={t("playgroundAgents.builder.field.mcpServersPlaceholder")}
+                            value={selectedMCPServerIds}
+                            onValueChange={handleMCPServerChange}
+                            loading={loadingMCPServers}
+                            className="w-full"
+                            options={mcpServers.map((s) => ({
+                              value: s.server_id,
+                              label: s.alias || s.server_name || s.server_id,
+                            }))}
+                          />
+                          {selectedAgent && draftTools.length > 0 && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              {t("playgroundAgents.builder.savedMcpServers", { count: draftTools.length })}
+                            </p>
+                          )}
+                        </div>
+                        {selectedAgent && (
+                          <div className="flex flex-wrap items-center gap-2 pt-2">
+                            {selectedAgentModelId && (
+                              <>
+                                <Button
+                                  onClick={handleUpdateAgent}
+                                  disabled={saving || !draftName?.trim() || !draftUnderlyingModel}
+                                >
+                                  <Save />
+                                  {t("playgroundAgents.builder.action.update")}
                                 </Button>
-                              </div>
+                                <Button variant="destructive" onClick={handleDeleteAgent} disabled={deleting}>
+                                  <Trash2 />
+                                  {t("playgroundAgents.builder.action.delete")}
+                                </Button>
+                              </>
                             )}
-                          </div>
-                        ) : null}
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "chat",
-                    label: (
-                      <span>
-                        <CommentOutlined className="mr-1" /> {t("playgroundAgents.builder.tab.chat")}
-                      </span>
-                    ),
-                    disabled: isNewAgent,
-                    children: (
-                      <div className="flex h-full flex-col min-h-0">
-                        {selectedAgent ? (
-                          <ChatUI
-                            key={selectedAgent.model_name}
-                            simplified
-                            fixedModel={selectedAgent.model_name}
-                            accessToken={accessToken}
-                            token={token}
-                            userRole={userRole}
-                            userID={userID}
-                            disabledPersonalKeyCreation={disabledPersonalKeyCreation}
-                            proxySettings={proxySettings}
-                          />
-                        ) : (
-                          <div className="flex flex-1 items-center justify-center text-gray-500">
-                            {t("playgroundAgents.builder.chatEmpty")}
+                            <Button onClick={() => goToTab("chat")}>
+                              <MessageSquare />
+                              {t("playgroundAgents.builder.action.testInChat")}
+                            </Button>
                           </div>
                         )}
                       </div>
-                    ),
-                  },
-                  {
-                    key: "test",
-                    label: (
-                      <span>
-                        <ExperimentOutlined className="mr-1" /> {t("playgroundAgents.builder.tab.batchTest")}
-                      </span>
-                    ),
-                    disabled: isNewAgent,
-                    children: (
-                      <div className="flex h-full flex-col min-h-0">
-                        {selectedAgent ? (
-                          <ComplianceUI
-                            accessToken={accessToken}
-                            disabledPersonalKeyCreation={disabledPersonalKeyCreation}
-                            backendMode="chat_completions"
-                            fixedModel={selectedAgent.model_name}
-                            proxySettings={proxySettings}
-                          />
-                        ) : (
-                          <div className="flex flex-1 items-center justify-center text-gray-500">
-                            {t("playgroundAgents.builder.batchTestEmpty")}
-                          </div>
-                        )}
+                    ) : null}
+                  </div>
+                </TabsContent>
+                <TabsContent value="chat" keepMounted={hasVisited("chat")} className="min-h-0 overflow-hidden">
+                  <div className="flex h-full flex-col min-h-0">
+                    {selectedAgent ? (
+                      <ChatUI
+                        key={selectedAgent.model_name}
+                        simplified
+                        fixedModel={selectedAgent.model_name}
+                        accessToken={accessToken}
+                        token={token}
+                        userRole={userRole}
+                        userID={userID}
+                        disabledPersonalKeyCreation={disabledPersonalKeyCreation}
+                        proxySettings={proxySettings}
+                      />
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center text-gray-500">
+                        {t("playgroundAgents.builder.chatEmpty")}
                       </div>
-                    ),
-                  },
-                  {
-                    key: "connect",
-                    label: (
-                      <span>
-                        <LinkOutlined className="mr-1" /> {t("playgroundAgents.builder.tab.connect")}
-                      </span>
-                    ),
-                    disabled: isNewAgent,
-                    children: (
-                      <div className="h-full overflow-y-auto p-6">
-                        {selectedAgent ? (
-                          <ConnectTabContent
-                            agentName={selectedAgent.model_name}
-                            proxySettings={proxySettings}
-                            customProxyBaseUrl={customProxyBaseUrl}
-                            accessToken={accessToken}
-                            userID={userID}
-                            disabledPersonalKeyCreation={disabledPersonalKeyCreation}
-                            creatingKey={creatingKey}
-                            createdKeyValue={createdKeyValue}
-                            onCreateKey={handleCreateKeyForAgent}
-                          />
-                        ) : (
-                          <div className="flex flex-1 items-center justify-center text-gray-500">
-                            {t("playgroundAgents.builder.connectEmpty")}
-                          </div>
-                        )}
+                    )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="test" keepMounted={hasVisited("test")} className="min-h-0 overflow-hidden">
+                  <div className="flex h-full flex-col min-h-0">
+                    {selectedAgent ? (
+                      <ComplianceUI
+                        accessToken={accessToken}
+                        disabledPersonalKeyCreation={disabledPersonalKeyCreation}
+                        backendMode="chat_completions"
+                        fixedModel={selectedAgent.model_name}
+                        proxySettings={proxySettings}
+                      />
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center text-gray-500">
+                        {t("playgroundAgents.builder.batchTestEmpty")}
                       </div>
-                    ),
-                  },
-                ]}
-              />
+                    )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="connect" keepMounted={hasVisited("connect")} className="min-h-0 overflow-hidden">
+                  <div className="h-full overflow-y-auto p-6">
+                    {selectedAgent ? (
+                      <ConnectTabContent
+                        agentName={selectedAgent.model_name}
+                        proxySettings={proxySettings}
+                        customProxyBaseUrl={customProxyBaseUrl}
+                        accessToken={accessToken}
+                        userID={userID}
+                        disabledPersonalKeyCreation={disabledPersonalKeyCreation}
+                        creatingKey={creatingKey}
+                        createdKeyValue={createdKeyValue}
+                        onCreateKey={handleCreateKeyForAgent}
+                      />
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center text-gray-500">
+                        {t("playgroundAgents.builder.connectEmpty")}
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </div>
       </div>
+
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("playgroundAgents.builder.delete.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("playgroundAgents.builder.delete.content", { name: selectedAgent?.model_name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction variant="outline">{t("playgroundAgents.builder.delete.cancel")}</AlertDialogAction>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleting}>
+              {t("playgroundAgents.builder.delete.confirm")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

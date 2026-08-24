@@ -6,34 +6,25 @@
  * Works at 1m+ spend logs, by querying an aggregate table instead.
  */
 
-import { DownOutlined, ExportOutlined, InfoCircleOutlined, LoadingOutlined, RightOutlined } from "@ant-design/icons";
-import { useDebouncedState } from "@tanstack/react-pacer/debouncer";
-import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
-import {
-  Card,
-  Col,
-  DateRangePickerValue,
-  Grid,
-  Tab,
-  TabGroup,
-  TabList,
-  TabPanel,
-  TabPanels,
-  Text,
-  Title,
-} from "@tremor/react";
-import { Alert, Button, Segmented, Select, Tooltip, Typography } from "antd";
-import React, { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, Info, Loader2, Sparkles, X } from "lucide-react";
+import type { DateRangePickerValue } from "@/components/shared/date_picker_types";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { BarChart } from "@/components/shared/charts";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
+import { PaginatedSearchSelect } from "@/components/shared/PaginatedSearchSelect";
+import { Button } from "@/components/ui/button";
 import { Card as ShadcnCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useAgents } from "@/app/(dashboard)/hooks/agents/useAgents";
 import { useCustomers } from "@/app/(dashboard)/hooks/customers/useCustomers";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { useInfiniteUsers } from "@/app/(dashboard)/hooks/users/useUsers";
+import { hasCapability } from "@/utils/capabilities";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import { all_admin_roles } from "@/utils/roles";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
@@ -68,6 +59,7 @@ import EndpointUsage from "./EndpointUsage/EndpointUsage";
 import EntityUsage, { EntityList } from "./EntityUsage/EntityUsage";
 import ModelViewToggle, { ModelViewType } from "./ModelViewToggle";
 import SpendByProvider from "./EntityUsage/SpendByProvider";
+import { TOP_MODEL_LIMITS } from "./EntityUsage/TopModelView";
 import TopKeyView from "@/components/UsagePage/components/EntityUsage/TopKeyView";
 import UsageAIChatPanel from "./UsageAIChatPanel";
 import { UsageOption, UsageViewSelect } from "./UsageViewSelect/UsageViewSelect";
@@ -79,7 +71,7 @@ interface UsagePageProps {
 
 const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const { t } = useTranslation();
-  const { accessToken, userRole, userId: userID, premiumUser } = useAuthorized();
+  const { accessToken, userRole, userId: userID, premiumUser, isViewOnly = false } = useAuthorized();
   // Aggregated endpoint: try first, fall back to paginated if unavailable
   const [aggregatedData, setAggregatedData] = useState<FetchedForRange<{
     results: DailyData[];
@@ -110,13 +102,12 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const { data: agentsResponse } = useAgents();
   const { data: currentUser } = useCurrentUser();
   const isAdmin = all_admin_roles.includes(userRole || "");
+  const canUseCostActions = isAdmin && !isViewOnly;
   const canViewTagUsage = isAdmin;
+  const canViewOrganizationUsage = hasCapability(userRole, "viewOrganizationUsage");
+  const canViewAgentUsage = hasCapability(userRole, "viewAgentUsage");
 
-  // Debounced search for user selector
-  const [userSearchInput, setUserSearchInput] = useState("");
-  const [debouncedUserSearch, setDebouncedUserSearch] = useDebouncedState("", {
-    wait: DEBOUNCE_WAIT_MS,
-  });
+  const [settledUserSearch, setSettledUserSearch] = useState("");
 
   const {
     data: usersInfiniteData,
@@ -124,7 +115,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
     hasNextPage: hasNextUsersPage,
     isFetchingNextPage: isFetchingNextUsersPage,
     isLoading: isLoadingUsers,
-  } = useInfiniteUsers(50, debouncedUserSearch || undefined);
+  } = useInfiniteUsers(50, settledUserSearch || undefined);
 
   const userOptions = useMemo(() => {
     if (!usersInfiniteData?.pages) return [];
@@ -147,19 +138,6 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
     return result;
   }, [usersInfiniteData]);
 
-  const handleUserSearchChange = (value: string) => {
-    setUserSearchInput(value);
-    setDebouncedUserSearch(value);
-  };
-
-  const handleUserPopupScroll = (e: UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const scrollRatio = (target.scrollTop + target.clientHeight) / target.scrollHeight;
-    if (scrollRatio >= 0.8 && hasNextUsersPage && !isFetchingNextUsersPage) {
-      fetchNextUsersPage();
-    }
-  };
-
   // For admins: null means global view (all users), a string means filter by that user
   // For non-admins: always set to their own user ID
   const [selectedUserId, setSelectedUserId] = useState<string | null>(isAdmin ? null : userID || null);
@@ -174,10 +152,9 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const [topModelsLimit, setTopModelsLimit] = useState<number>(5);
   const [showTokenBreakdown, setShowTokenBreakdown] = useState(false);
   useEffect(() => {
-    if (isAdmin !== previousAdminState.current) {
-      setUsageView(isAdmin ? "global" : "my-usage");
-      previousAdminState.current = isAdmin;
-    }
+    if (isAdmin === previousAdminState.current) return;
+    setUsageView(isAdmin ? "global" : "my-usage");
+    previousAdminState.current = isAdmin;
   }, [isAdmin]);
   // Sync selectedUserId when auth state settles (isAdmin/userID may be null on initial render)
   useEffect(() => {
@@ -291,12 +268,6 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   }, [activeAggregated, aggregatedFailed, paginatedResult.data]);
 
   const loading = aggregatedLoading || paginatedResult.loading;
-  const usageError = aggregatedFailed ? paginatedResult.error : null;
-
-  const managedTeamIds = useMemo(() => {
-    const value = currentUser?.metadata?.litellm_sso_managed_team_ids;
-    return new Set(Array.isArray(value) ? value.filter((teamId): teamId is string => typeof teamId === "string") : []);
-  }, [currentUser?.metadata]);
 
   // Clear isDateChanging when paginated data starts arriving
   useEffect(() => {
@@ -528,370 +499,395 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
             <UsageViewSelect
               value={usageView}
               onChange={(value) => setUsageView(value)}
-              isAdmin={isAdmin}
+              userRole={userRole}
               canViewTagUsage={canViewTagUsage}
             />
             <AdvancedDatePicker value={dateValue} onValueChange={handleDateChange} />
           </div>
           {paginatedResult.isFetchingMore && (
-            <Alert
-              banner
-              type="warning"
-              className="mb-2"
-              message={
-                <div className="flex items-center justify-between">
-                  <span>
-                    <LoadingOutlined spin className="mr-2" />
-                    Currently fetching spend data: fetched {paginatedResult.progress.currentPage} /{" "}
-                    {paginatedResult.progress.totalPages} pages. Charts will update periodically as data loads. Moving
-                    off of this page will stop and reset this. To continue using the UI in the meantime,{" "}
-                    <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                      open a new tab <ExportOutlined />
-                    </a>
-                    .
-                  </span>
-                  <Button type="primary" danger onClick={paginatedResult.cancel}>
-                    Stop
-                  </Button>
-                </div>
-              }
-            />
+            <Alert variant="warning" className="mb-2">
+              <AlertDescription className="flex items-center justify-between text-inherit">
+                <span>
+                  <Loader2 className="mr-2 inline size-4 animate-spin align-text-bottom" />
+                  Currently fetching spend data: fetched {paginatedResult.progress.currentPage} /{" "}
+                  {paginatedResult.progress.totalPages} pages. Charts will update periodically as data loads. Moving off
+                  of this page will stop and reset this. To continue using the UI in the meantime,{" "}
+                  <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+                    open a new tab <ExternalLink className="inline size-3.5 align-text-bottom" />
+                  </a>
+                  .
+                </span>
+                <Button variant="destructive" onClick={paginatedResult.cancel}>
+                  Stop
+                </Button>
+              </AlertDescription>
+            </Alert>
           )}
           {paginatedResult.cancelled && (
-            <Alert
-              banner
-              type="info"
-              className="mb-2"
-              message={
-                <span>
-                  Showing partial data ({paginatedResult.progress.currentPage}/{paginatedResult.progress.totalPages}{" "}
-                  pages loaded)
-                </span>
-              }
-            />
-          )}
-          {usageError && (
-            <Alert
-              banner
-              type="error"
-              className="mb-2"
-              message={t("observability.usage.load_failed")}
-              description={usageError.message}
-              action={<Button onClick={paginatedResult.retry}>{t("observability.usage.retry")}</Button>}
-            />
+            <Alert variant="info" className="mb-2">
+              <AlertDescription className="text-inherit">
+                Showing partial data ({paginatedResult.progress.currentPage}/{paginatedResult.progress.totalPages} pages
+                loaded)
+              </AlertDescription>
+            </Alert>
           )}
           {/* Your Usage / Global Usage Panel */}
           {(usageView === "global" || usageView === "my-usage") && (
             <>
               {isAdmin && usageView === "global" && (
                 <div className="mb-4">
-                  <Text className="mb-2">{t("observabilityExtra.usage.filterByUser")}</Text>
-                  <Select
-                    showSearch
-                    allowClear
-                    style={{ width: "100%" }}
-                    placeholder={t("observabilityExtra.usage.selectUser")}
-                    value={selectedUserId}
-                    onChange={(value) => setSelectedUserId(value ?? null)}
-                    filterOption={false}
-                    onSearch={handleUserSearchChange}
-                    searchValue={userSearchInput}
-                    onPopupScroll={handleUserPopupScroll}
-                    loading={isLoadingUsers}
-                    notFoundContent={isLoadingUsers ? <LoadingOutlined spin /> : t("observabilityExtra.usage.noUsers")}
+                  <p className="mb-2 text-sm text-foreground">{t("observabilityExtra.usage.filterByUser")}</p>
+                  <PaginatedSearchSelect
                     options={userOptions}
-                    popupRender={(menu) => (
-                      <>
-                        {menu}
-                        {isFetchingNextUsersPage && (
-                          <div style={{ textAlign: "center", padding: 8 }}>
-                            <LoadingOutlined spin />
-                          </div>
-                        )}
-                      </>
-                    )}
+                    value={selectedUserId ?? undefined}
+                    onValueChange={(value) => setSelectedUserId(value === "" ? null : value)}
+                    onSearchChange={setSettledUserSearch}
+                    onLoadMore={fetchNextUsersPage}
+                    hasNextPage={hasNextUsersPage}
+                    isLoading={isLoadingUsers}
+                    isFetchingNextPage={isFetchingNextUsersPage}
+                    placeholder={t("observabilityExtra.usage.selectUser")}
+                    emptyText={t("observabilityExtra.usage.noUsers")}
                   />
                 </div>
               )}
-              <TabGroup>
+              <Tabs defaultValue="cost">
                 <div className="flex justify-between items-center">
-                  <TabList variant="solid" className="mt-1">
-                    <Tab>{t("observabilityExtra.usage.cost")}</Tab>
-                    <Tab>{t("observabilityExtra.usage.modelActivity")}</Tab>
-                    <Tab>{t("observabilityExtra.usage.keyActivity")}</Tab>
-                    <Tab>{t("observabilityExtra.usage.mcpActivity")}</Tab>
-                    <Tab>{t("observabilityExtra.usage.endpointActivity")}</Tab>
-                  </TabList>
-                  {isAdmin && (
+                  <TabsList className="mt-1">
+                    <TabsTrigger value="cost" className="flex-none px-3">
+                      {t("observabilityExtra.usage.cost")}
+                    </TabsTrigger>
+                    <TabsTrigger value="models" className="flex-none px-3">
+                      {t("observabilityExtra.usage.modelActivity")}
+                    </TabsTrigger>
+                    <TabsTrigger value="keys" className="flex-none px-3">
+                      {t("observabilityExtra.usage.keyActivity")}
+                    </TabsTrigger>
+                    <TabsTrigger value="mcp" className="flex-none px-3">
+                      {t("observabilityExtra.usage.mcpActivity")}
+                    </TabsTrigger>
+                    <TabsTrigger value="endpoints" className="flex-none px-3">
+                      {t("observabilityExtra.usage.endpointActivity")}
+                    </TabsTrigger>
+                  </TabsList>
+                  {canUseCostActions && (
                     <div className="flex items-center gap-2">
-                      <Button
-                        onClick={() => setIsAiChatOpen(true)}
-                        icon={
-                          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11 6.5 7.5 3 6l3.5-1.5L8 1zm4 7l.75 1.75L14.5 10.5l-1.75.75L12 13l-.75-1.75L9.5 10.5l1.75-.75L12 8zM4 9l.75 1.75L6.5 11.5l-1.75.75L4 14l-.75-1.75L1.5 11.5l1.75-.75L4 9z" />
-                          </svg>
-                        }
-                      >
-                        Ask AI
+                      <Button variant="outline" onClick={() => setIsAiChatOpen(true)}>
+                        <Sparkles />
+                        {t("observabilityExtra.usage.askAi")}
                       </Button>
-                      <Button
-                        onClick={() => setIsGlobalExportModalOpen(true)}
-                        icon={
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                            />
-                          </svg>
-                        }
-                      >
-                        Export Data
+                      <Button variant="outline" onClick={() => setIsGlobalExportModalOpen(true)}>
+                        <Download />
+                        {t("observabilityExtra.usage.exportData")}
                       </Button>
                     </div>
                   )}
                 </div>
-                <TabPanels>
-                  {/* Cost Panel */}
-                  <TabPanel>
-                    <Grid numItems={2} className="gap-2 w-full">
-                      {/* Total Spend Card */}
-                      <Col numColSpan={2}>
-                        <div className="flex items-center gap-4 mt-2 mb-2">
-                          <Text className="text-tremor-default text-tremor-content dark:text-dark-tremor-content text-lg">
-                            Project Spend{" "}
-                            {dateValue.from && dateValue.to && (
-                              <>
-                                {dateValue.from.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year:
-                                    dateValue.from.getFullYear() !== dateValue.to.getFullYear() ? "numeric" : undefined,
-                                })}
-                                {" - "}
-                                {dateValue.to.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </>
-                            )}
-                          </Text>
-                        </div>
+                {/* Cost Panel */}
+                <TabsContent value="cost" keepMounted>
+                  <div className="grid grid-cols-2 gap-2 w-full">
+                    {/* Total Spend Card */}
+                    <div className="col-span-2">
+                      <div className="flex items-center gap-4 mt-2 mb-2">
+                        <p className="text-lg text-muted-foreground">
+                          Project Spend{" "}
+                          {dateValue.from && dateValue.to && (
+                            <>
+                              {dateValue.from.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year:
+                                  dateValue.from.getFullYear() !== dateValue.to.getFullYear() ? "numeric" : undefined,
+                              })}
+                              {" - "}
+                              {dateValue.to.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </>
+                          )}
+                        </p>
+                      </div>
 
-                        <ViewUserSpend
-                          userSpend={totalSpend}
-                          selectedTeam={null}
-                          userMaxBudget={currentUser?.max_budget || null}
-                        />
-                      </Col>
+                      <ViewUserSpend
+                        userSpend={totalSpend}
+                        selectedTeam={null}
+                        userMaxBudget={currentUser?.max_budget || null}
+                      />
+                    </div>
 
-                      <Col numColSpan={2}>
-                        <Card>
-                          <Title>{t("observabilityExtra.usage.metrics")}</Title>
-                          <Grid numItems={5} className="gap-4 mt-4">
-                            <Card>
-                              <Title>{t("observabilityExtra.usage.totalRequests")}</Title>
-                              <Text className="text-2xl font-bold mt-2">
-                                {userSpendData.metadata?.total_api_requests?.toLocaleString() || 0}
-                              </Text>
-                            </Card>
-                            <Card>
-                              <div className="flex items-center gap-2">
-                                <Title>{t("observabilityExtra.usage.successfulRequests")}</Title>
-                                {gatewayActivity && (
-                                  <Tooltip title="Counted by the gateway when it answers a request, independent of spend logging. Deployment-wide, so it will not match the per-key or per-model breakdowns below.">
-                                    <InfoCircleOutlined className="text-gray-400 hover:text-gray-600" />
+                    <div className="col-span-2">
+                      <ShadcnCard>
+                        <CardContent>
+                          <h3 className="text-lg font-medium text-foreground">
+                            {t("observabilityExtra.usage.metrics")}
+                          </h3>
+                          <div className="grid grid-cols-5 gap-4 mt-4">
+                            <ShadcnCard>
+                              <CardContent>
+                                <h3 className="text-lg font-medium text-foreground">
+                                  {t("observabilityExtra.usage.totalRequests")}
+                                </h3>
+                                <p className="text-2xl font-bold mt-2">
+                                  {userSpendData.metadata?.total_api_requests?.toLocaleString() || 0}
+                                </p>
+                              </CardContent>
+                            </ShadcnCard>
+                            <ShadcnCard>
+                              <CardContent>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.successfulRequests")}
+                                  </h3>
+                                  {gatewayActivity && (
+                                    <Tooltip>
+                                      <TooltipTrigger
+                                        render={<Info className="size-4 text-gray-400 hover:text-gray-600" />}
+                                      />
+                                      <TooltipContent>
+                                        Counted by the gateway when it answers a request, independent of spend logging.
+                                        Deployment-wide, so it will not match the per-key or per-model breakdowns below.
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                </div>
+                                {/*
+                                  TODO: drop the userSpendData fallback once every deployment
+                                  is writing LiteLLM_DailyGatewayRequests. It covers two cases
+                                  today: a non-admin (who may not read deployment-wide counts)
+                                  and an admin on a proxy whose table is still backfilling.
+                                */}
+                                <p className="text-2xl font-bold mt-2 text-green-600">
+                                  {(
+                                    gatewayActivity?.total_successful_requests ??
+                                    userSpendData.metadata?.total_successful_requests
+                                  )?.toLocaleString() || 0}
+                                </p>
+                              </CardContent>
+                            </ShadcnCard>
+                            <ShadcnCard>
+                              <CardContent>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.failedRequests")}
+                                  </h3>
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={<Info className="size-4 text-gray-400 hover:text-gray-600" />}
+                                    />
+                                    <TooltipContent>
+                                      {gatewayActivity
+                                        ? "Counted by the gateway when it answers a request, independent of spend logging. Deployment-wide, so it will not match the per-key or per-model breakdowns below."
+                                        : "Includes requests that failed to route to a provider, tool usage failures, and other request errors where the provider cannot be determined."}
+                                    </TooltipContent>
                                   </Tooltip>
-                                )}
-                              </div>
-                              <Text className="text-2xl font-bold mt-2 text-green-600">
-                                {(
-                                  gatewayActivity?.total_successful_requests ??
-                                  userSpendData.metadata?.total_successful_requests
-                                )?.toLocaleString() || 0}
-                              </Text>
-                            </Card>
-                            <Card>
-                              <div className="flex items-center gap-2">
-                                <Title>{t("observabilityExtra.usage.failedRequests")}</Title>
-                                <Tooltip
-                                  title={
-                                    gatewayActivity
-                                      ? "Counted by the gateway when it answers a request, independent of spend logging. Deployment-wide, so it will not match the per-key or per-model breakdowns below."
-                                      : "Includes requests that failed to route to a provider, tool usage failures, and other request errors where the provider cannot be determined."
-                                  }
-                                >
-                                  <InfoCircleOutlined className="text-gray-400 hover:text-gray-600" />
-                                </Tooltip>
-                              </div>
-                              {/* Same source as Successful Requests: the two must agree, or the
-                                  tile disagrees with the endpoint breakdown chart below it. */}
-                              <Text className="text-2xl font-bold mt-2 text-red-600">
-                                {(
-                                  gatewayActivity?.total_failed_requests ??
-                                  userSpendData.metadata?.total_failed_requests
-                                )?.toLocaleString() || 0}
-                              </Text>
-                            </Card>
-                            <Card>
-                              <Title>{t("observabilityExtra.usage.averageCost")}</Title>
-                              <Text className="text-2xl font-bold mt-2">
-                                $
-                                {formatNumberWithCommas(
-                                  (totalSpend || 0) / (userSpendData.metadata?.total_api_requests || 1),
-                                  4,
-                                )}
-                              </Text>
-                            </Card>
-                            <Card
+                                </div>
+                                {/* Same source as Successful Requests: the two must agree, or the
+                                    tile disagrees with the endpoint breakdown chart below it. */}
+                                <p className="text-2xl font-bold mt-2 text-red-600">
+                                  {(
+                                    gatewayActivity?.total_failed_requests ??
+                                    userSpendData.metadata?.total_failed_requests
+                                  )?.toLocaleString() || 0}
+                                </p>
+                              </CardContent>
+                            </ShadcnCard>
+                            <ShadcnCard>
+                              <CardContent>
+                                <h3 className="text-lg font-medium text-foreground">
+                                  {t("observabilityExtra.usage.averageCost")}
+                                </h3>
+                                <p className="text-2xl font-bold mt-2">
+                                  $
+                                  {formatNumberWithCommas(
+                                    (totalSpend || 0) / (userSpendData.metadata?.total_api_requests || 1),
+                                    4,
+                                  )}
+                                </p>
+                              </CardContent>
+                            </ShadcnCard>
+                            <ShadcnCard
                               className="cursor-pointer hover:bg-gray-50 transition-colors"
                               onClick={() => setShowTokenBreakdown(!showTokenBreakdown)}
                             >
-                              <div className="flex items-center gap-2">
-                                <Title>{t("observabilityExtra.usage.totalTokens")}</Title>
-                                {showTokenBreakdown ? (
-                                  <DownOutlined className="text-gray-400 text-xs" />
-                                ) : (
-                                  <RightOutlined className="text-gray-400 text-xs" />
-                                )}
-                              </div>
-                              <Text className="text-2xl font-bold mt-2">
-                                {userSpendData.metadata?.total_tokens?.toLocaleString() || 0}
-                              </Text>
-                            </Card>
-                          </Grid>
+                              <CardContent>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.totalTokens")}
+                                  </h3>
+                                  {showTokenBreakdown ? (
+                                    <ChevronDown className="size-3 text-gray-400" />
+                                  ) : (
+                                    <ChevronRight className="size-3 text-gray-400" />
+                                  )}
+                                </div>
+                                <p className="text-2xl font-bold mt-2">
+                                  {userSpendData.metadata?.total_tokens?.toLocaleString() || 0}
+                                </p>
+                              </CardContent>
+                            </ShadcnCard>
+                          </div>
                           {showTokenBreakdown && (
-                            <Grid numItems={4} className="gap-4 mt-4">
-                              <Card>
-                                <Title>{t("observabilityExtra.usage.inputTokens")}</Title>
-                                <Text className="text-2xl font-bold mt-2 text-blue-600">
-                                  {(userSpendData.metadata?.total_prompt_tokens || 0).toLocaleString()}
-                                </Text>
-                              </Card>
-                              <Card>
-                                <Title>{t("observabilityExtra.usage.outputTokens")}</Title>
-                                <Text className="text-2xl font-bold mt-2 text-cyan-600">
-                                  {userSpendData.metadata?.total_completion_tokens?.toLocaleString() || 0}
-                                </Text>
-                              </Card>
-                              <Card>
-                                <Title>{t("observabilityExtra.usage.cacheReadTokens")}</Title>
-                                <Text className="text-2xl font-bold mt-2 text-green-600">
-                                  {userSpendData.metadata?.total_cache_read_input_tokens?.toLocaleString() || 0}
-                                </Text>
-                              </Card>
-                              <Card>
-                                <Title>{t("observabilityExtra.usage.cacheWriteTokens")}</Title>
-                                <Text className="text-2xl font-bold mt-2 text-purple-600">
-                                  {userSpendData.metadata?.total_cache_creation_input_tokens?.toLocaleString() || 0}
-                                </Text>
-                              </Card>
-                            </Grid>
+                            <div className="grid grid-cols-4 gap-4 mt-4">
+                              <ShadcnCard>
+                                <CardContent>
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.inputTokens")}
+                                  </h3>
+                                  <p className="text-2xl font-bold mt-2 text-blue-600">
+                                    {(userSpendData.metadata?.total_prompt_tokens || 0).toLocaleString()}
+                                  </p>
+                                </CardContent>
+                              </ShadcnCard>
+                              <ShadcnCard>
+                                <CardContent>
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.outputTokens")}
+                                  </h3>
+                                  <p className="text-2xl font-bold mt-2 text-cyan-600">
+                                    {userSpendData.metadata?.total_completion_tokens?.toLocaleString() || 0}
+                                  </p>
+                                </CardContent>
+                              </ShadcnCard>
+                              <ShadcnCard>
+                                <CardContent>
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.cacheReadTokens")}
+                                  </h3>
+                                  <p className="text-2xl font-bold mt-2 text-green-600">
+                                    {userSpendData.metadata?.total_cache_read_input_tokens?.toLocaleString() || 0}
+                                  </p>
+                                </CardContent>
+                              </ShadcnCard>
+                              <ShadcnCard>
+                                <CardContent>
+                                  <h3 className="text-lg font-medium text-foreground">
+                                    {t("observabilityExtra.usage.cacheWriteTokens")}
+                                  </h3>
+                                  <p className="text-2xl font-bold mt-2 text-purple-600">
+                                    {userSpendData.metadata?.total_cache_creation_input_tokens?.toLocaleString() || 0}
+                                  </p>
+                                </CardContent>
+                              </ShadcnCard>
+                            </div>
                           )}
-                        </Card>
-                      </Col>
+                        </CardContent>
+                      </ShadcnCard>
+                    </div>
 
-                      {/* Daily Spend Chart */}
-                      <Col numColSpan={2}>
-                        <ShadcnCard>
+                    {/* Daily Spend Chart */}
+                    <div className="col-span-2">
+                      <ShadcnCard>
+                        <CardHeader>
+                          <CardTitle className="text-base font-semibold">
+                            {t("observabilityExtra.usage.dailySpend")}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {loading ? (
+                            <ChartLoader isDateChanging={isDateChanging} />
+                          ) : (
+                            <BarChart
+                              data={sortedDailyResults}
+                              index="date"
+                              categories={["metrics.spend"]}
+                              colors={["cyan"]}
+                              valueFormatter={valueFormatterSpend}
+                              yAxisWidth={100}
+                              showLegend={false}
+                              customTooltip={({ payload, active }) => {
+                                if (!active || !payload?.[0]) return null;
+                                const data = payload[0].payload;
+                                return (
+                                  <div className="bg-white p-4 shadow-lg rounded-lg border">
+                                    <p className="font-bold">{data.date}</p>
+                                    <p className="text-cyan-500">
+                                      Spend: ${formatNumberWithCommas(data.metrics.spend, 2)}
+                                    </p>
+                                    <p className="text-gray-600">Requests: {data.metrics.api_requests}</p>
+                                    <p className="text-gray-600">Successful: {data.metrics.successful_requests}</p>
+                                    <p className="text-gray-600">Failed: {data.metrics.failed_requests}</p>
+                                    <p className="text-gray-600">Tokens: {data.metrics.total_tokens}</p>
+                                  </div>
+                                );
+                              }}
+                            />
+                          )}
+                        </CardContent>
+                      </ShadcnCard>
+                    </div>
+                    {/* Gateway Requests by Endpoint (SGR) */}
+                    {gatewayActivity && gatewayActivity.by_route.length > 0 && (
+                      <div className="col-span-2">
+                        <ShadcnCard data-testid="gateway-requests-by-endpoint">
                           <CardHeader>
                             <CardTitle className="text-base font-semibold">
-                              {t("observabilityExtra.usage.dailySpend")}
+                              Gateway Requests by Endpoint
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={<Info className="ml-2 inline size-4 text-gray-400 hover:text-gray-600" />}
+                                />
+                                <TooltipContent>
+                                  Counted by the gateway middleware as each request is answered. Covers LLM, MCP and A2A
+                                  endpoints across the whole deployment.
+                                </TooltipContent>
+                              </Tooltip>
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
-                            {loading ? (
-                              <ChartLoader isDateChanging={isDateChanging} />
-                            ) : (
-                              <BarChart
-                                data={sortedDailyResults}
-                                index="date"
-                                categories={["metrics.spend"]}
-                                colors={["cyan"]}
-                                valueFormatter={valueFormatterSpend}
-                                yAxisWidth={100}
-                                showLegend={false}
-                                customTooltip={({ payload, active }) => {
-                                  if (!active || !payload?.[0]) return null;
-                                  const data = payload[0].payload;
-                                  return (
-                                    <div className="bg-white p-4 shadow-lg rounded-lg border">
-                                      <p className="font-bold">{data.date}</p>
-                                      <p className="text-cyan-500">
-                                        Spend: ${formatNumberWithCommas(data.metrics.spend, 2)}
-                                      </p>
-                                      <p className="text-gray-600">Requests: {data.metrics.api_requests}</p>
-                                      <p className="text-gray-600">Successful: {data.metrics.successful_requests}</p>
-                                      <p className="text-gray-600">Failed: {data.metrics.failed_requests}</p>
-                                      <p className="text-gray-600">Tokens: {data.metrics.total_tokens}</p>
-                                    </div>
-                                  );
-                                }}
-                              />
-                            )}
+                            <BarChart
+                              data={gatewayRequestsByRoute}
+                              index="route"
+                              categories={["successful_requests", "failed_requests"]}
+                              colors={["green", "red"]}
+                              stack={true}
+                              yAxisWidth={100}
+                              valueFormatter={(value: number) => value.toLocaleString()}
+                            />
                           </CardContent>
                         </ShadcnCard>
-                      </Col>
-                      {/* Gateway Requests by Endpoint (SGR) */}
-                      {gatewayActivity && gatewayActivity.by_route.length > 0 && (
-                        <Col numColSpan={2}>
-                          <ShadcnCard data-testid="gateway-requests-by-endpoint">
-                            <CardHeader>
-                              <CardTitle className="text-base font-semibold">
-                                Gateway Requests by Endpoint
-                                <Tooltip title="Counted by the gateway middleware as each request is answered. Covers LLM, MCP and A2A endpoints across the whole deployment.">
-                                  <InfoCircleOutlined className="ml-2 text-gray-400 hover:text-gray-600" />
-                                </Tooltip>
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <BarChart
-                                data={gatewayRequestsByRoute}
-                                index="route"
-                                categories={["successful_requests", "failed_requests"]}
-                                colors={["green", "red"]}
-                                stack={true}
-                                yAxisWidth={100}
-                                valueFormatter={(value: number) => value.toLocaleString()}
-                              />
-                            </CardContent>
-                          </ShadcnCard>
-                        </Col>
-                      )}
-                      {/* Top API Keys */}
-                      <Col numColSpan={1}>
-                        <Card className="h-full">
-                          <Title>{t("observabilityExtra.usage.topKeys")}</Title>
+                      </div>
+                    )}
+                    {/* Top API Keys */}
+                    <div>
+                      <ShadcnCard className="h-full">
+                        <CardContent>
+                          <h3 className="text-lg font-medium text-foreground">
+                            {t("observabilityExtra.usage.topKeys")}
+                          </h3>
                           <TopKeyView
                             topKeys={topKeys}
                             teams={null}
                             topKeysLimit={topKeysLimit}
                             setTopKeysLimit={setTopKeysLimit}
                           />
-                        </Card>
-                      </Col>
+                        </CardContent>
+                      </ShadcnCard>
+                    </div>
 
-                      {/* Top Models */}
-                      <Col numColSpan={1}>
-                        <Card className="h-full">
-                          <Title>
+                    {/* Top Models */}
+                    <div>
+                      <ShadcnCard className="h-full">
+                        <CardContent>
+                          <h3 className="text-lg font-medium text-foreground">
                             {modelViewType === "groups"
                               ? t("observabilityExtra.usage.topPublicModels")
                               : t("observabilityExtra.usage.topLitellmModels")}
-                          </Title>
+                          </h3>
                           <div className="flex justify-between items-center mb-4">
-                            <Segmented
-                              options={[
-                                { label: "5", value: 5 },
-                                { label: "10", value: 10 },
-                                { label: "25", value: 25 },
-                                { label: "50", value: 50 },
-                              ]}
-                              value={topModelsLimit}
-                              onChange={(value) => setTopModelsLimit(value as number)}
-                            />
+                            <Tabs
+                              value={String(topModelsLimit)}
+                              onValueChange={(value: string) => setTopModelsLimit(Number(value))}
+                            >
+                              <TabsList>
+                                {TOP_MODEL_LIMITS.map((limit) => (
+                                  <TabsTrigger key={limit} value={String(limit)} className="flex-none px-3">
+                                    {limit}
+                                  </TabsTrigger>
+                                ))}
+                              </TabsList>
+                            </Tabs>
                             <ModelViewToggle value={modelViewType} onChange={setModelViewType} />
                           </div>
                           {loading ? (
@@ -939,45 +935,45 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                               })()}
                             </div>
                           )}
-                        </Card>
-                      </Col>
-
-                      {/* Spend by Provider */}
-                      <Col numColSpan={2}>
-                        <SpendByProvider
-                          loading={loading}
-                          isDateChanging={isDateChanging}
-                          providerSpend={providerSpend}
-                        />
-                      </Col>
-
-                      {/* Usage Metrics */}
-                    </Grid>
-                  </TabPanel>
-
-                  {/* Activity Panel */}
-                  <TabPanel>
-                    <div className="flex justify-end mt-2 mb-4">
-                      <ModelViewToggle value={modelViewType} onChange={setModelViewType} />
+                        </CardContent>
+                      </ShadcnCard>
                     </div>
-                    <ActivityMetrics modelMetrics={modelMetrics} />
-                  </TabPanel>
-                  <TabPanel>
-                    <ActivityMetrics modelMetrics={keyMetrics} />
-                  </TabPanel>
-                  <TabPanel>
-                    <ActivityMetrics modelMetrics={mcpServerMetrics} />
-                  </TabPanel>
-                  <TabPanel>
-                    <EndpointUsage userSpendData={userSpendData} />
-                  </TabPanel>
-                </TabPanels>
-              </TabGroup>
+
+                    {/* Spend by Provider */}
+                    <div className="col-span-2">
+                      <SpendByProvider
+                        loading={loading}
+                        isDateChanging={isDateChanging}
+                        providerSpend={providerSpend}
+                      />
+                    </div>
+
+                    {/* Usage Metrics */}
+                  </div>
+                </TabsContent>
+
+                {/* Activity Panel */}
+                <TabsContent value="models" keepMounted>
+                  <div className="flex justify-end mt-2 mb-4">
+                    <ModelViewToggle value={modelViewType} onChange={setModelViewType} />
+                  </div>
+                  <ActivityMetrics modelMetrics={modelMetrics} />
+                </TabsContent>
+                <TabsContent value="keys" keepMounted>
+                  <ActivityMetrics modelMetrics={keyMetrics} />
+                </TabsContent>
+                <TabsContent value="mcp" keepMounted>
+                  <ActivityMetrics modelMetrics={mcpServerMetrics} />
+                </TabsContent>
+                <TabsContent value="endpoints" keepMounted>
+                  <EndpointUsage userSpendData={userSpendData} />
+                </TabsContent>
+              </Tabs>
             </>
           )}
           {/* Organization Usage Panel */}
 
-          {usageView === "organization" && (
+          {usageView === "organization" && canViewOrganizationUsage && (
             <EntityUsage
               accessToken={accessToken}
               entityType="organization"
@@ -1003,11 +999,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
               userRole={userRole}
               entityList={
                 teams?.map((team) => ({
-                  label: `${team.team_alias} (${t(
-                    managedTeamIds.has(team.team_id)
-                      ? "observability.usage.managed_department_team"
-                      : "observability.usage.service_team",
-                  )})`,
+                  label: team.team_alias,
                   value: team.team_id,
                 })) || null
               }
@@ -1037,21 +1029,24 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
           {usageView === "tag" && (
             <>
               {showCredentialBanner && (
-                <Alert
-                  banner
-                  type="info"
-                  message={t("observabilityExtra.usage.credentialTagNotice")}
-                  description={
-                    <Typography.Text>
-                      When a reusable credential is used, it will appear as a tag prefixed with{" "}
-                      <Typography.Text code>Credential: </Typography.Text>
-                      in this view.
-                    </Typography.Text>
-                  }
-                  closable
-                  onClose={() => setShowCredentialBanner(false)}
-                  className="mb-5"
-                />
+                <Alert variant="info" className="mb-5">
+                  <AlertTitle>Reusable credentials are automatically tracked as tags</AlertTitle>
+                  <AlertDescription className="text-inherit">
+                    When a reusable credential is used, it will appear as a tag prefixed with{" "}
+                    <code className="rounded bg-black/5 px-1 py-0.5 font-mono text-xs">Credential: </code>
+                    in this view.
+                  </AlertDescription>
+                  <AlertAction>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Close"
+                      onClick={() => setShowCredentialBanner(false)}
+                    >
+                      <X />
+                    </Button>
+                  </AlertAction>
+                </Alert>
               )}
               <EntityUsage
                 accessToken={accessToken}
@@ -1064,7 +1059,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
               />
             </>
           )}
-          {usageView === "agent" && (
+          {usageView === "agent" && canViewAgentUsage && (
             <EntityUsage
               accessToken={accessToken}
               entityType="agent"
@@ -1104,7 +1099,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
       />
 
       {/* Global Usage Export Modal */}
-      {isAdmin && (
+      {canUseCostActions && (
         <EntityUsageExportModal
           isOpen={isGlobalExportModalOpen}
           onClose={() => setIsGlobalExportModalOpen(false)}
@@ -1120,7 +1115,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
       )}
 
       {/* AI Chat Panel */}
-      {isAdmin && (
+      {canUseCostActions && (
         <UsageAIChatPanel open={isAiChatOpen} onClose={() => setIsAiChatOpen(false)} accessToken={accessToken} />
       )}
     </div>

@@ -1,15 +1,11 @@
+import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { i18n } from "@/i18n/i18n";
-import { languageStorageKey } from "@/i18n/resources";
-import { renderWithProviders, screen } from "../../tests/test-utils";
 import { ActivityMetrics, formatKeyLabel, processActivityData } from "./activity_metrics";
 import { Team } from "./key_team_helpers/key_list";
 import { DailyData, KeyMetricWithMetadata, ModelActivityData } from "./UsagePage/types";
 
 beforeAll(() => {
-  window.localStorage.setItem(languageStorageKey, "en");
-  void i18n.changeLanguage("en");
   if (typeof window !== "undefined" && !window.ResizeObserver) {
     window.ResizeObserver = class ResizeObserver {
       observe() {}
@@ -19,44 +15,21 @@ beforeAll(() => {
   }
 });
 
-vi.mock("@tremor/react", () => ({
-  Card: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Grid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-  Title: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
-  AreaChart: () => <div>AreaChart</div>,
-  BarChart: () => <div>BarChart</div>,
-}));
+// Panel order is a contract; which element the label lands in is not, so compare document order.
+const precedes = (firstLabel: string, secondLabel: string): boolean => {
+  const first = screen.getAllByText(firstLabel)[0];
+  const second = screen.getAllByText(secondLabel)[0];
+  return Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+};
 
-vi.mock("antd", () => {
-  const CollapseComponent = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
-  const PanelComponent = ({ children, header }: { children: React.ReactNode; header: React.ReactNode }) => (
-    <div>
-      <div>{header}</div>
-      <div>{children}</div>
-    </div>
-  );
-  PanelComponent.displayName = "Collapse.Panel";
-  CollapseComponent.Panel = PanelComponent;
-  const TableComponent = ({ dataSource, columns }: { dataSource?: unknown[]; columns?: { title: string }[] }) => (
-    <table>
-      <thead>
-        <tr>{columns?.map((col, i) => <th key={i}>{col.title}</th>)}</tr>
-      </thead>
-      <tbody>{dataSource?.map((_, i) => <tr key={i} />)}</tbody>
-    </table>
-  );
+vi.mock("@/utils/dataUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/utils/dataUtils")>();
+
   return {
-    Collapse: CollapseComponent,
-    Table: TableComponent,
+    ...actual,
+    formatNumberWithCommas: (value: number, decimals?: number) => value.toFixed(decimals || 0),
   };
 });
-
-vi.mock("@/utils/dataUtils", () => ({
-  formatNumberWithCommas: (value: number, decimals?: number) => {
-    return value.toFixed(decimals || 0);
-  },
-}));
 
 vi.mock("@/utils/teamUtils", () => ({
   resolveTeamAliasFromTeamID: (teamID: string, teams: any[]) => {
@@ -146,6 +119,10 @@ const createMockModelActivityData = (label: string, overrides: Partial<ModelActi
   total_spend: 100.5,
   total_cache_read_input_tokens: 1000,
   total_cache_creation_input_tokens: 500,
+  average_response_time_ms: 450,
+  response_time_count: 80,
+  average_ttft_ms: 120,
+  ttft_count: 60,
   top_api_keys: [],
   top_models: [],
   daily_data: [
@@ -161,6 +138,10 @@ const createMockModelActivityData = (label: string, overrides: Partial<ModelActi
         failed_requests: 5,
         cache_read_input_tokens: 1000,
         cache_creation_input_tokens: 500,
+        average_response_time_ms: 450,
+        response_time_count: 80,
+        average_ttft_ms: 120,
+        ttft_count: 60,
       },
     },
   ],
@@ -178,6 +159,10 @@ const GPT_35_MODEL_DATA: ModelActivityData = {
   total_spend: 25.25,
   total_cache_read_input_tokens: 500,
   total_cache_creation_input_tokens: 250,
+  average_response_time_ms: 900,
+  response_time_count: 20,
+  average_ttft_ms: 300,
+  ttft_count: 10,
   top_api_keys: [],
   top_models: [],
   daily_data: [
@@ -193,6 +178,10 @@ const GPT_35_MODEL_DATA: ModelActivityData = {
         failed_requests: 2,
         cache_read_input_tokens: 500,
         cache_creation_input_tokens: 250,
+        average_response_time_ms: 900,
+        response_time_count: 20,
+        average_ttft_ms: 300,
+        ttft_count: 10,
       },
     },
   ],
@@ -204,42 +193,22 @@ describe("ActivityMetrics", () => {
   };
 
   it("should render", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Overall Usage")).toBeInTheDocument();
   });
 
-  it("should display average response time and TTFT with sample counts", () => {
-    const metrics = {
-      "gpt-4": createMockModelActivityData("GPT-4", {
-        average_response_time_ms: 1250,
-        response_time_count: 8,
-        average_ttft_ms: 275,
-        ttft_count: 5,
-      }),
-    };
-
-    renderWithProviders(<ActivityMetrics modelMetrics={metrics} />);
-
-    expect(screen.getAllByText("Average Response Time").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("1.25 s").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Average TTFT").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("275 ms").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("8 measured requests").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("5 streaming requests").length).toBeGreaterThan(0);
-  });
-
   it("should display prompt caching metrics when hidePromptCachingMetrics is false", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={false} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={false} />);
     expect(screen.getByText("Prompt Caching Metrics")).toBeInTheDocument();
   });
 
   it("should hide prompt caching metrics when hidePromptCachingMetrics is true", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={true} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={true} />);
     expect(screen.queryByText("Prompt Caching Metrics")).not.toBeInTheDocument();
   });
 
   it("should display overall usage summary metrics", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     const totalRequestsElements = screen.getAllByText("Total Requests");
     expect(totalRequestsElements.length).toBeGreaterThan(0);
     const totalSuccessfulElements = screen.getAllByText("Total Successful Requests");
@@ -248,6 +217,17 @@ describe("ActivityMetrics", () => {
     expect(totalTokensElements.length).toBeGreaterThan(0);
     const totalSpendElements = screen.getAllByText("Total Spend");
     expect(totalSpendElements.length).toBeGreaterThan(0);
+  });
+
+  it("should display average response time and average TTFT cards", () => {
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+
+    expect(screen.getAllByText("Average Response Time").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Average TTFT").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("450 ms").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("120 ms").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("80 measured requests").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("60 streaming requests").length).toBeGreaterThan(0);
   });
 
   it("should display aggregated totals across all models", () => {
@@ -260,7 +240,7 @@ describe("ActivityMetrics", () => {
       "gpt-3.5": GPT_35_MODEL_DATA,
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={multipleModels} />);
+    render(<ActivityMetrics modelMetrics={multipleModels} />);
     const totalRequestsElements = screen.getAllByText("150");
     expect(totalRequestsElements.length).toBeGreaterThan(0);
     const totalSuccessfulElements = screen.getAllByText("143");
@@ -276,15 +256,12 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={multipleModels} />);
-    const headers = screen.getAllByRole("heading", { level: 2 });
-    const gpt4Index = headers.findIndex((h) => h.textContent?.includes("GPT-4"));
-    const gpt35Index = headers.findIndex((h) => h.textContent?.includes("GPT-3.5"));
-    expect(gpt4Index).toBeLessThan(gpt35Index);
+    render(<ActivityMetrics modelMetrics={multipleModels} />);
+    expect(precedes("GPT-4", "GPT-3.5")).toBe(true);
   });
 
   it("should display model summary cards with correct values", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     const requestElements = screen.getAllByText("100");
     expect(requestElements.length).toBeGreaterThan(0);
     const successfulElements = screen.getAllByText("95");
@@ -294,7 +271,7 @@ describe("ActivityMetrics", () => {
   });
 
   it("should not display Top Virtual Keys section when model has no top_api_keys", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.queryByText("Top Virtual Keys by Spend")).not.toBeInTheDocument();
   });
 
@@ -315,7 +292,7 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
+    render(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
     expect(screen.getByText("Top Virtual Keys by Spend")).toBeInTheDocument();
     expect(screen.getByText("Test Key")).toBeInTheDocument();
   });
@@ -337,7 +314,7 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
+    render(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
     expect(screen.getByText(/key-123456/)).toBeInTheDocument();
   });
 
@@ -358,7 +335,7 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
+    render(<ActivityMetrics modelMetrics={modelWithTopKeys} />);
     expect(screen.getByText(/Team: team1/)).toBeInTheDocument();
   });
 
@@ -379,22 +356,22 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithTopModels} />);
+    render(<ActivityMetrics modelMetrics={modelWithTopModels} />);
     expect(screen.getByText("Model Usage").closest('[data-slot="card-title"]')).toBeInTheDocument();
   });
 
   it("should display Spend per day in model section", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Spend per day")).toBeInTheDocument();
   });
 
   it("should display Requests per day in model section", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Requests per day")).toBeInTheDocument();
   });
 
   it("should display Success vs Failed Requests in model section", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Success vs Failed Requests")).toBeInTheDocument();
   });
 
@@ -407,22 +384,39 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelsWithEmptyKey} />);
-    const headings = screen.getAllByRole("heading", { level: 2 });
-    const gpt4Index = headings.findIndex((h) => h.textContent?.includes("GPT-4"));
-    const unknownIndex = headings.findIndex((h) => h.textContent?.includes("Unknown"));
-    expect(gpt4Index).toBeLessThan(unknownIndex);
+    render(<ActivityMetrics modelMetrics={modelsWithEmptyKey} />);
+    expect(precedes("GPT-4", "Unknown")).toBe(true);
+  });
+
+  // A model section owns view-mode state, so collapsing one must not throw its subtree away.
+  it("keeps a model section mounted once it has been expanded", () => {
+    const multipleModels: Record<string, ModelActivityData> = {
+      "gpt-3.5": GPT_35_MODEL_DATA,
+      "gpt-4": { ...mockModelMetrics["gpt-4"], total_spend: 100.5 },
+    };
+
+    render(<ActivityMetrics modelMetrics={multipleModels} />);
+
+    // Only the highest-spend section is expanded initially, so only its body is mounted.
+    const sectionsMounted = () => screen.getAllByText("Spend per day").length;
+    expect(sectionsMounted()).toBe(1);
+
+    fireEvent.click(screen.getAllByText("GPT-3.5")[0]);
+    expect(sectionsMounted()).toBe(2);
+
+    fireEvent.click(screen.getAllByText("GPT-3.5")[0]);
+    expect(sectionsMounted()).toBe(2);
   });
 
   it("should display average tokens per successful request", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     const avgTokensElements = screen.getAllByText(/avg per successful request/);
     expect(avgTokensElements.length).toBeGreaterThan(0);
     expect(avgTokensElements.some((el) => el.textContent?.includes("526"))).toBe(true);
   });
 
   it("should display average spend per successful request", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     const avgSpendElements = screen.getAllByText(/per successful request/);
     expect(avgSpendElements.length).toBeGreaterThan(0);
     expect(avgSpendElements.some((el) => el.textContent?.includes("1.058"))).toBe(true);
@@ -438,30 +432,30 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithZeroRequests} />);
+    render(<ActivityMetrics modelMetrics={modelWithZeroRequests} />);
     const zeroElements = screen.getAllByText("0");
     expect(zeroElements.length).toBeGreaterThan(0);
   });
 
   it("should display prompt caching token counts when visible", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={false} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} hidePromptCachingMetrics={false} />);
     expect(screen.getByText(/Cache Read:.*tokens/)).toBeInTheDocument();
     expect(screen.getByText(/Cache Creation:.*tokens/)).toBeInTheDocument();
   });
 
   it("should display charts for tokens over time", () => {
-    const { container } = renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    const { container } = render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Total Tokens Over Time")).toBeInTheDocument();
     expect(container.querySelectorAll(".recharts-area").length).toBeGreaterThan(0);
   });
 
   it("should display charts for requests over time", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={mockModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.getByText("Total Requests Over Time")).toBeInTheDocument();
   });
 
   it("should handle empty model metrics", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={{}} />);
+    render(<ActivityMetrics modelMetrics={{}} />);
     expect(screen.getByText("Overall Usage")).toBeInTheDocument();
   });
 
@@ -473,7 +467,7 @@ describe("ActivityMetrics", () => {
       },
     };
 
-    renderWithProviders(<ActivityMetrics modelMetrics={modelWithEmptyLabel} />);
+    render(<ActivityMetrics modelMetrics={modelWithEmptyLabel} />);
     expect(screen.getByText("Unknown Item")).toBeInTheDocument();
   });
 });
@@ -541,7 +535,7 @@ describe("ActivityMetrics charts", () => {
   };
 
   it("renders all seven chart sites as real recharts charts indexed by date", () => {
-    const { container } = renderWithProviders(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
+    const { container } = render(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
 
     expect(chartsOf(container)).toHaveLength(7);
     expect(container.querySelectorAll(".recharts-bar")).toHaveLength(2);
@@ -551,23 +545,21 @@ describe("ActivityMetrics charts", () => {
   });
 
   it("shows the No data placeholder on both global charts when there is no usage data", () => {
-    const { container } = renderWithProviders(<ActivityMetrics modelMetrics={{}} />);
+    const { container } = render(<ActivityMetrics modelMetrics={{}} />);
 
     expect(screen.getAllByText("No data")).toHaveLength(2);
     expect(chartsOf(container)).toHaveLength(0);
   });
 
   it("drops only the prompt caching chart when hidePromptCachingMetrics is true", () => {
-    const { container } = renderWithProviders(
-      <ActivityMetrics modelMetrics={twoDayModelMetrics} hidePromptCachingMetrics={true} />,
-    );
+    const { container } = render(<ActivityMetrics modelMetrics={twoDayModelMetrics} hidePromptCachingMetrics={true} />);
 
     expect(chartsOf(container)).toHaveLength(6);
     expect(container.querySelectorAll(".recharts-area")).toHaveLength(10);
   });
 
   it("maps the configured colors onto every series", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
 
     expect(areaStrokes(chartTitled("Total Tokens Over Time"))).toEqual([
       "var(--color-blue-500, #3b82f6)",
@@ -596,14 +588,14 @@ describe("ActivityMetrics charts", () => {
   });
 
   it("shows the built-in chart legend only on the spend per day chart", () => {
-    const { container } = renderWithProviders(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
+    const { container } = render(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
 
     expect(container.querySelectorAll(".recharts-legend-wrapper")).toHaveLength(1);
     expect(screen.getByText("metrics.spend")).toBeInTheDocument();
   });
 
   it("renders formatted header legends for each chart card", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
 
     expect(screen.getAllByText("Spend").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Api Requests").length).toBeGreaterThan(0);
@@ -612,7 +604,7 @@ describe("ActivityMetrics charts", () => {
   });
 
   it("formats axis ticks as currency on the spend chart and compact numbers on token charts", () => {
-    renderWithProviders(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
+    render(<ActivityMetrics modelMetrics={twoDayModelMetrics} />);
 
     const spendTicks = tickTexts(chartTitled("Spend per day"));
     expect(spendTicks.some((text) => text.startsWith("$"))).toBe(true);
@@ -740,56 +732,6 @@ describe("processActivityData", () => {
     expect(result["gpt-4"].label).toBe("gpt-4");
     expect(result["gpt-4"].total_requests).toBe(100);
     expect(result["gpt-4"].total_spend).toBe(100.5);
-  });
-
-  it("should calculate weighted model performance averages across days", () => {
-    const firstDay: DailyData = {
-      date: "2025-01-01",
-      metrics: EMPTY_SPEND_METRICS,
-      breakdown: {
-        ...EMPTY_BREAKDOWN,
-        models: {
-          "local-model": {
-            metrics: {
-              ...EMPTY_SPEND_METRICS,
-              average_response_time_ms: 1000,
-              response_time_count: 1,
-              average_ttft_ms: 200,
-              ttft_count: 1,
-            },
-            metadata: {},
-            api_key_breakdown: {},
-          },
-        },
-      },
-    };
-    const secondDay: DailyData = {
-      date: "2025-01-02",
-      metrics: EMPTY_SPEND_METRICS,
-      breakdown: {
-        ...EMPTY_BREAKDOWN,
-        models: {
-          "local-model": {
-            metrics: {
-              ...EMPTY_SPEND_METRICS,
-              average_response_time_ms: 2000,
-              response_time_count: 3,
-              average_ttft_ms: 500,
-              ttft_count: 2,
-            },
-            metadata: {},
-            api_key_breakdown: {},
-          },
-        },
-      },
-    };
-
-    const result = processActivityData({ results: [firstDay, secondDay] }, "models");
-
-    expect(result["local-model"].average_response_time_ms).toBe(1750);
-    expect(result["local-model"].response_time_count).toBe(4);
-    expect(result["local-model"].average_ttft_ms).toBe(400);
-    expect(result["local-model"].ttft_count).toBe(3);
   });
 
   it("should process model_groups data keyed by public model name including fallback entries", () => {
@@ -926,6 +868,10 @@ describe("processActivityData", () => {
                   failed_requests: 2,
                   cache_read_input_tokens: 500,
                   cache_creation_input_tokens: 250,
+                  average_response_time_ms: 400,
+                  response_time_count: 40,
+                  average_ttft_ms: 100,
+                  ttft_count: 30,
                 },
                 metadata: {},
                 api_key_breakdown: {},
@@ -964,6 +910,10 @@ describe("processActivityData", () => {
                   failed_requests: 3,
                   cache_read_input_tokens: 500,
                   cache_creation_input_tokens: 250,
+                  average_response_time_ms: 600,
+                  response_time_count: 10,
+                  average_ttft_ms: 200,
+                  ttft_count: 10,
                 },
                 metadata: {},
                 api_key_breakdown: {},
@@ -986,6 +936,10 @@ describe("processActivityData", () => {
     expect(result["gpt-4"].total_successful_requests).toBe(95);
     expect(result["gpt-4"].total_failed_requests).toBe(5);
     expect(result["gpt-4"].daily_data).toHaveLength(2);
+    expect(result["gpt-4"].average_response_time_ms).toBe(440);
+    expect(result["gpt-4"].response_time_count).toBe(50);
+    expect(result["gpt-4"].average_ttft_ms).toBe(125);
+    expect(result["gpt-4"].ttft_count).toBe(40);
   });
 
   it("should sort daily data by date", () => {

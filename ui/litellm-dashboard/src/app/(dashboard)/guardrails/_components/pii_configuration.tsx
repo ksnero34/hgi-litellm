@@ -1,9 +1,6 @@
-import { Button, Input, Typography } from "antd";
 import React, { useState } from "react";
 import { CategoryFilter, PiiEntityList, QuickActions } from "./pii_components";
 import { PiiConfigurationProps } from "@/components/guardrails/types";
-
-const { Title, Text } = Typography;
 
 /**
  * A reusable component for rendering PII entity selection and action configuration
@@ -63,40 +60,48 @@ const PiiConfiguration: React.FC<PiiConfigurationProps> = ({
     setCustomEntity("");
   };
 
+  const handleCustomEntityKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    handleAddCustomEntity();
+  };
+
   return (
     <div className="pii-configuration">
       <div className="flex justify-between items-center mb-5">
         <div className="flex items-center">
-          <Title level={4} className="m-0! font-semibold text-gray-800">
-            Configure PII Protection
-          </Title>
+          <h4 className="m-0 text-lg font-semibold text-foreground">Configure PII Protection</h4>
         </div>
-        <Text className="text-gray-500">{selectedEntities.length} items selected</Text>
+        <span className="text-muted-foreground">{selectedEntities.length} items selected</span>
       </div>
 
       <div className="mb-6">
-        <div className="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <Text strong className="block text-gray-700">
+        <div className="mb-5 rounded-lg border border-border bg-muted/40 p-5 shadow-xs">
+          <label htmlFor="custom-pii-type" className="block text-sm font-medium text-foreground">
             Custom PII type
-          </Text>
-          <Text type="secondary" className="mb-3 block">
+          </label>
+          <p className="mb-3 text-sm text-muted-foreground">
             Enter the base entity label. Numbered Presidio results such as KORNAME1 and KORNAME2 will use the KORNAME
             policy.
-          </Text>
+          </p>
           <div className="flex gap-2">
-            <Input
+            <input
+              id="custom-pii-type"
+              type="text"
               value={customEntity}
               onChange={(event) => setCustomEntity(event.target.value)}
-              onPressEnter={(event) => {
-                event.preventDefault();
-                handleAddCustomEntity();
-              }}
+              onKeyDown={handleCustomEntityKeyDown}
               placeholder="e.g. KORNAME"
-              aria-label="Custom PII type"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
-            <Button type="primary" onClick={handleAddCustomEntity} disabled={!customEntity.trim()}>
+            <button
+              type="button"
+              onClick={handleAddCustomEntity}
+              disabled={!customEntity.trim()}
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            >
               Add
-            </Button>
+            </button>
           </div>
         </div>
 

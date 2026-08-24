@@ -1,5 +1,5 @@
-import { Button } from "antd";
 import React, { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import NotificationsManager from "../molecules/notifications_manager";
 import { getCallbacksCall, getRouterSettingsCall, setCallbacksCall } from "../networking";
 import RouterSettingsForm, { RouterSettingsFormValue } from "./RouterSettingsForm";
@@ -172,7 +172,7 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
       await setCallbacksCall(accessToken, payload);
       NotificationsManager.success(t("settingsExtra.router.updated"));
     } catch (error) {
-      NotificationsManager.fromBackend(t("settingsExtra.router.updateFailed", { error }));
+      NotificationsManager.fromBackend(t("settingsExtra.router.updateFailed", { error: String(error) }));
     }
   };
 
@@ -192,10 +192,10 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
 
       {/* Actions - Sticky at bottom */}
       <div className="border-t border-gray-200 pt-6 flex justify-end gap-3">
-        <Button onClick={() => window.location.reload()}>{t("settingsExtra.router.reset")}</Button>
-        <Button type="primary" onClick={handleSaveChanges}>
-          {t("settingsExtra.router.saveChanges")}
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          {t("settingsExtra.router.reset")}
         </Button>
+        <Button onClick={handleSaveChanges}>{t("settingsExtra.router.saveChanges")}</Button>
       </div>
     </div>
   );

@@ -243,7 +243,14 @@ export const getTeamTableColumns = ({
       header: t("access.teams.columns.spendBudget", { defaultValue: "Spend / Budget" }),
       size: 200,
       enableSorting: false,
-      cell: ({ row }) => <SpendBudgetCell spend={row.original.spend} maxBudget={row.original.max_budget} />,
+      cell: ({ row }) => (
+        <SpendBudgetCell
+          spend={row.original.spend}
+          maxBudget={row.original.max_budget}
+          spendDecimals={2}
+          budgetDecimals={2}
+        />
+      ),
     },
     {
       id: "created_at",

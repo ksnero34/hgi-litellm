@@ -5,6 +5,7 @@ import { useProjects } from "@/app/(dashboard)/hooks/projects/useProjects";
 import { useTags } from "@/app/(dashboard)/hooks/tags/useTags";
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import useCan from "@/app/(dashboard)/hooks/useCan";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,7 +18,7 @@ import { useTranslation } from "react-i18next";
 import { rolesWithWriteAccess } from "../../utils/roles";
 import AgentSelector from "../agent_management/AgentSelector";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
-import BudgetDurationDropdown from "../common_components/budget_duration_dropdown";
+import BudgetDurationDropdown, { NEVER_RESETS_BUDGET_DURATION } from "../common_components/budget_duration_dropdown";
 import SchemaFormFields from "../common_components/check_openapi_schema";
 import KeyLifecycleSettings from "../common_components/KeyLifecycleSettings";
 import ModelAliasManager from "../common_components/ModelAliasManager";
@@ -46,6 +47,7 @@ import {
   getGuardrailsList,
   getPoliciesList,
   getPossibleUserRoles,
+  getPromptsList,
   keyCreateCall,
   keyCreateServiceAccountCall,
   modelAvailableCall,
@@ -181,6 +183,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const { accessToken, userId: userID, userRole } = useAuthorized();
   const canEditGuardrails = userRole != null && rolesWithWriteAccess.includes(userRole);
   const canConfigurePassThroughRoutes = true;
+  const canViewPolicies = useCan("viewPolicies");
+  const canViewPrompts = useCan("viewPrompts");
   const { data: organizations, isLoading: isOrganizationsLoading } = useOrganizations();
   const { data: projects, isLoading: isProjectsLoading } = useProjects();
   const { data: uiSettingsData } = useUISettings();
@@ -200,6 +204,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [pendingPrefillModels, setPendingPrefillModels] = useState<string[] | null>(null);
   const [guardrailsList, setGuardrailsList] = useState<string[]>([]);
   const [policiesList, setPoliciesList] = useState<string[]>([]);
+  const [promptsList, setPromptsList] = useState<string[]>([]);
   const [selectedCreateKeyTeam, setSelectedCreateKeyTeam] = useState<Team | null>(team);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -295,9 +300,19 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       }
     };
 
+    const fetchPrompts = async () => {
+      try {
+        const response = await getPromptsList(accessToken);
+        setPromptsList(response.prompts.map((prompt) => prompt.prompt_id));
+      } catch (error) {
+        console.error("Failed to fetch prompts:", error);
+      }
+    };
+
     fetchGuardrails();
-    fetchPolicies();
-  }, [accessToken]);
+    if (canViewPolicies) fetchPolicies();
+    if (canViewPrompts) fetchPrompts();
+  }, [accessToken, canViewPolicies, canViewPrompts]);
 
   // Fetch possible user roles when component mounts
   useEffect(() => {
@@ -563,6 +578,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
       if (Object.keys(budgetFallbacks).length > 0) {
         formValues.budget_fallbacks = budgetFallbacks;
+      }
+
+      if (formValues.budget_duration === NEVER_RESETS_BUDGET_DURATION) {
+        formValues.budget_duration = null;
       }
 
       let response;
@@ -1108,7 +1127,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     help={`Team Reset Budget: ${team?.budget_duration !== null && team?.budget_duration !== undefined ? team?.budget_duration : "None"}`}
                   >
                     <BudgetDurationDropdown
-                      placeholder="Never resets"
+                      showNeverResets
+                      placeholder="Not set"
                       onChange={(value) => form.setFieldValue("budget_duration", value)}
                     />
                   </Form.Item>
@@ -1236,6 +1256,21 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     <Switch checkedChildren="Yes" unCheckedChildren="No" />
                   </Form.Item>
                   <Form.Item
+                    className="mt-4"
+                    label={
+                      <span>
+                        Enable Prompt Caching{" "}
+                        <Tooltip title="Automatically add prompt caching breakpoints (cache_control markers) to requests made with this key, cutting input cost on repeated prompts. Applies to Anthropic and Bedrock Claude models; requests that already set their own cache_control markers are left untouched.">
+                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    name="enable_prompt_caching"
+                    valuePropName="checked"
+                  >
+                    <Switch checkedChildren="Yes" unCheckedChildren="No" />
+                  </Form.Item>
+                  <Form.Item
                     label={
                       <span>
                         {t("gateway.createKey.guardrails")}{" "}
@@ -1276,27 +1311,58 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                       unCheckedChildren={t("gateway.createKey.no")}
                     />
                   </Form.Item>
-                  <Form.Item
-                    label={
-                      <span>
-                        {t("gateway.createKey.policies")}{" "}
-                        <Tooltip title={t("gateway.createKey.policiesTooltip")}>
-                          <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    name="policies"
-                    className="mt-4"
-                    help={t("gateway.createKey.policiesHelp")}
-                  >
-                    <Select
-                      mode="tags"
-                      style={{ width: "100%" }}
-                      disabled={!canEditGuardrails}
-                      placeholder={t("gateway.createKey.policiesPlaceholder")}
-                      options={policiesList.map((name) => ({ value: name, label: name }))}
-                    />
-                  </Form.Item>
+                  {canViewPolicies && (
+                    <Form.Item
+                      label={
+                        <span>
+                          {t("gateway.createKey.policies")}{" "}
+                          <Tooltip title={t("gateway.createKey.policiesTooltip")}>
+                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                          </Tooltip>
+                        </span>
+                      }
+                      name="policies"
+                      className="mt-4"
+                      help={t("gateway.createKey.policiesHelp")}
+                    >
+                      <Select
+                        mode="tags"
+                        style={{ width: "100%" }}
+                        disabled={!canEditGuardrails}
+                        placeholder={t("gateway.createKey.policiesPlaceholder")}
+                        options={policiesList.map((name) => ({ value: name, label: name }))}
+                      />
+                    </Form.Item>
+                  )}
+                  {canViewPrompts && (
+                    <Form.Item
+                      label={
+                        <span>
+                          Prompts{" "}
+                          <Tooltip title="Allow this key to use specific prompt templates">
+                            <a
+                              href="https://docs.litellm.ai/docs/proxy/prompt_management"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()} // Prevent accordion from collapsing when clicking link
+                            >
+                              <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                            </a>
+                          </Tooltip>
+                        </span>
+                      }
+                      name="prompts"
+                      className="mt-4"
+                      help="Select existing prompts or enter new ones"
+                    >
+                      <Select
+                        mode="tags"
+                        style={{ width: "100%" }}
+                        placeholder="Select or enter prompts"
+                        options={promptsList.map((name) => ({ value: name, label: name }))}
+                      />
+                    </Form.Item>
+                  )}
                   <Form.Item
                     label={
                       <span>

@@ -1,4 +1,5 @@
 import { useOrganizations } from "@/app/(dashboard)/hooks/organizations/useOrganizations";
+import useCan from "@/app/(dashboard)/hooks/useCan";
 import AvailableTeamsPanel from "@/components/team/AvailableTeamsPanel";
 import TeamInfoView from "@/components/team/TeamInfo";
 import TeamSSOSettings from "@/components/TeamSSOSettings";
@@ -9,7 +10,7 @@ import { Button, Form, Input, Layout, Modal, Select, Switch, Tabs, theme, Toolti
 import { Plus, Users } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button as UIButton } from "@/components/ui/button";
 import { teamsTableKeys } from "@/app/(dashboard)/hooks/teams/useTeams";
@@ -29,7 +30,11 @@ import MCPServerSelector from "./mcp_server_management/MCPServerSelector";
 import MCPToolPermissions from "./mcp_server_management/MCPToolPermissions";
 import NotificationsManager from "./molecules/notifications_manager";
 import { extractProxyErrorMessage } from "@/lib/http/client";
-import { Organization, getGuardrailsList, getPoliciesList, teamDeleteCall } from "./networking";
+import BudgetDurationDropdown, {
+  getBudgetDurationLabel,
+  NEVER_RESETS_BUDGET_DURATION,
+} from "./common_components/budget_duration_dropdown";
+import { Organization, getDefaultTeamSettings, getGuardrailsList, getPoliciesList, teamDeleteCall } from "./networking";
 import NumericalInput from "./shared/numerical_input";
 import VectorStoreSelector from "./vector_store_management/VectorStoreSelector";
 import SearchToolSelector from "./search_tools/SearchToolSelector";
@@ -110,11 +115,24 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
   const [isTeamDeleting, setIsTeamDeleting] = useState(false);
   // Add this state near the other useState declarations
   const [guardrailsList, setGuardrailsList] = useState<string[]>([]);
+  const canViewPolicies = useCan("viewPolicies");
   const [policiesList, setPoliciesList] = useState<string[]>([]);
   const [loggingSettings, setLoggingSettings] = useState<any[]>([]);
   const [modelAliases, setModelAliases] = useState<{ [key: string]: string }>({});
   const [routerSettings, setRouterSettings] = useState<RouterSettingsAccordionValue | null>(null);
   const [routerSettingsKey, setRouterSettingsKey] = useState<number>(0);
+
+  const { data: defaultTeamSettings } = useQuery({
+    queryKey: ["defaultTeamSettings"],
+    queryFn: () => getDefaultTeamSettings(accessToken as string),
+    enabled: isTeamModalVisible && accessToken != null,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const defaultBudgetDuration: string | undefined = defaultTeamSettings?.values?.budget_duration ?? undefined;
+  const budgetDurationPlaceholder = defaultBudgetDuration
+    ? `Default: ${getBudgetDurationLabel(defaultBudgetDuration)} (${defaultBudgetDuration})`
+    : "n/a";
 
   useEffect(() => {
     form.setFieldValue("models", []);
@@ -170,8 +188,8 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
     };
 
     fetchGuardrails();
-    fetchPolicies();
-  }, [accessToken]);
+    if (canViewPolicies) fetchPolicies();
+  }, [accessToken, canViewPolicies]);
 
   const handleOk = () => {
     setIsTeamModalVisible(false);
@@ -254,6 +272,10 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
           formValues.organization_id = null;
         } else {
           formValues.organization_id = organizationId.trim();
+        }
+
+        if (formValues.budget_duration === NEVER_RESETS_BUDGET_DURATION) {
+          formValues.budget_duration = null;
         }
 
         NotificationsManager.info(t("access.teams.notifications.creating", { defaultValue: "Creating team" }));
@@ -702,13 +724,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                 label={t("access.teams.form.resetBudget", { defaultValue: "Reset Budget" })}
                 name="budget_duration"
               >
-                <Select defaultValue={null} placeholder={t("access.common.notAvailable", { defaultValue: "n/a" })}>
-                  <Select.Option value="24h">{t("access.teams.form.daily", { defaultValue: "daily" })}</Select.Option>
-                  <Select.Option value="7d">{t("access.teams.form.weekly", { defaultValue: "weekly" })}</Select.Option>
-                  <Select.Option value="30d">
-                    {t("access.teams.form.monthly", { defaultValue: "monthly" })}
-                  </Select.Option>
-                </Select>
+                <BudgetDurationDropdown showNeverResets placeholder={budgetDurationPlaceholder} />
               </Form.Item>
               <Form.Item
                 label={t("access.teams.form.tpmLimit", { defaultValue: "Tokens per minute Limit (TPM)" })}
@@ -723,7 +739,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                 <NumericalInput step={1} width={400} />
               </Form.Item>
               <Form.Item
-                label="Metadata"
+                label={t("access.teams.form.metadata")}
                 help='Values are saved as text. Enter JSON for typed values, e.g. 3, true, or {"region": "us"}.'
               >
                 <MetadataKeyValueFields
@@ -862,36 +878,38 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                       }
                     />
                   </Form.Item>
-                  <Form.Item
-                    label={
-                      <span>
-                        {t("access.teams.form.policies")}{" "}
-                        <Tooltip title={t("access.teams.form.policiesTooltip")}>
-                          <a
-                            href="https://docs.litellm.ai/docs/proxy/guardrails/guardrail_policies"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <InfoCircleOutlined style={{ marginLeft: "4px" }} />
-                          </a>
-                        </Tooltip>
-                      </span>
-                    }
-                    name="policies"
-                    className="mt-8"
-                    help={t("access.teams.form.policiesHelp")}
-                  >
-                    <Select
-                      mode="tags"
-                      style={{ width: "100%" }}
-                      placeholder={t("access.teams.form.policiesPlaceholder")}
-                      options={policiesList.map((name) => ({
-                        value: name,
-                        label: name,
-                      }))}
-                    />
-                  </Form.Item>
+                  {canViewPolicies && (
+                    <Form.Item
+                      label={
+                        <span>
+                          {t("access.teams.form.policies")}{" "}
+                          <Tooltip title={t("access.teams.form.policiesTooltip")}>
+                            <a
+                              href="https://docs.litellm.ai/docs/proxy/guardrails/guardrail_policies"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <InfoCircleOutlined style={{ marginLeft: "4px" }} />
+                            </a>
+                          </Tooltip>
+                        </span>
+                      }
+                      name="policies"
+                      className="mt-8"
+                      help={t("access.teams.form.policiesHelp")}
+                    >
+                      <Select
+                        mode="tags"
+                        style={{ width: "100%" }}
+                        placeholder={t("access.teams.form.policiesPlaceholder")}
+                        options={policiesList.map((name) => ({
+                          value: name,
+                          label: name,
+                        }))}
+                      />
+                    </Form.Item>
+                  )}
                   <Form.Item
                     label={
                       <span>
@@ -928,20 +946,18 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                     />
                   </Form.Item>
                   <Form.Item
-                    label="Allowed Pass Through Routes"
+                    label={t("access.teams.form.passThroughRoutes")}
                     name="allowed_passthrough_routes"
                     className="mt-8"
                     tooltip={
                       !premiumUser
-                        ? "Premium feature - Upgrade to set allowed pass through routes"
+                        ? t("access.teams.form.passThroughRoutesPremium")
                         : !isProxyAdminRole(userRole || "")
-                          ? "Only proxy admins can set allowed pass through routes"
+                          ? t("access.teams.form.passThroughRoutesAdminOnly")
                           : undefined
                     }
                   >
                     <PassThroughRoutesSelector
-                      onChange={(values: string[]) => form.setFieldValue("allowed_passthrough_routes", values)}
-                      value={form.getFieldValue("allowed_passthrough_routes")}
                       accessToken={accessToken || ""}
                       placeholder={t("access.teams.form.passThroughRoutesPlaceholder")}
                       disabled={!premiumUser || !isProxyAdminRole(userRole || "")}

@@ -1,7 +1,8 @@
-import { CheckCircleOutlined, CloseOutlined, DownOutlined, WarningOutlined } from "@ant-design/icons";
+import { CircleCheck, ChevronDown, TriangleAlert, X } from "lucide-react";
 import moment from "moment";
-import { Button, Spin } from "antd";
 import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { LogDetailsDrawer } from "@/components/view_logs/LogDetailsDrawer";
 import type { LogEntry as ViewLogsLogEntry } from "@/components/view_logs/columns";
 import type { LogEntry } from "./mockData";
@@ -11,28 +12,28 @@ const actionConfig: Record<
   { icon: React.ElementType; color: string; bg: string; border: string; label: string }
 > = {
   blocked: {
-    icon: CloseOutlined,
+    icon: X,
     color: "text-red-600",
     bg: "bg-red-50",
     border: "border-red-200",
     label: "Blocked",
   },
   passed: {
-    icon: CheckCircleOutlined,
+    icon: CircleCheck,
     color: "text-green-600",
     bg: "bg-green-50",
     border: "border-green-200",
     label: "Passed",
   },
   flagged: {
-    icon: WarningOutlined,
+    icon: TriangleAlert,
     color: "text-amber-600",
     bg: "bg-amber-50",
     border: "border-amber-200",
     label: "Flagged",
   },
   observed: {
-    icon: WarningOutlined,
+    icon: TriangleAlert,
     color: "text-purple-600",
     bg: "bg-purple-50",
     border: "border-purple-200",
@@ -59,20 +60,8 @@ const isLoggingOnlyObservation = (log: LogEntry, guardrailName?: string): boolea
 
 type DisplayAction = keyof typeof actionConfig;
 
-const getDisplayAction = (log: LogEntry, guardrailName?: string): DisplayAction => {
-  return isLoggingOnlyObservation(log, guardrailName) ? "observed" : log.action;
-};
-
-interface LogViewerProps {
-  guardrailName?: string;
-  filterAction?: "all" | DisplayAction;
-  logs?: LogEntry[];
-  logsLoading?: boolean;
-  totalLogs?: number;
-  accessToken?: string | null;
-  startDate?: string;
-  endDate?: string;
-}
+const getDisplayAction = (log: LogEntry, guardrailName?: string): DisplayAction =>
+  isLoggingOnlyObservation(log, guardrailName) ? "observed" : log.action;
 
 export const getGuardrailLogDateRange = (startDate: string, endDate: string) => ({
   startTime: startDate
@@ -107,6 +96,17 @@ const toViewLogsLogEntry = (log: LogEntry): ViewLogsLogEntry => ({
     guardrail_information: log.guardrail_information ?? [],
   },
 });
+
+interface LogViewerProps {
+  guardrailName?: string;
+  filterAction?: "all" | DisplayAction;
+  logs?: LogEntry[];
+  logsLoading?: boolean;
+  totalLogs?: number;
+  accessToken?: string | null;
+  startDate?: string;
+  endDate?: string;
+}
 
 export function LogViewer({
   guardrailName,
@@ -165,8 +165,8 @@ export function LogViewer({
                 {filters.map((f) => (
                   <Button
                     key={f}
-                    type={activeFilter === f ? "primary" : "default"}
-                    size="small"
+                    variant={activeFilter === f ? "default" : "outline"}
+                    size="sm"
                     onClick={() => setActiveFilter(f)}
                   >
                     {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -179,8 +179,8 @@ export function LogViewer({
                 {sampleSizes.map((size) => (
                   <Button
                     key={size}
-                    type={sampleSize === size ? "primary" : "default"}
-                    size="small"
+                    variant={sampleSize === size ? "default" : "outline"}
+                    size="sm"
                     onClick={() => setSampleSize(size)}
                   >
                     {size}
@@ -194,7 +194,7 @@ export function LogViewer({
 
       {logsLoading && (
         <div className="flex items-center justify-center py-12">
-          <Spin />
+          <UiLoadingSpinner className="size-5" />
         </div>
       )}
       {!logsLoading && displayLogs.length === 0 && (
@@ -229,11 +229,11 @@ export function LogViewer({
                       </span>
                     )}
                     <span className="text-xs text-gray-400">·</span>
-                    {log.model && <span className="text-xs text-gray-500">{log.model}</span>}
+                    {log.model && <span className="min-w-0 text-xs break-words text-gray-500">{log.model}</span>}
                   </div>
                   <p className="text-sm text-gray-800 truncate">{log.input_snippet ?? log.input ?? "—"}</p>
                 </div>
-                <DownOutlined className="w-4 h-4 text-gray-400 shrink-0 mt-1" />
+                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0 mt-1" />
               </button>
             );
           })}
