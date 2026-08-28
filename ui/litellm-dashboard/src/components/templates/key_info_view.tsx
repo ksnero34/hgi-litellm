@@ -22,7 +22,7 @@ import { extractLoggingSettings, formatMetadataForDisplay, stripTagsFromMetadata
 import { KeyResponse } from "../key_team_helpers/key_list";
 import LoggingSettingsView from "../logging_settings_view";
 import NotificationManager from "../molecules/notifications_manager";
-import { getPolicyInfoWithGuardrails, keyDeleteCall, keyUpdateCall } from "../networking";
+import { getPolicyInfoWithGuardrails, keyDeleteCall, keyUpdateCall, personalKeyDeleteCall } from "../networking";
 import { useResetKeySpend } from "@/app/(dashboard)/hooks/keys/useResetKeySpend";
 import { useSetKeyBlockedState } from "@/app/(dashboard)/hooks/keys/useSetKeyBlockedState";
 import { keyKeys } from "@/app/(dashboard)/hooks/keys/useKeys";
@@ -59,6 +59,13 @@ const PREMIUM_METADATA_FIELDS = ["policies", "guardrails", "prompts", "tags", "a
 
 const isEmptyValue = (v: unknown): boolean =>
   v == null || (Array.isArray(v) && v.length === 0) || (typeof v === "string" && v.trim() === "");
+
+const hasManagedPersonalKeyPurpose = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return "key_purpose" in value && value.key_purpose === "personal_llm";
+};
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -163,6 +170,8 @@ export default function KeyInfoView({
       </div>
     );
   }
+
+  const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata?.personal_key);
 
   const handleKeyUpdate = async (formValues: Record<string, any>) => {
     try {
@@ -333,7 +342,11 @@ export default function KeyInfoView({
     try {
       setDeleteLoading(true);
       if (!accessToken) return;
-      await keyDeleteCall(accessToken as string, currentKeyData.token || currentKeyData.token_id);
+      if (isManagedPersonalKey && isProxyAdminRole(userRole || "") && currentKeyData.user_id) {
+        await personalKeyDeleteCall(accessToken, currentKeyData.user_id);
+      } else {
+        await keyDeleteCall(accessToken, currentKeyData.token || currentKeyData.token_id);
+      }
       NotificationManager.success(t("gateway.keyInfoView.deleteSuccess"));
       await queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
       if (onDelete) {
@@ -489,14 +502,16 @@ export default function KeyInfoView({
         onBack={onClose}
         onRegenerate={() => setIsRegenerateModalOpen(true)}
         onDelete={() => setIsDeleteModalOpen(true)}
-        onResetSpend={canResetSpend ? () => setIsResetSpendModalOpen(true) : undefined}
-        onToggleBlocked={canBlockKey ? () => setIsBlockModalOpen(true) : undefined}
+        onResetSpend={!isManagedPersonalKey && canResetSpend ? () => setIsResetSpendModalOpen(true) : undefined}
+        onToggleBlocked={!isManagedPersonalKey && canBlockKey ? () => setIsBlockModalOpen(true) : undefined}
         isBlocked={isBlocked}
         canModifyKey={canModifyKey}
         backButtonText={backButtonText}
-        regenerateDisabled={!premiumUser}
+        regenerateDisabled={isManagedPersonalKey}
         regenerateTooltip={
-          !premiumUser ? "This is a LiteLLM Enterprise feature, and requires a valid key to use." : undefined
+          isManagedPersonalKey
+            ? "Managed personal keys must be regenerated through the personal key rotation flow."
+            : undefined
         }
       />
 

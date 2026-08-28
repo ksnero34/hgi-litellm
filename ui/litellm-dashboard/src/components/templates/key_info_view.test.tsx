@@ -5,7 +5,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
-import { keyDeleteCall, keyUpdateCall } from "../networking";
+import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall } from "../networking";
 import { QueryClient } from "@tanstack/react-query";
 import KeyInfoView from "./key_info_view";
 
@@ -54,6 +54,7 @@ import { useMCPToolsets } from "@/app/(dashboard)/hooks/mcpServers/useMCPToolset
 
 vi.mock("../networking", () => ({
   keyDeleteCall: vi.fn().mockResolvedValue({}),
+  personalKeyDeleteCall: vi.fn().mockResolvedValue({}),
   keyUpdateCall: vi.fn().mockResolvedValue({}),
   getPolicyInfoWithGuardrails: vi.fn().mockResolvedValue({
     resolved_guardrails: ["guardrail-1", "guardrail-2"],
@@ -168,6 +169,99 @@ describe("KeyInfoView", () => {
   const openMoreKeyActions = async () => {
     await userEvent.click(await screen.findByRole("button", { name: /more key actions/i }));
   };
+
+  describe("managed personal key actions", () => {
+    const managedPersonalKey: KeyResponse = {
+      ...MOCK_KEY_DATA,
+      user_id: "managed-user-id",
+      metadata: {
+        ...MOCK_KEY_DATA.metadata,
+        personal_key: { key_purpose: "personal_llm" },
+      },
+    } as KeyResponse;
+
+    beforeEach(() => {
+      vi.mocked(keyDeleteCall).mockClear();
+      vi.mocked(personalKeyDeleteCall).mockClear();
+    });
+
+    it("enables generic virtual key regeneration for an OSS proxy admin", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "Admin",
+        premiumUser: false,
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={{ ...MOCK_KEY_DATA, user_id: "another-user-id" }}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      expect(await screen.findByRole("button", { name: /regenerate key/i })).toBeEnabled();
+    });
+
+    it("disables regeneration and hides reset and block actions for a managed personal key", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "proxy_admin",
+        premiumUser: false,
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      expect(await screen.findByRole("button", { name: /regenerate key/i })).toBeDisabled();
+      await openMoreKeyActions();
+      expect(screen.queryByRole("menuitem", { name: /reset spend/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: /block key/i })).not.toBeInTheDocument();
+      expect(await screen.findByRole("menuitem", { name: /delete key/i })).toBeInTheDocument();
+    });
+
+    it("deletes a proxy-admin managed personal key through the internal endpoint", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "proxy_admin",
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await openMoreKeyActions();
+      await userEvent.click(await screen.findByRole("menuitem", { name: /delete key/i }));
+      await userEvent.type(
+        await screen.findByPlaceholderText(managedPersonalKey.key_alias),
+        managedPersonalKey.key_alias,
+      );
+      await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+
+      await waitFor(() => {
+        expect(personalKeyDeleteCall).toHaveBeenCalledWith("test-token", managedPersonalKey.user_id);
+      });
+      expect(keyDeleteCall).not.toHaveBeenCalled();
+    });
+  });
 
   describe("last updated", () => {
     const renderWithTimestamps = (overrides: Partial<KeyResponse>) => {
