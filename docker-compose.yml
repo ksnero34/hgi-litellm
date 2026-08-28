@@ -15,9 +15,12 @@ services:
     # command:
     #  - "--config=/app/config.yaml"
     ##############################################
+    volumes:
+      - ./litellm-prometheus-config.yaml:/app/litellm-prometheus-config.yaml:ro
     ports:
       - "4000:4000" # Map the container port to the host, change the host port if necessary
     environment:
+      CONFIG_FILE_PATH: "/app/litellm-prometheus-config.yaml"
       DATABASE_URL: "postgresql://llmproxy:dbpassword9090@db:5432/litellm"
       # Optional: route read-only queries (find_*, count, group_by, query_raw/_first)
       # to a separate reader endpoint, e.g. an Aurora reader. Leave unset for
@@ -58,6 +61,10 @@ services:
 
   prometheus:
     image: prom/prometheus
+    group_add:
+      - "${METRICS_SECRET_GID:-1000}"
+    secrets:
+      - litellm_metrics_token
     volumes:
       - prometheus_data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
@@ -68,6 +75,10 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
     restart: always
+
+secrets:
+  litellm_metrics_token:
+    file: ./.secrets/litellm_metrics_token
 
 volumes:
   prometheus_data:

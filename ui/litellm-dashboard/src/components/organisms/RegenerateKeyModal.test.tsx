@@ -233,30 +233,72 @@ describe("RegenerateKeyModal", () => {
     });
   });
 
-  it("should rotate a managed personal key through the internal endpoint", async () => {
+  it("shows policy-managed guidance instead of fields ignored by the personal key endpoint", () => {
+    renderWithProviders(
+      <RegenerateKeyModal
+        {...defaultProps}
+        selectedToken={makeToken({
+          user_id: "managed-user-id",
+          metadata: { personal_key: { key_purpose: "personal_llm" } },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Policy-managed personal key")).toBeInTheDocument();
+    expect(screen.queryByText("Max Budget (USD)")).not.toBeInTheDocument();
+    expect(screen.queryByText("TPM Limit")).not.toBeInTheDocument();
+    expect(screen.queryByText("RPM Limit")).not.toBeInTheDocument();
+    expect(screen.queryByText("Expire Key")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grace Period")).not.toBeInTheDocument();
+  });
+
+  it("rotates a managed personal key through the internal endpoint and closes stale detail after acknowledgement", async () => {
     const user = userEvent.setup();
+    const onManagedRotationAcknowledged = vi.fn();
+    const previousKeyRevokeAt = "2026-07-26T05:30:00Z";
     mockPersonalKeyRotateCall.mockResolvedValue({
       key: "sk-managed-personal-key",
-      token: "managed-token-hash",
+      previous_key_revoke_at: previousKeyRevokeAt,
     });
 
     renderWithProviders(
       <RegenerateKeyModal
         {...defaultProps}
-        selectedToken={
-          makeToken({
-            user_id: "managed-user-id",
-            metadata: { personal_key: { key_purpose: "personal_llm" } },
-          })
-        }
+        selectedToken={makeToken({
+          user_id: "managed-user-id",
+          metadata: { personal_key: { key_purpose: "personal_llm" } },
+        })}
+        onManagedRotationAcknowledged={onManagedRotationAcknowledged}
       />,
     );
 
     await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(mockPersonalKeyRotateCall).toHaveBeenCalledWith("test-token", "managed-user-id");
+      expect(mockPersonalKeyRotateCall).toHaveBeenCalledWith("123", "managed-user-id");
     });
+    expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
+    expect(mockOnKeyUpdate).not.toHaveBeenCalled();
+    expect(await screen.findByText("sk-managed-personal-key")).toBeInTheDocument();
+    expect(screen.getByText(formatExpiresUtc(previousKeyRevokeAt))).toBeInTheDocument();
+    expect(onManagedRotationAcknowledged).not.toHaveBeenCalled();
+
+    await user.click(screen.getAllByRole("button", { name: "Close" })[0]);
+    expect(onManagedRotationAcknowledged).toHaveBeenCalledOnce();
+  });
+
+  it("never falls back to generic regeneration when a managed key owner is unavailable", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <RegenerateKeyModal
+        {...defaultProps}
+        selectedToken={makeToken({ metadata: { personal_key: { key_purpose: "personal_llm" } } })}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
+
+    expect(mockPersonalKeyRotateCall).not.toHaveBeenCalled();
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
   });
 

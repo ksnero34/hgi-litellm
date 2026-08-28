@@ -16,9 +16,26 @@ interface RegenerateKeyModalProps {
   visible: boolean;
   onClose: () => void;
   onKeyUpdate?: (updatedKeyData: Partial<KeyResponse>) => void;
+  onManagedRotationAcknowledged?: () => void;
 }
 
-export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdate }: RegenerateKeyModalProps) {
+const isManagedPersonalKey = (selectedToken: KeyResponse | null): boolean => {
+  const personalKeyMetadata = selectedToken?.metadata?.personal_key;
+  return (
+    personalKeyMetadata != null &&
+    typeof personalKeyMetadata === "object" &&
+    "key_purpose" in personalKeyMetadata &&
+    personalKeyMetadata.key_purpose === "personal_llm"
+  );
+};
+
+export function RegenerateKeyModal({
+  selectedToken,
+  visible,
+  onClose,
+  onKeyUpdate,
+  onManagedRotationAcknowledged,
+}: RegenerateKeyModalProps) {
   const { t } = useTranslation();
   const { accessToken } = useAuthorized();
   const [form] = Form.useForm();
@@ -26,6 +43,9 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
   const [previousKeyRevokeAt, setPreviousKeyRevokeAt] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [managedRotationCompleted, setManagedRotationCompleted] = useState(false);
+
+  const managedPersonalKey = isManagedPersonalKey(selectedToken);
 
   const keyIsExpired = isKeyExpired(selectedToken?.expires);
   const durationValue = Form.useWatch("duration", form);
@@ -57,22 +77,22 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
 
   const handleRegenerateKey = async () => {
     if (!selectedToken || !accessToken) return;
+    if (managedPersonalKey && !selectedToken.user_id) {
+      NotificationManager.fromBackend(new Error("The managed personal key owner is unavailable."));
+      return;
+    }
 
     setIsRegenerating(true);
+    setManagedRotationCompleted(false);
     try {
-      const formValues = await form.validateFields();
-      const personalKeyMetadata = selectedToken.metadata?.personal_key;
-      const isManagedPersonalKey =
-        personalKeyMetadata != null &&
-        typeof personalKeyMetadata === "object" &&
-        personalKeyMetadata.key_purpose === "personal_llm";
+      const formValues = managedPersonalKey ? {} : await form.validateFields();
 
-      const response =
-        isManagedPersonalKey && selectedToken.user_id
-          ? await personalKeyRotateCall(accessToken, selectedToken.user_id)
-          : await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
+      const response = managedPersonalKey
+        ? await personalKeyRotateCall(accessToken, selectedToken.user_id)
+        : await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
       setRegeneratedKey(response.key);
       setPreviousKeyRevokeAt(response.previous_key_revoke_at || null);
+      setManagedRotationCompleted(managedPersonalKey);
       NotificationManager.success(t("gateway.regenerate.success"));
 
       // Build the update payload. Spread the API response first so any new
@@ -92,7 +112,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
       };
 
       // Update the parent component with new key data
-      if (onKeyUpdate) {
+      if (!managedPersonalKey && onKeyUpdate) {
         onKeyUpdate(updatedKeyData);
       }
 
@@ -110,12 +130,17 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
   };
 
   const handleClose = () => {
+    const shouldCloseManagedKeyDetail = managedRotationCompleted;
     setRegeneratedKey(null);
     setPreviousKeyRevokeAt(null);
     setIsRegenerating(false);
     setCopied(false);
+    setManagedRotationCompleted(false);
     form.resetFields();
     onClose();
+    if (shouldCloseManagedKeyDetail) {
+      onManagedRotationAcknowledged?.();
+    }
   };
 
   const handleCopyKey = () => {
@@ -165,7 +190,7 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
             ]
       }
     >
-      {regeneratedKey ? (
+      {regeneratedKey && (
         <Flex vertical gap="middle">
           <Alert type="warning" showIcon message={t("gateway.regenerate.saveWarning")} />
           {previousKeyRevokeAt ? (
@@ -208,7 +233,16 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
             </div>
           </Flex>
         </Flex>
-      ) : (
+      )}
+      {!regeneratedKey && managedPersonalKey && (
+        <Alert
+          type="info"
+          showIcon
+          message="Policy-managed personal key"
+          description="Rotation issues a new secret using the server-managed expiry and revocation policy. Alias, budgets, rate limits, duration, and grace period cannot be changed here."
+        />
+      )}
+      {!regeneratedKey && !managedPersonalKey && (
         <Form form={form} layout="vertical" style={{ marginTop: 4 }}>
           <Form.Item name="key_alias" label={t("gateway.regenerate.keyAlias")}>
             <Input disabled aria-label="Key Alias" />

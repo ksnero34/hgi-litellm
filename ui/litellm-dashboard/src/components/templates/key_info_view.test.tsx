@@ -1,12 +1,12 @@
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import useTeams from "@/app/(dashboard)/hooks/useTeams";
-import { renderWithProviders } from "../../../tests/test-utils";
+import { renderWithProviders, testQueryClient } from "../../../tests/test-utils";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
-import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall, personalKeyRotateCall } from "../networking";
 import { QueryClient } from "@tanstack/react-query";
+import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall, personalKeyRotateCall } from "../networking";
 import KeyInfoView from "./key_info_view";
 
 const editViewMocks = vi.hoisted(() => ({
@@ -231,6 +231,92 @@ describe("KeyInfoView", () => {
       expect(screen.queryByRole("menuitem", { name: /reset spend/i })).not.toBeInTheDocument();
       expect(screen.queryByRole("menuitem", { name: /block key/i })).not.toBeInTheDocument();
       expect(await screen.findByRole("menuitem", { name: /delete key/i })).toBeInTheDocument();
+    });
+
+    it("invalidates the key list and closes managed key detail only after the new secret is acknowledged", async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      const invalidateQueries = vi.spyOn(testQueryClient, "invalidateQueries").mockResolvedValue();
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: "proxy-admin-user",
+        userRole: "proxy_admin",
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={onClose}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: /regenerate key/i }));
+      await user.click(await screen.findByRole("button", { name: /Issue New Key/i }));
+
+      expect(await screen.findByText("sk-personal-rotated")).toBeInTheDocument();
+      expect(personalKeyRotateCall).toHaveBeenCalledWith("test-token", managedPersonalKey.user_id);
+      expect(onClose).not.toHaveBeenCalled();
+
+      await user.click(screen.getAllByRole("button", { name: "Close" })[0]);
+
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["keys", "list"] });
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it("hides managed key lifecycle actions from the key owner", async () => {
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: managedPersonalKey.user_id,
+        userRole: "user",
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={managedPersonalKey}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /regenerate key/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /more key actions/i })).not.toBeInTheDocument();
+    });
+
+    it("hides managed key lifecycle actions from team admins", async () => {
+      const teamId = "managed-team-id";
+      const teamAdminUserId = "team-admin-user";
+      vi.mocked(useTeams).mockReturnValue({
+        teams: [
+          {
+            team_id: teamId,
+            members_with_roles: [{ user_id: teamAdminUserId, role: "admin" }],
+          } as Team,
+        ],
+        setTeams: vi.fn(),
+      });
+      vi.mocked(useAuthorized).mockReturnValue({
+        ...baseUseAuthorizedMock,
+        userId: teamAdminUserId,
+        userRole: "user",
+      });
+
+      renderWithProviders(
+        <KeyInfoView
+          keyData={{ ...managedPersonalKey, team_id: teamId }}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /regenerate key/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /more key actions/i })).not.toBeInTheDocument();
     });
 
     it("deletes a proxy-admin managed personal key through the internal endpoint", async () => {

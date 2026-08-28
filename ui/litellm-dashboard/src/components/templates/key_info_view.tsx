@@ -172,8 +172,8 @@ export default function KeyInfoView({
   }
 
   const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata?.personal_key);
-  const canManageManagedPersonalKey =
-    isManagedPersonalKey && isProxyAdminRole(userRole || "") && Boolean(currentKeyData.user_id);
+  const isProxyAdmin = isProxyAdminRole(userRole || "");
+  const canManageManagedPersonalKey = isManagedPersonalKey && isProxyAdmin && Boolean(currentKeyData.user_id);
 
   const handleKeyUpdate = async (formValues: Record<string, any>) => {
     try {
@@ -344,7 +344,10 @@ export default function KeyInfoView({
     try {
       setDeleteLoading(true);
       if (!accessToken) return;
-      if (isManagedPersonalKey && isProxyAdminRole(userRole || "") && currentKeyData.user_id) {
+      if (isManagedPersonalKey) {
+        if (!isProxyAdmin || !currentKeyData.user_id) {
+          return;
+        }
         await personalKeyDeleteCall(accessToken, currentKeyData.user_id);
       } else {
         await keyDeleteCall(accessToken, currentKeyData.token || currentKeyData.token_id);
@@ -405,17 +408,18 @@ export default function KeyInfoView({
     return t("gateway.keyInfoView.timestamp", { date: dateStr, time: timeStr });
   };
 
-  const canModifyKey =
-    isProxyAdminRole(userRole || "") ||
+  const canModifyGenericKey =
+    isProxyAdmin ||
     (teamsData &&
       isUserTeamAdminForSingleTeam(
         teamsData?.filter((team) => team.team_id === currentKeyData.team_id)[0]?.members_with_roles,
         userID || "",
       )) ||
     (userID === currentKeyData.user_id && userRole !== "Internal Viewer");
+  const canModifyKey = isManagedPersonalKey ? canManageManagedPersonalKey : canModifyGenericKey;
 
   const isKeyAdmin =
-    isProxyAdminRole(userRole || "") ||
+    isProxyAdmin ||
     Boolean(
       teamsData &&
         isUserTeamAdminForSingleTeam(
@@ -523,6 +527,10 @@ export default function KeyInfoView({
         visible={isRegenerateModalOpen}
         onClose={() => setIsRegenerateModalOpen(false)}
         onKeyUpdate={handleRegenerateKeyUpdate}
+        onManagedRotationAcknowledged={() => {
+          void queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
+          onClose();
+        }}
       />
 
       {/* Delete Confirmation Modal */}
