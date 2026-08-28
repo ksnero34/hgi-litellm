@@ -9,8 +9,10 @@ import { languageStorageKey } from "@/i18n/resources";
 
 // Mock the networking call
 const mockRegenerateKeyCall = vi.fn();
+const mockPersonalKeyRotateCall = vi.fn();
 vi.mock("../networking", () => ({
   regenerateKeyCall: (...args: unknown[]) => mockRegenerateKeyCall(...args),
+  personalKeyRotateCall: (...args: unknown[]) => mockPersonalKeyRotateCall(...args),
 }));
 
 const mockNotificationFromBackend = vi.fn();
@@ -229,6 +231,33 @@ describe("RegenerateKeyModal", () => {
     await waitFor(() => {
       expect(screen.getByText("Virtual Key")).toBeInTheDocument();
     });
+  });
+
+  it("should rotate a managed personal key through the internal endpoint", async () => {
+    const user = userEvent.setup();
+    mockPersonalKeyRotateCall.mockResolvedValue({
+      key: "sk-managed-personal-key",
+      token: "managed-token-hash",
+    });
+
+    renderWithProviders(
+      <RegenerateKeyModal
+        {...defaultProps}
+        selectedToken={
+          makeToken({
+            user_id: "managed-user-id",
+            metadata: { personal_key: { key_purpose: "personal_llm" } },
+          })
+        }
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
+
+    await waitFor(() => {
+      expect(mockPersonalKeyRotateCall).toHaveBeenCalledWith("test-token", "managed-user-id");
+    });
+    expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
   });
 
   it("should call onKeyUpdate with updated data after successful regeneration", async () => {

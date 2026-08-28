@@ -6,7 +6,7 @@ import { CopyToClipboard } from "react-copy-to-clipboard";
 import { useTranslation } from "react-i18next";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import NotificationManager from "../molecules/notifications_manager";
-import { regenerateKeyCall } from "../networking";
+import { personalKeyRotateCall, regenerateKeyCall } from "../networking";
 import { calculateExpiryPreviewFromDuration, formatExpiresUtc, isKeyExpired } from "@/utils/keyExpiryUtils";
 
 const { Text } = Typography;
@@ -61,8 +61,16 @@ export function RegenerateKeyModal({ selectedToken, visible, onClose, onKeyUpdat
     setIsRegenerating(true);
     try {
       const formValues = await form.validateFields();
+      const personalKeyMetadata = selectedToken.metadata?.personal_key;
+      const isManagedPersonalKey =
+        personalKeyMetadata != null &&
+        typeof personalKeyMetadata === "object" &&
+        personalKeyMetadata.key_purpose === "personal_llm";
 
-      const response = await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
+      const response =
+        isManagedPersonalKey && selectedToken.user_id
+          ? await personalKeyRotateCall(accessToken, selectedToken.user_id)
+          : await regenerateKeyCall(accessToken, selectedToken.token || selectedToken.token_id, formValues);
       setRegeneratedKey(response.key);
       setPreviousKeyRevokeAt(response.previous_key_revoke_at || null);
       NotificationManager.success(t("gateway.regenerate.success"));

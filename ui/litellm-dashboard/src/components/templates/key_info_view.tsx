@@ -172,6 +172,8 @@ export default function KeyInfoView({
   }
 
   const isManagedPersonalKey = hasManagedPersonalKeyPurpose(currentKeyData.metadata?.personal_key);
+  const canManageManagedPersonalKey =
+    isManagedPersonalKey && isProxyAdminRole(userRole || "") && Boolean(currentKeyData.user_id);
 
   const handleKeyUpdate = async (formValues: Record<string, any>) => {
     try {
@@ -507,9 +509,9 @@ export default function KeyInfoView({
         isBlocked={isBlocked}
         canModifyKey={canModifyKey}
         backButtonText={backButtonText}
-        regenerateDisabled={isManagedPersonalKey}
+        regenerateDisabled={isManagedPersonalKey && !canManageManagedPersonalKey}
         regenerateTooltip={
-          isManagedPersonalKey
+          isManagedPersonalKey && !canManageManagedPersonalKey
             ? "Managed personal keys must be regenerated through the personal key rotation flow."
             : undefined
         }

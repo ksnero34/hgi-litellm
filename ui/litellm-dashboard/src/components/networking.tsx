@@ -963,6 +963,18 @@ export const personalKeyDeleteCall = async (accessToken: string, userID: string)
   }
 };
 
+export const personalKeyRotateCall = async (accessToken: string, userID: string) => {
+  try {
+    return await apiClient.post(`/internal/personal-key/rotate`, {
+      accessToken,
+      query: { user_id: userID },
+    });
+  } catch (error) {
+    console.error("Failed to rotate personal key:", error);
+    throw error;
+  }
+};
+
 export const userDeleteCall = async (accessToken: string, userIds: string[]) => {
   try {
     return await apiClient.post(`/user/delete`, { accessToken, body: { user_ids: userIds } });

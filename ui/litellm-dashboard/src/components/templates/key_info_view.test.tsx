@@ -5,7 +5,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
-import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall } from "../networking";
+import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall, personalKeyRotateCall } from "../networking";
 import { QueryClient } from "@tanstack/react-query";
 import KeyInfoView from "./key_info_view";
 
@@ -55,6 +55,7 @@ import { useMCPToolsets } from "@/app/(dashboard)/hooks/mcpServers/useMCPToolset
 vi.mock("../networking", () => ({
   keyDeleteCall: vi.fn().mockResolvedValue({}),
   personalKeyDeleteCall: vi.fn().mockResolvedValue({}),
+  personalKeyRotateCall: vi.fn().mockResolvedValue({ key: "sk-personal-rotated", token: "rotated-token" }),
   keyUpdateCall: vi.fn().mockResolvedValue({}),
   getPolicyInfoWithGuardrails: vi.fn().mockResolvedValue({
     resolved_guardrails: ["guardrail-1", "guardrail-2"],
@@ -183,6 +184,7 @@ describe("KeyInfoView", () => {
     beforeEach(() => {
       vi.mocked(keyDeleteCall).mockClear();
       vi.mocked(personalKeyDeleteCall).mockClear();
+      vi.mocked(personalKeyRotateCall).mockClear();
     });
 
     it("enables generic virtual key regeneration for an OSS proxy admin", async () => {
@@ -206,7 +208,7 @@ describe("KeyInfoView", () => {
       expect(await screen.findByRole("button", { name: /regenerate key/i })).toBeEnabled();
     });
 
-    it("disables regeneration and hides reset and block actions for a managed personal key", async () => {
+    it("enables regeneration for a proxy-admin managed personal key and still hides reset and block actions", async () => {
       vi.mocked(useAuthorized).mockReturnValue({
         ...baseUseAuthorizedMock,
         userId: "proxy-admin-user",
@@ -224,7 +226,7 @@ describe("KeyInfoView", () => {
         />,
       );
 
-      expect(await screen.findByRole("button", { name: /regenerate key/i })).toBeDisabled();
+      expect(await screen.findByRole("button", { name: /regenerate key/i })).toBeEnabled();
       await openMoreKeyActions();
       expect(screen.queryByRole("menuitem", { name: /reset spend/i })).not.toBeInTheDocument();
       expect(screen.queryByRole("menuitem", { name: /block key/i })).not.toBeInTheDocument();
