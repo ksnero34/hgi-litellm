@@ -6,13 +6,17 @@ import { GuardrailDetail } from "./GuardrailDetail";
 
 const mockGetGuardrailsUsageDetail = vi.fn();
 const mockGetGuardrailsUsageLogs = vi.fn();
+const logViewerSpy = vi.fn();
 vi.mock("@/components/networking", () => ({
   getGuardrailsUsageDetail: (...args: unknown[]) => mockGetGuardrailsUsageDetail(...args),
   getGuardrailsUsageLogs: (...args: unknown[]) => mockGetGuardrailsUsageLogs(...args),
 }));
 
 vi.mock("@/components/GuardrailsMonitor/LogViewer", () => ({
-  LogViewer: ({ guardrailName }: { guardrailName: string }) => <div data-testid="log-viewer">{guardrailName}</div>,
+  LogViewer: (props: { guardrailName: string }) => {
+    logViewerSpy(props);
+    return <div data-testid="log-viewer">{props.guardrailName}</div>;
+  },
 }));
 
 vi.mock("./EvaluationSettingsModal", () => ({
@@ -49,6 +53,7 @@ function renderDetail(props: Partial<typeof defaultProps> = {}) {
 describe("GuardrailDetail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    logViewerSpy.mockClear();
     mockGetGuardrailsUsageDetail.mockResolvedValue(detail);
     mockGetGuardrailsUsageLogs.mockResolvedValue({ logs: [], total: 0 });
   });
@@ -80,6 +85,52 @@ describe("GuardrailDetail", () => {
     expect(mockGetGuardrailsUsageLogs).toHaveBeenCalledWith(
       "test-token",
       expect.objectContaining({ guardrailId: "pii-detector", startDate: "2026-07-01", endDate: "2026-07-24" }),
+    );
+  });
+
+  it("should preserve guardrail attribution and key context for the log details drawer", async () => {
+    const guardrailInformation = [
+      {
+        guardrail_name: "presidio-pii",
+        guardrail_event: "pre_call",
+        guardrail_status: "guardrail_intervened",
+        usage_action: "blocked",
+      },
+    ];
+    mockGetGuardrailsUsageLogs.mockResolvedValue({
+      logs: [
+        {
+          id: "request-1",
+          timestamp: "2026-07-24T12:00:00Z",
+          action: "blocked",
+          model: "gpt-5.4",
+          input_snippet: "Email <EMAIL_ADDRESS>",
+          output_snippet: "",
+          api_key: "hashed-key",
+          key_alias: "service-key",
+          team_id: "team-1",
+          team_alias: "service-team",
+          guardrail_information: guardrailInformation,
+        },
+      ],
+      total: 1,
+    });
+
+    renderDetail();
+    const expectedLogContext = {
+      api_key: "hashed-key",
+      key_alias: "service-key",
+      team_id: "team-1",
+      team_alias: "service-team",
+      guardrail_information: guardrailInformation,
+    };
+
+    await waitFor(() =>
+      expect(logViewerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          logs: [expect.objectContaining(expectedLogContext)],
+        }),
+      ),
     );
   });
 
@@ -133,7 +184,7 @@ describe("GuardrailDetail", () => {
     await screen.findByRole("heading", { name: "pii-detector" });
     expect(screen.queryByTestId("evaluation-modal")).not.toBeInTheDocument();
 
-    await user.click(screen.getByTitle("Evaluation settings"));
+    await user.click(screen.getByTitle(/evaluation settings/i));
     expect(screen.getByTestId("evaluation-modal")).toBeInTheDocument();
   });
 

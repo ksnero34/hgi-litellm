@@ -67,6 +67,11 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
       input_snippet: l.input_snippet as string | undefined,
       output_snippet: l.output_snippet as string | undefined,
       reason: l.reason as string | undefined,
+      api_key: l.api_key as string | undefined,
+      key_alias: l.key_alias as string | undefined,
+      team_id: l.team_id as string | undefined,
+      team_alias: l.team_alias as string | undefined,
+      guardrail_information: l.guardrail_information as Record<string, unknown>[] | undefined,
     }));
   }, [logsData?.logs]);
 

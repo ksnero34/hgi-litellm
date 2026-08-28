@@ -159,6 +159,7 @@ export function useLogFilterLogic({
       const window = formatLogsWindow(startTime, endTime, isCustomDate);
 
       const userIdFilter = getFilterValue(columnFilters, LOG_FILTER_IDS.USER_ID);
+      const effectiveTeamId = selectedTeamId ?? getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID);
 
       return await uiSpendLogsCall({
         accessToken,
@@ -168,10 +169,10 @@ export function useLogFilterLogic({
         page_size: pageSize,
         params: {
           api_key: getFilterValue(columnFilters, LOG_FILTER_IDS.KEY_HASH),
-          team_id: selectedTeamId ?? getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID),
+          team_id: effectiveTeamId,
           request_id: getFilterValue(columnFilters, LOG_FILTER_IDS.REQUEST_ID),
           session_id: getFilterValue(columnFilters, LOG_FILTER_IDS.SESSION_ID),
-          user_id: userIdFilter ?? (!selectedTeamId && filterByCurrentUser ? userID ?? undefined : undefined),
+          user_id: userIdFilter ?? (!effectiveTeamId && filterByCurrentUser ? userID ?? undefined : undefined),
           end_user: getFilterValue(columnFilters, LOG_FILTER_IDS.END_USER),
           status_filter: getFilterValue(columnFilters, LOG_FILTER_IDS.STATUS),
           model_id: getFilterValue(columnFilters, LOG_FILTER_IDS.MODEL_ID),
@@ -213,10 +214,16 @@ export function useLogFilterLogic({
   };
 
   const { data: allTeams } = useQuery(allTeamsQueryOptions);
+  const logFilterTeams =
+    filterByCurrentUser && userID
+      ? allTeams?.filter((team) =>
+          team.members_with_roles?.some((member) => member.user_id === userID && member.role === "admin"),
+        )
+      : allTeams;
 
   return {
     logsQuery,
     filteredLogs,
-    allTeams,
+    allTeams: logFilterTeams,
   };
 }

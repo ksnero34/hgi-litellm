@@ -238,7 +238,13 @@ class TeamMemberPermissionChecks:
         Returns all available team member permissions
         """
         all_available_permissions: Final = []
+        excluded_routes: Final = {
+            KeyManagementRoutes.SPEND_LOGS.value,
+            KeyManagementRoutes.SPEND_LOGS_V2.value,
+        }
         for route in LiteLLMRoutes.key_management_routes.value:
+            if route in excluded_routes:
+                continue
             all_available_permissions.append(route)
         return all_available_permissions
 

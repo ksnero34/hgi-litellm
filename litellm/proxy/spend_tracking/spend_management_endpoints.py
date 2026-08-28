@@ -14,7 +14,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.proxy._types import *
 from litellm.proxy._types import ProviderBudgetResponse, ProviderBudgetResponseObject
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.customizations.observability_scope import resolve_observability_scope
+from litellm.proxy.customizations.observability_scope import ObservabilityScope, resolve_observability_scope
 
 # NOTE: Avoid module-level import from common_utils: proxy_server imports this
 # module while common_utils may pull proxy_server during init, which can leave
@@ -2433,27 +2433,19 @@ async def ui_view_spend_logs(
         )
         scoped_key_hashes: tuple[str, ...] | None = None
         if not observability_scope.unrestricted:
-            authorized_team_fallback = False
-            if team_id is not None and not observability_scope.can_view_team(team_id):
-                authorized_team_fallback = await _can_team_member_view_log(
-                    prisma_client=prisma_client,
-                    user_api_key_dict=user_api_key_dict,
-                    team_id=team_id,
-                )
-                if not authorized_team_fallback:
+            authorized_team_wide_logs: Final = _scope_grants_team_wide_logs(observability_scope, team_id)
+            if team_id is not None:
+                if authorized_team_wide_logs:
+                    scoped_key_hashes = None
+                elif observability_scope.can_view_team(team_id):
+                    scoped_key_hashes = observability_scope.key_hashes_for_team(team_id)
+                else:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail={"error": f"Not authorized to view team spend for team_id={team_id}"},
                     )
-            scoped_key_hashes = (
-                None
-                if authorized_team_fallback
-                else (
-                    observability_scope.key_hashes_for_team(team_id)
-                    if team_id is not None
-                    else observability_scope.allowed_key_hashes
-                )
-            )
+            else:
+                scoped_key_hashes = observability_scope.allowed_key_hashes
             if api_key is not None:
                 requested_key_hash = prisma_client.hash_token(token=api_key) if api_key.startswith("sk-") else api_key
                 if scoped_key_hashes is not None and requested_key_hash not in scoped_key_hashes:
@@ -4202,34 +4194,27 @@ def _is_admin_view_safe(user_api_key_dict: UserAPIKeyAuth) -> bool:
         return False
 
 
+def _scope_grants_team_wide_logs(observability_scope: ObservabilityScope, team_id: str | None) -> bool:
+    if team_id is None:
+        return False
+    if observability_scope.oidc_managed and observability_scope.managed_team_id == team_id:
+        return False
+    return any(candidate == team_id for candidate, _ in observability_scope.team_key_hashes)
+
+
 async def _can_team_member_view_log(
     prisma_client: PrismaClient,
     user_api_key_dict: UserAPIKeyAuth,
     team_id: str | None,
 ) -> bool:
     """
-    Check if the requesting user can view spend logs for the given team.
-    Returns True if the team exists and the user is either a team admin or
-    a team member with the ``/spend/logs`` permission.
+    Check if the requesting user can view team-wide spend logs for the given team.
     """
-    from litellm.proxy.management_endpoints.common_utils import (
-        _is_user_team_admin,
-        _team_member_has_permission,
-    )
-
-    if team_id is None:
-        return False
-    team_row: Final = await _find_team_row(prisma_client, team_id)
-    if team_row is None:
-        return False
-    team_obj: Final = LiteLLM_TeamTable.model_validate(team_row.model_dump())
-    if _is_user_team_admin(user_api_key_dict=user_api_key_dict, team_obj=team_obj):
-        return True
-    return _team_member_has_permission(
+    observability_scope: Final = await resolve_observability_scope(
+        prisma_client=prisma_client,
         user_api_key_dict=user_api_key_dict,
-        team_obj=team_obj,
-        permission=KeyManagementRoutes.SPEND_LOGS.value,
     )
+    return _scope_grants_team_wide_logs(observability_scope, team_id)
 
 
 def _can_user_view_spend_log(user_api_key_dict: UserAPIKeyAuth) -> bool:
@@ -4256,7 +4241,7 @@ async def _assert_user_can_view_request_id(
     """
     Verify the requesting non-admin user is allowed to view this spend-log row.
     Allowed when the log belongs to the user directly, or to one of their
-    permitted teams (admin or ``/spend/logs`` permission).
+    teams they administer.
     Raises HTTP 403 if not.
     """
     row: Final = await _find_spend_log_row(prisma_client, request_id)
@@ -4294,36 +4279,15 @@ async def _get_permitted_team_ids_for_spend_logs(
     user_api_key_dict: UserAPIKeyAuth,
 ) -> list[str]:
     """
-    Return team IDs where the user is either a team admin or has the
-    ``/spend/logs`` permission, allowing them to view team-wide spend logs.
+    Return team IDs where the user is a team admin, allowing them to view
+    team-wide spend logs.
     """
-    # Imported here to avoid circular import: proxy_server imports this module.
-    from litellm.proxy.auth.auth_checks import get_user_object
-    from litellm.proxy.management_endpoints.common_utils import (
-        _is_user_team_admin,
-        _team_member_has_permission,
-    )
-    from litellm.proxy.proxy_server import proxy_logging_obj, user_api_key_cache
-
-    user_obj: Final = await get_user_object(
-        user_id=user_api_key_dict.user_id,
+    observability_scope: Final = await resolve_observability_scope(
         prisma_client=prisma_client,
-        user_api_key_cache=user_api_key_cache,
-        user_id_upsert=False,
-        proxy_logging_obj=proxy_logging_obj,
+        user_api_key_dict=user_api_key_dict,
     )
-    if user_obj is None or not user_obj.teams:
-        return []
-
-    team_rows: Final = await _find_team_rows(prisma_client, user_obj.teams)
-
-    permitted: Final[list[str]] = []
-    for team_row in team_rows:
-        team_obj = LiteLLM_TeamTable.model_validate(team_row.model_dump())
-        if _is_user_team_admin(user_api_key_dict=user_api_key_dict, team_obj=team_obj) or _team_member_has_permission(
-            user_api_key_dict=user_api_key_dict,
-            team_obj=team_obj,
-            permission=KeyManagementRoutes.SPEND_LOGS.value,
-        ):
-            permitted.append(team_obj.team_id)
-    return permitted
+    return [
+        candidate
+        for candidate, _ in observability_scope.team_key_hashes
+        if _scope_grants_team_wide_logs(observability_scope, candidate)
+    ]

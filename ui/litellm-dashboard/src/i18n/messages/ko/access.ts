@@ -259,7 +259,6 @@ export const accessMessages: MessageCatalog = {
   "access.teams.restrictions.secretManager": "현재 구성에서는 시크릿 관리자 설정을 변경할 수 없습니다.",
   "access.teams.restrictions.globalGuardrails": "현재 구성에서는 팀별 전역 가드레일 제외를 변경할 수 없습니다.",
   "access.teams.restrictions.passThroughRoutes": "현재 구성에서는 패스스루 경로를 설정할 수 없습니다.",
-  "access.teams.restrictions.teamAdmins": "현재 구성에서는 팀 관리자를 지정할 수 없습니다.",
   "access.common.notAvailable": "사용할 수 없음",
   "access.common.save": "저장",
   "access.common.saveChanges": "변경사항 저장",

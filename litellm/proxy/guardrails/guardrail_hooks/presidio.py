@@ -482,6 +482,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             "prompt",
             "input",
             "instructions",
+            "proxy_server_request",
             "raw_request_typed_dict",
         )
         response_fields = (

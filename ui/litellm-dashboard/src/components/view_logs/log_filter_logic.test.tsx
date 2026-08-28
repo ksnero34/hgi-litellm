@@ -208,6 +208,16 @@ describe("useLogFilterLogic", () => {
       expect(lastCallParams()?.params).toMatchObject({ team_id: "team-123", user_id: undefined });
     });
 
+    it("sends only team_id when an internal user selects the team column filter", async () => {
+      renderFilterHook({
+        filterByCurrentUser: true,
+        columnFilters: [{ id: LOG_FILTER_IDS.TEAM_ID, value: "team-123" }],
+      });
+
+      await waitFor(() => expect(uiSpendLogsCall).toHaveBeenCalled());
+      expect(lastCallParams()?.params).toMatchObject({ team_id: "team-123", user_id: undefined });
+    });
+
     it("does not fetch while a required team scope has no selection", async () => {
       renderFilterHook({
         filterByCurrentUser: false,
@@ -224,13 +234,27 @@ describe("useLogFilterLogic", () => {
     const callerTeams = [{ team_id: "team-a" }, { team_id: "team-b" }] as Team[];
 
     it("scopes /team/list to an internal user and still surfaces their teams", async () => {
-      fetchAllTeamsSpy.mockResolvedValue(callerTeams);
+      const internalUserTeams = [
+        {
+          team_id: "team-a",
+          members_with_roles: [{ user_id: "member-7", role: "admin" }],
+        },
+        {
+          team_id: "team-b",
+          members_with_roles: [{ user_id: "member-7", role: "user" }],
+        },
+      ] as Team[];
+      fetchAllTeamsSpy.mockResolvedValue(internalUserTeams);
 
-      const { result } = renderFilterHook({ userRole: "Internal User", userID: "member-7" });
+      const { result } = renderFilterHook({
+        userRole: "Internal User",
+        userID: "member-7",
+        filterByCurrentUser: true,
+      });
 
       await waitFor(() => expect(fetchAllTeamsSpy).toHaveBeenCalled());
       expect(fetchAllTeamsSpy).toHaveBeenCalledWith("test-token", null, "member-7");
-      await waitFor(() => expect(result.current.allTeams).toEqual(callerTeams));
+      await waitFor(() => expect(result.current.allTeams).toEqual([internalUserTeams[0]]));
     });
 
     it("scopes /team/list for an internal viewer", async () => {

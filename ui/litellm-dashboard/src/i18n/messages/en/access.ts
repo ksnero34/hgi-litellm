@@ -260,7 +260,6 @@ export const accessMessages: MessageCatalog = {
     "Global guardrail exclusions cannot be changed per team in the current configuration.",
   "access.teams.restrictions.passThroughRoutes":
     "Pass through routes cannot be configured in the current configuration.",
-  "access.teams.restrictions.teamAdmins": "Team administrators cannot be assigned in the current configuration.",
   "access.common.notAvailable": "Not available",
   "access.common.save": "Save",
   "access.common.saveChanges": "Save Changes",

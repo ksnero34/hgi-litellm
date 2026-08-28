@@ -104,7 +104,7 @@ async def list_spend_log_end_users(
 
     Scoped like `/spend/logs/ui`: a proxy admin sees every end user in the window,
     anyone else sees only end users from their own requests or from teams they
-    administer (or hold the `/spend/logs` permission on).
+    administer.
 
     The window is required and the inner scan is capped at SPEND_LOGS_FACET_SCAN_CAP
     rows, so the query cannot degrade into a full-table scan the way

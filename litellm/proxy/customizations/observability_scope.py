@@ -35,14 +35,10 @@ def _is_current_member(user_id: str, team: LiteLLM_TeamTable) -> bool:
     return any(member.user_id == user_id for member in team.members_with_roles)
 
 
-def _is_legacy_permitted_member(user_api_key_dict: UserAPIKeyAuth, team: LiteLLM_TeamTable) -> bool:
-    from litellm.proxy.management_endpoints.common_utils import _is_user_team_admin, _team_member_has_permission
+def _is_team_admin(user_api_key_dict: UserAPIKeyAuth, team: LiteLLM_TeamTable) -> bool:
+    from litellm.proxy.management_endpoints.common_utils import _is_user_team_admin
 
-    return _is_user_team_admin(user_api_key_dict=user_api_key_dict, team_obj=team) or _team_member_has_permission(
-        user_api_key_dict=user_api_key_dict,
-        team_obj=team,
-        permission="/spend/logs",
-    )
+    return _is_user_team_admin(user_api_key_dict=user_api_key_dict, team_obj=team)
 
 
 async def _get_user(prisma_client: PrismaClient, user_api_key_dict: UserAPIKeyAuth) -> LiteLLM_UserTable | None:
@@ -114,12 +110,16 @@ async def resolve_observability_scope(
 
     if oidc_managed:
         managed_is_current = any(team.team_id == managed_team_id for team in current_teams)
-        manual_teams = tuple(team for team in current_teams if team.team_id != managed_team_id)
-        service_key_rows = (
+        manual_admin_teams = tuple(
+            team
+            for team in current_teams
+            if team.team_id != managed_team_id and _is_team_admin(user_api_key_dict=user_api_key_dict, team=team)
+        )
+        manual_team_key_rows = (
             await VerificationTokenRepository(prisma_client).table.find_many(
-                where={"team_id": {"in": [team.team_id for team in manual_teams]}, "user_id": None}
+                where={"team_id": {"in": [team.team_id for team in manual_admin_teams]}}
             )
-            if manual_teams
+            if manual_admin_teams
             else []
         )
         managed_hashes = own_key_hashes_by_team.get(managed_team_id, ()) if managed_is_current else ()
@@ -131,16 +131,16 @@ async def resolve_observability_scope(
             *(
                 (
                     team.team_id,
-                    tuple(row.token for row in service_key_rows if row.team_id == team.team_id and row.token),
+                    tuple(row.token for row in manual_team_key_rows if row.team_id == team.team_id and row.token),
                 )
-                for team in manual_teams
+                for team in manual_admin_teams
             ),
         )
         allowed = tuple(dict.fromkeys(key_hash for _, key_hashes in team_key_hashes for key_hash in key_hashes))
         return ObservabilityScope(False, True, resolved_user.user_id, managed_team_id, team_key_hashes, allowed)
 
     permitted_teams = tuple(
-        team for team in current_teams if _is_legacy_permitted_member(user_api_key_dict=user_api_key_dict, team=team)
+        team for team in current_teams if _is_team_admin(user_api_key_dict=user_api_key_dict, team=team)
     )
     permitted_team_rows = (
         await VerificationTokenRepository(prisma_client).table.find_many(

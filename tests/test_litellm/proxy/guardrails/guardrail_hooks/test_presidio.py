@@ -1736,7 +1736,12 @@ async def test_blocked_pii_is_masked_in_request_response_and_logging_payloads():
     logging_obj.model_call_details = {
         "additional_args": {"complete_input_dict": {"messages": [{"role": "user", "content": sensitive_text}]}},
         "raw_request_typed_dict": {"raw_request_body": {"messages": [{"content": sensitive_text}]}},
-        "litellm_params": {"metadata": {"raw_request": f"curl --data '{sensitive_text}'"}},
+        "litellm_params": {
+            "metadata": {"raw_request": f"curl --data '{sensitive_text}'"},
+            "proxy_server_request": {
+                "body": {"messages": [{"role": "user", "content": sensitive_text}]},
+            },
+        },
         "messages": [{"role": "user", "content": sensitive_text}],
         "original_response": response.model_copy(deep=True),
         "standard_logging_object": {
@@ -1747,6 +1752,9 @@ async def test_blocked_pii_is_masked_in_request_response_and_logging_payloads():
     request_data = {
         "messages": [{"role": "user", "content": sensitive_text}],
         "metadata": {"raw_request": f"curl --data '{sensitive_text}'"},
+        "proxy_server_request": {
+            "body": {"messages": [{"role": "user", "content": sensitive_text}]},
+        },
         "response": response,
         "litellm_logging_obj": logging_obj,
     }
@@ -1764,6 +1772,11 @@ async def test_blocked_pii_is_masked_in_request_response_and_logging_payloads():
         )
 
     assert request_data["messages"][0]["content"] == "Email <EMAIL_ADDRESS>"
+    assert request_data["proxy_server_request"]["body"]["messages"][0]["content"] == "Email <EMAIL_ADDRESS>"
+    assert (
+        logging_obj.model_call_details["litellm_params"]["proxy_server_request"]["body"]["messages"][0]["content"]
+        == "Email <EMAIL_ADDRESS>"
+    )
     assert request_data["response"].choices[0].message.content == "[REDACTED BY PRESIDIO]"
     assert "person@example.com" not in str(logging_obj.model_call_details)
     guardrail_entries = request_data["metadata"]["standard_logging_guardrail_information"]

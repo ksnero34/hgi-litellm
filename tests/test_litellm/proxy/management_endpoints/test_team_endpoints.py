@@ -52,6 +52,7 @@ from litellm.proxy.management_endpoints.team_endpoints import (
     delete_team,
     list_available_teams,
     router,
+    team_call_validation_checks,
     team_member_add_duplication_check,
     team_member_delete,
     update_team,
@@ -1176,6 +1177,18 @@ def _make_team_member_add_request(
         team_id=team_id,
         member=Member(role=role, user_id=member_user_id),
     )
+
+
+def test_team_member_add_allows_admin_role_without_premium_license():
+    team_call_validation_checks(
+        prisma_client=MagicMock(),
+        data=_make_team_member_add_request(role="admin"),
+    )
+
+
+def test_team_member_permissions_do_not_offer_team_wide_spend_logs():
+    assert "/spend/logs" not in TeamMemberPermissionChecks.get_all_available_team_member_permissions()
+    assert "/spend/logs/v2" not in TeamMemberPermissionChecks.get_all_available_team_member_permissions()
 
 
 @pytest.mark.asyncio

@@ -335,3 +335,26 @@ Presidio custom entity, guardrail logging-only 관찰 결과와 UTC 날짜 처�
 재검증에서는 핵심 회귀 및 i18n suite 173건과 model table 26건이 통과했다. Node 24.19.0 production build는
 TypeScript 검사와 51개 static page 생성을 다시 통과했고 AVIF 무최적화 경고 1건만 유지됐다. sandbox build는
 Turbopack의 local port bind 제한으로 실패했으며 같은 명령을 제한 없이 재실행해 성공을 확인했다.
+
+### 13.2 OSS 팀 관리자와 서비스 키 로그 범위
+
+팀의 `admin` 역할 추가와 변경에서 Enterprise license gate를 제거해 OSS에서도 팀 관리자를 지정할 수 있게 했다.
+상세 spend log는 proxy admin 또는 해당 팀의 `admin`만 팀 전체 범위로 조회할 수 있다. 일반 `user` 역할은
+`/team/daily/activity` 사용량 집계는 계속 볼 수 있지만, 과거 설정에 `/spend/logs` 또는 `/spend/logs/v2`
+member permission이 남아 있어도
+팀 서비스 키 로그에는 접근할 수 없다. SSO 사용자는 managed team에서 자신의 키 로그만 유지하고, SSO가 관리하지
+않는 수동 팀에서는 `admin` membership일 때만 그 팀의 virtual key hash가 observability scope에 포함된다.
+
+Dashboard의 로그 팀 필터는 내부 사용자에게 관리자인 팀만 노출하고, 팀을 선택하면 `user_id`와 `team_id`를 동시에
+보내지 않도록 수정했다. 목록, request-id 상세, session 상세 backend 경로는 동일한 팀 관리자 판정을 사용한다.
+
+### 13.3 Guardrail 모니터 상세와 Presidio 차단 로그 재검증
+
+v1.98 dashboard 구조 변경에서 `GuardrailDetail`이 usage-log 응답을 UI 객체로 변환할 때
+`guardrail_information`과 key/team context를 누락해 공용 `LogDetailsDrawer`의 Guardrail 영역이 표시되지 않는
+회귀를 수정했다. 모니터에서 개별 요청을 선택하면 일반 Logs 화면과 동일하게 적용된 guardrail 이름, event,
+status, action과 Presidio detection 정보를 확인할 수 있다.
+
+Presidio의 blocked entity 치환은 request, response, standard logging object에 유지되어 있었다. 차단 예외가
+발생하면 정상 반환 뒤 실행되는 request snapshot 동기화에 도달하지 않을 수 있으므로, persistent spend-log에
+사용되는 최상위 `proxy_server_request.body`도 예외를 올리기 전에 `<ENTITY_TYPE>`으로 직접 치환하도록 보강했다.
