@@ -1,24 +1,40 @@
 "use client";
 
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/cva.config";
-import { useTranslation } from "react-i18next";
 
 export const INPUT_POLICY_OPTIONS = [
-  { value: "untrusted", label: "untrusted", dot: "bg-amber-500" },
-  { value: "trusted", label: "trusted", dot: "bg-green-500" },
-  { value: "blocked", label: "blocked", dot: "bg-red-500" },
+  { value: "untrusted", label: "untrusted", dot: "bg-warning" },
+  { value: "trusted", label: "trusted", dot: "bg-success" },
+  { value: "blocked", label: "blocked", dot: "bg-destructive" },
 ] as const;
 
 export const OUTPUT_POLICY_OPTIONS = [
-  { value: "untrusted", label: "untrusted", dot: "bg-amber-500" },
-  { value: "trusted", label: "trusted", dot: "bg-green-500" },
+  { value: "untrusted", label: "untrusted", dot: "bg-warning" },
+  { value: "trusted", label: "trusted", dot: "bg-success" },
 ] as const;
 
 export const POLICY_OPTIONS = INPUT_POLICY_OPTIONS;
 
 export const policyStyle = (p: string) => INPUT_POLICY_OPTIONS.find((o) => o.value === p) ?? INPUT_POLICY_OPTIONS[0];
+
+const isKoreanLanguage = (language: string | undefined): boolean => language?.startsWith("ko") ?? false;
+
+const toPolicyLabel = (
+  value: string,
+  language: string | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => {
+  if (!isKoreanLanguage(language)) {
+    return value;
+  }
+
+  return t(`observabilityExtra.toolPolicies.policy.${value}`, {
+    defaultValue: value,
+  });
+};
 
 export interface PolicySelectProps {
   value: string;
@@ -40,7 +56,7 @@ export const PolicySelect: React.FC<PolicySelectProps> = ({
   size = "small",
   stopPropagation = true,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const options = policyType === "output" ? OUTPUT_POLICY_OPTIONS : INPUT_POLICY_OPTIONS;
   const selected = policyStyle(value);
   return (
@@ -58,7 +74,7 @@ export const PolicySelect: React.FC<PolicySelectProps> = ({
           <SelectItem key={o.value} value={o.value}>
             <span className="inline-flex items-center gap-1.5">
               <span className={cn("size-2 shrink-0 rounded-full", o.dot)} />
-              {t(`observabilityExtra.toolPolicies.policy.${o.value}`)}
+              {toPolicyLabel(o.label, i18n.resolvedLanguage, t)}
             </span>
           </SelectItem>
         ))}

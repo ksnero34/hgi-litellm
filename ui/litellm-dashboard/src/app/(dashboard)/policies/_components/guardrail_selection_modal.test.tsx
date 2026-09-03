@@ -2,7 +2,6 @@ import React from "react";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/../tests/test-utils";
-import { languageStorageKey } from "@/i18n/resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GuardrailSelectionModal from "./guardrail_selection_modal";
 
@@ -29,7 +28,6 @@ const defaultProps = {
 describe("GuardrailSelectionModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.setItem(languageStorageKey, "en");
   });
 
   it("should render guardrail names from the template", async () => {
@@ -68,9 +66,7 @@ describe("GuardrailSelectionModal", () => {
 
   it("should show 'Create N Guardrails & Use Template' on the confirm button when N guardrails are selected", async () => {
     renderWithProviders(<GuardrailSelectionModal {...defaultProps} />);
-    expect(
-      await screen.findByRole("button", { name: /create 2 guardrail\(s\) and use template/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /create 2 guardrails & use template/i })).toBeInTheDocument();
   });
 
   it("should show 'Use Template' on the confirm button when no new guardrails are selected", async () => {
@@ -88,7 +84,7 @@ describe("GuardrailSelectionModal", () => {
     const def = makeGuardrailDef("my-guardrail");
     const props = { ...defaultProps, template: makeTemplate([def]) };
     renderWithProviders(<GuardrailSelectionModal {...props} />);
-    await user.click(await screen.findByRole("button", { name: /create 1 guardrail\(s\) and use template/i }));
+    await user.click(await screen.findByRole("button", { name: /create 1 guardrail/i }));
     expect(defaultProps.onConfirm).toHaveBeenCalledWith([def]);
   });
 

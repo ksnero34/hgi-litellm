@@ -22,10 +22,11 @@ interface GuardrailsOverviewProps {
 type SortKey = "failRate" | "requestsEvaluated" | "avgLatency" | "falsePositiveRate" | "falseNegativeRate";
 
 const providerColors: Record<string, string> = {
-  Bedrock: "bg-orange-100 text-orange-700 border-orange-200",
-  "Google Cloud": "bg-sky-100 text-sky-700 border-sky-200",
-  LiteLLM: "bg-indigo-100 text-indigo-700 border-indigo-200",
-  Custom: "bg-gray-100 text-gray-600 border-gray-200",
+  Bedrock: "bg-warning/15 text-warning border-warning/20",
+  "Google Cloud": "bg-info/15 text-info border-info/20",
+  LiteLLM:
+    "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800",
+  Custom: "bg-muted text-muted-foreground border-border",
 };
 
 function computeMetricsFromRows(data: PerformanceRow[]) {
@@ -99,7 +100,7 @@ export function GuardrailsOverview({
       cell: ({ row }) => (
         <button
           type="button"
-          className="text-sm font-medium text-gray-900 hover:text-indigo-600 text-left"
+          className="text-sm font-medium text-foreground hover:text-indigo-600 text-left"
           onClick={() => onSelectGuardrail(row.original.id)}
         >
           {row.original.name}
@@ -136,14 +137,15 @@ export function GuardrailsOverview({
         <span
           className={
             row.original.failRate > 15
-              ? "text-red-600"
+              ? "text-destructive"
               : row.original.failRate > 5
-                ? "text-amber-600"
-                : "text-green-600"
+                ? "text-warning"
+                : "text-success"
           }
         >
-          {row.original.failRate}%{row.original.trend === "up" && <span className="ml-1 text-xs text-red-400">↑</span>}
-          {row.original.trend === "down" && <span className="ml-1 text-xs text-green-400">↓</span>}
+          {row.original.failRate}%
+          {row.original.trend === "up" && <span className="ml-1 text-xs text-destructive">↑</span>}
+          {row.original.trend === "down" && <span className="ml-1 text-xs text-success">↓</span>}
         </span>
       ),
     },
@@ -158,12 +160,12 @@ export function GuardrailsOverview({
         <span
           className={
             row.original.avgLatency == null
-              ? "text-gray-400"
+              ? "text-muted-foreground"
               : row.original.avgLatency > 150
-                ? "text-red-600"
+                ? "text-destructive"
                 : row.original.avgLatency > 50
-                  ? "text-amber-600"
-                  : "text-green-600"
+                  ? "text-warning"
+                  : "text-success"
           }
         >
           {row.original.avgLatency != null ? `${row.original.avgLatency}ms` : "—"}
@@ -179,10 +181,10 @@ export function GuardrailsOverview({
           <span
             className={`w-2 h-2 rounded-full ${
               row.original.status === "healthy"
-                ? "bg-green-500"
+                ? "bg-success"
                 : row.original.status === "warning"
-                  ? "bg-amber-500"
-                  : "bg-red-500"
+                  ? "bg-warning"
+                  : "bg-destructive"
             }`}
           />
           <span className="text-xs text-gray-600 capitalize">{getStatusLabel(row.original.status)}</span>
@@ -228,20 +230,20 @@ export function GuardrailsOverview({
         <MetricCard
           label={t("observability.guardrails.blocked_requests")}
           value={metrics.totalBlocked.toLocaleString()}
-          valueColor="text-red-600"
-          icon={<TriangleAlert className="size-4 text-red-400" />}
+          valueColor="text-destructive"
+          icon={<TriangleAlert className="size-4 text-destructive" />}
         />
         <MetricCard
           label={t("observability.guardrails.pass_rate")}
           value={`${metrics.passRate}%`}
-          valueColor="text-green-600"
-          icon={<TrendingUp className="size-4 text-green-400" />}
+          valueColor="text-success"
+          icon={<TrendingUp className="size-4 text-success" />}
         />
         <MetricCard
           label={t("observability.guardrails.avg_latency_added")}
           value={`${metrics.avgLatency}ms`}
           valueColor={
-            metrics.avgLatency > 150 ? "text-red-600" : metrics.avgLatency > 50 ? "text-amber-600" : "text-green-600"
+            metrics.avgLatency > 150 ? "text-destructive" : metrics.avgLatency > 50 ? "text-warning" : "text-success"
           }
         />
         <MetricCard label={t("observability.guardrails.active_guardrails")} value={metrics.count} />

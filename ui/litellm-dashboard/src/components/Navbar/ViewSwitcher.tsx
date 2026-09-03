@@ -82,7 +82,7 @@ export default function ViewSwitcher() {
       label: (
         <div className="flex items-center justify-between gap-6 py-0.5">
           <span className="font-medium">{e.label}</span>
-          {!isChatRoute && e.key === mode && <Check className="size-4 text-blue-600" />}
+          {!isChatRoute && e.key === mode && <Check className="size-4 text-info" />}
         </div>
       ),
       onClick: () => selectMode(e.key),

@@ -2,11 +2,10 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import useCan from "@/app/(dashboard)/hooks/useCan";
 import { MetricCard } from "@/components/GuardrailsMonitor/MetricCard";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { ToolRow, updateToolPolicy } from "@/components/networking";
 
 import { toolPoliciesListOptions } from "./toolPoliciesQueries";
@@ -29,16 +28,10 @@ function countToolsInUTCDay(tools: ToolRow[], utcDateKey: string): number {
   return tools.filter((tool) => isCreatedInUTCDay(tool.created_at, utcDateKey)).length;
 }
 
-function getTrendSubtitle(
-  t: (key: string, options?: Record<string, unknown>) => string,
-  newToday: number,
-  newYesterday: number,
-): string | undefined {
+function getTrendSubtitle(newToday: number, newYesterday: number): string | undefined {
   const diff = newToday - newYesterday;
   if (diff === 0) return undefined;
-  return t("observabilityExtra.toolPolicies.trendSinceYesterday", {
-    count: diff > 0 ? `+${diff}` : String(diff),
-  });
+  return diff > 0 ? `+${diff} since yesterday` : `${diff} since yesterday`;
 }
 
 function toMessage(error: unknown, fallback: string): string {
@@ -56,7 +49,6 @@ interface ToolPoliciesPanelProps {
 }
 
 export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToken, onSelectTool }) => {
-  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const canViewToolPolicies = useCan("viewToolPolicies");
   const [savingInput, setSavingInput] = useState<ReadonlySet<string>>(() => new Set());
@@ -87,16 +79,12 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
         await updateToolPolicy(accessToken, toolName, { input_policy: newPolicy });
         await patchTool(toolName, { input_policy: newPolicy });
       } catch (e) {
-        NotificationsManager.fromBackend(
-          t("observabilityExtra.toolPolicies.updateInputPolicyFailed", {
-            message: toMessage(e, t("observabilityExtra.toolPolicies.unknownError")),
-          }),
-        );
+        toast.fromError(`Failed to update input policy: ${toMessage(e, "unknown error")}`);
       } finally {
         setSavingInput((previous) => withoutTool(previous, toolName));
       }
     },
-    [accessToken, patchTool, t],
+    [accessToken, patchTool],
   );
 
   const handleOutputPolicyChange = useCallback(
@@ -107,16 +95,12 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
         await updateToolPolicy(accessToken, toolName, { output_policy: newPolicy });
         await patchTool(toolName, { output_policy: newPolicy });
       } catch (e) {
-        NotificationsManager.fromBackend(
-          t("observabilityExtra.toolPolicies.updateOutputPolicyFailed", {
-            message: toMessage(e, t("observabilityExtra.toolPolicies.unknownError")),
-          }),
-        );
+        toast.fromError(`Failed to update output policy: ${toMessage(e, "unknown error")}`);
       } finally {
         setSavingOutput((previous) => withoutTool(previous, toolName));
       }
     },
-    [accessToken, patchTool, t],
+    [accessToken, patchTool],
   );
 
   const { newToday, trendSubtitle, totalTools, blockedCount, activeTeamsCount, needsReviewTools } = useMemo(() => {
@@ -128,7 +112,7 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
 
     return {
       newToday: today,
-      trendSubtitle: getTrendSubtitle(t, today, countToolsInUTCDay(tools, getUTCDateKey(yesterday))),
+      trendSubtitle: getTrendSubtitle(today, countToolsInUTCDay(tools, getUTCDateKey(yesterday))),
       totalTools: tools.length,
       blockedCount: tools.filter((tool) => tool.input_policy === "blocked").length,
       activeTeamsCount: new Set(tools.map((tool) => tool.team_id).filter(Boolean)).size,
@@ -136,7 +120,7 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
         (tool) => isCreatedInUTCDay(tool.created_at, todayKey) && tool.input_policy === "untrusted",
       ),
     };
-  }, [t, tools]);
+  }, [tools]);
 
   const scrollToToolRow = (toolId: string) => {
     document.querySelector(`[data-row-id="${CSS.escape(toolId)}"]`)?.scrollIntoView({
@@ -147,57 +131,51 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
 
   return (
     <div className="w-full">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-6">{t("observabilityExtra.toolPolicies.title")}</h1>
+      <h1 className="text-2xl font-semibold text-foreground mb-6">Tool Policies</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
-          label={t("observabilityExtra.toolPolicies.metrics.newToday")}
+          label="New Today"
           value={newToday}
-          valueColor="text-green-600"
+          valueColor="text-success"
           subtitle={trendSubtitle}
           icon={
-            <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           }
         />
-        <MetricCard label={t("observabilityExtra.toolPolicies.metrics.totalToolsDiscovered")} value={totalTools} />
+        <MetricCard label="Total Tools Discovered" value={totalTools} />
         <MetricCard
-          label={t("observabilityExtra.toolPolicies.metrics.blockedTools")}
+          label="Blocked Tools"
           value={blockedCount}
-          valueColor={blockedCount > 0 ? "text-red-600" : undefined}
+          valueColor={blockedCount > 0 ? "text-destructive" : undefined}
         />
-        <MetricCard
-          label={t("observabilityExtra.toolPolicies.metrics.activeTeams")}
-          value={activeTeamsCount > 0 ? activeTeamsCount : "—"}
-        />
+        <MetricCard label="Active Teams" value={activeTeamsCount > 0 ? activeTeamsCount : "—"} />
       </div>
 
       {needsReviewTools.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-          <h2 className="text-sm font-semibold text-amber-900 mb-1">
-            {t("observabilityExtra.toolPolicies.review.title")}
-          </h2>
-          <p className="text-sm text-amber-800 mb-3">
-            {needsReviewTools.length === 1
-              ? t("observabilityExtra.toolPolicies.review.descriptionSingular", { count: needsReviewTools.length })
-              : t("observabilityExtra.toolPolicies.review.descriptionPlural", { count: needsReviewTools.length })}
+        <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 mb-6">
+          <h2 className="text-sm font-semibold text-warning mb-1">Needs Review</h2>
+          <p className="text-sm text-warning mb-3">
+            {needsReviewTools.length} new tool{needsReviewTools.length !== 1 ? "s" : ""} discovered that require policy
+            decisions.
           </p>
           <div className="flex flex-wrap gap-2">
             {needsReviewTools.map((tool) => (
               <span
                 key={tool.tool_id}
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-md text-sm"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-card border border-warning/20 rounded-md text-sm"
               >
-                <span className="font-mono text-amber-900 truncate max-w-[200px]" title={tool.tool_name}>
+                <span className="font-mono text-warning truncate max-w-[200px]" title={tool.tool_name}>
                   {tool.tool_name}
                 </span>
                 <button
                   type="button"
                   onClick={() => scrollToToolRow(tool.tool_id)}
-                  className="text-amber-700 hover:text-amber-900 font-medium text-xs whitespace-nowrap"
+                  className="text-warning hover:text-warning/80 font-medium text-xs whitespace-nowrap"
                 >
-                  {t("observabilityExtra.toolPolicies.review.button")}
+                  Review
                 </button>
               </span>
             ))}
@@ -206,8 +184,11 @@ export const ToolPoliciesPanel: React.FC<ToolPoliciesPanelProps> = ({ accessToke
       )}
 
       {query.isError && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-sm text-sm text-red-700" role="alert">
-          {toMessage(query.error, t("observabilityExtra.toolPolicies.loadFailed"))}
+        <div
+          className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-sm text-sm text-destructive"
+          role="alert"
+        >
+          {toMessage(query.error, "Failed to load tools")}
         </div>
       )}
 

@@ -80,6 +80,7 @@ export const modelManagementMessages: MessageCatalog = {
   "modelManagement.team": "팀",
   "modelManagement.view": "보기",
   "modelManagement.statusColumn": "상태",
+  "modelManagement.sourceColumn": "소스",
   "modelManagement.dbModel": "DB 모델",
   "modelManagement.configModel": "구성 파일 모델",
   "modelManagement.unknownProvider": "알 수 없는 공급자",

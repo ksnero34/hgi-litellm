@@ -2478,7 +2478,7 @@ class TestStreamingIteratorHook:
             ),
         ):
             chunks = []
-            with pytest.raises(HTTPException) as exc_info:
+            async def _drain():
                 async for chunk in guardrail.async_post_call_streaming_iterator_hook(
                     user_api_key_dict=UserAPIKeyAuth(
                         api_key="test", user_id="user-123"
@@ -2487,6 +2487,9 @@ class TestStreamingIteratorHook:
                     request_data={"metadata": {"user_id": "user-123"}},
                 ):
                     chunks.append(chunk)
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _drain()
 
             assert exc_info.value.status_code == 400
             assert len(chunks) == 0  # No chunks yielded before the block
@@ -2514,13 +2517,16 @@ class TestStreamingIteratorHook:
             "litellm.main.stream_chunk_builder", return_value=assembled_response
         ):
             chunks = []
-            with pytest.raises(HTTPException) as exc_info:
+            async def _drain():
                 async for chunk in guardrail.async_post_call_streaming_iterator_hook(
                     user_api_key_dict=UserAPIKeyAuth(api_key="test"),  # no user_id
                     response=fake_response_stream(),
                     request_data={},
                 ):
                     chunks.append(chunk)
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _drain()
 
             assert exc_info.value.status_code == 400
             assert len(chunks) == 0
@@ -2662,7 +2668,7 @@ class TestStreamingIteratorHook:
             ),
         ):
             chunks = []
-            with pytest.raises(HTTPException) as exc_info:
+            async def _drain():
                 async for chunk in guardrail.async_post_call_streaming_iterator_hook(
                     user_api_key_dict=UserAPIKeyAuth(
                         api_key="test", user_id="user-123"
@@ -2671,6 +2677,9 @@ class TestStreamingIteratorHook:
                     request_data={},
                 ):
                     chunks.append(chunk)
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _drain()
 
             assert exc_info.value.status_code == 400
             assert len(chunks) == 0

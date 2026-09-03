@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Form, type FormInstance } from "antd";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../../tests/test-utils";
 import SSOModals from "./SSOModals";
+import { useSSOSettingsForm } from "./Settings/AdminSettings/SSOSettings/Modals/BaseSSOSettingsForm";
+
+const user = () => userEvent.setup({ pointerEventsCheck: 0 });
 
 // Mock the networking functions
 vi.mock("./networking", () => ({
@@ -15,13 +17,13 @@ vi.mock("./shared/errorUtils", () => ({
   parseErrorMessage: vi.fn((error) => error?.message || "An error occurred"),
 }));
 
-import NotificationsManager from "./molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { getSSOSettings, updateSSOSettings } from "./networking";
 
 describe("SSOModals", () => {
   it("should render the SSOModals component", () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
 
       return (
         <SSOModals
@@ -39,13 +41,13 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
     expect(screen.getByText("Add SSO")).toBeInTheDocument();
   });
 
   it("should show validation error if proxy base url is not a valid URL", async () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       return (
         <SSOModals
           isAddSSOModalVisible={true}
@@ -62,16 +64,13 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Find and interact with the SSO provider select
-    const ssoProviderSelect = screen.getByLabelText("SSO Provider");
-    fireEvent.mouseDown(ssoProviderSelect);
+    await user().click(screen.getByLabelText("SSO Provider"));
     // Wait for dropdown and select Google
-    await waitFor(() => {
-      const googleOption = screen.getByText("Google SSO");
-      fireEvent.click(googleOption);
-    });
+    const googleOption = await screen.findByText("Google SSO");
+    await user().click(googleOption);
 
     // Fill in the email field
     const emailInput = screen.getByLabelText("Proxy Admin Email");
@@ -97,7 +96,7 @@ describe("SSOModals", () => {
 
   it("should show validation error if proxy base url ends with trailing slash", async () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       return (
         <SSOModals
           isAddSSOModalVisible={true}
@@ -114,16 +113,13 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Find and interact with the SSO provider select
-    const ssoProviderSelect = screen.getByLabelText("SSO Provider");
-    fireEvent.mouseDown(ssoProviderSelect);
+    await user().click(screen.getByLabelText("SSO Provider"));
     // Wait for dropdown and select Google
-    await waitFor(() => {
-      const googleOption = screen.getByText("Google SSO");
-      fireEvent.click(googleOption);
-    });
+    const googleOption = await screen.findByText("Google SSO");
+    await user().click(googleOption);
 
     // Fill in the email field
     const emailInput = screen.getByLabelText("Proxy Admin Email");
@@ -144,7 +140,7 @@ describe("SSOModals", () => {
 
   it("should allow typing https:// without interfering with slashes", async () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       return (
         <SSOModals
           isAddSSOModalVisible={true}
@@ -161,7 +157,7 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     const urlInput = screen.getByLabelText("Proxy Base URL") as HTMLInputElement;
 
@@ -194,7 +190,7 @@ describe("SSOModals", () => {
 
   it("should only show URL format error for incomplete URLs, not trailing slash error", async () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       return (
         <SSOModals
           isAddSSOModalVisible={true}
@@ -211,16 +207,13 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Find and interact with the SSO provider select
-    const ssoProviderSelect = screen.getByLabelText("SSO Provider");
-    fireEvent.mouseDown(ssoProviderSelect);
+    await user().click(screen.getByLabelText("SSO Provider"));
     // Wait for dropdown and select Google
-    await waitFor(() => {
-      const googleOption = screen.getByText("Google SSO");
-      fireEvent.click(googleOption);
-    });
+    const googleOption = await screen.findByText("Google SSO");
+    await user().click(googleOption);
 
     // Fill in the email field
     const emailInput = screen.getByLabelText("Proxy Admin Email");
@@ -265,7 +258,7 @@ describe("SSOModals", () => {
     (getSSOSettings as any).mockResolvedValue(mockSSOData);
 
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
 
       return (
         <SSOModals
@@ -283,7 +276,7 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Wait for the useEffect to load data and populate form
     await waitFor(() => {
@@ -310,10 +303,10 @@ describe("SSOModals", () => {
     // Mock getSSOSettings to return empty data so form starts clean
     (getSSOSettings as any).mockResolvedValue({ values: {} });
 
-    let formInstance: any = null;
+    let formInstance: ReturnType<typeof useSSOSettingsForm> | null = null;
 
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       formInstance = form;
 
       return (
@@ -332,7 +325,7 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Wait for any initial loading to complete
     await waitFor(() => {
@@ -340,16 +333,16 @@ describe("SSOModals", () => {
     });
 
     // Set the provider directly using the form to trigger conditional rendering
-    formInstance.setFieldsValue({ sso_provider: "okta" });
+    formInstance!.setValue("sso_provider", "okta");
 
     // Wait for the "Use Role Mappings" checkbox to appear
     await waitFor(() => {
-      expect(screen.getByLabelText("Use Role Mappings")).toBeInTheDocument();
+      expect(screen.getAllByLabelText("Use Role Mappings")[0]).toBeInTheDocument();
     });
 
     // Enable role mappings
-    const roleMappingsCheckbox = screen.getByLabelText("Use Role Mappings");
-    fireEvent.click(roleMappingsCheckbox);
+    const roleMappingsCheckbox = screen.getAllByLabelText("Use Role Mappings")[0];
+    await user().click(roleMappingsCheckbox);
 
     // Fill required fields
     const emailInput = screen.getByLabelText("Proxy Admin Email");
@@ -418,10 +411,10 @@ describe("SSOModals", () => {
     vi.mocked(updateSSOSettings).mockResolvedValue({});
     vi.mocked(getSSOSettings).mockResolvedValue({ values: {} });
 
-    let formInstance: FormInstance | null = null;
+    let formInstance: ReturnType<typeof useSSOSettingsForm> | null = null;
 
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       formInstance = form;
 
       return (
@@ -446,7 +439,7 @@ describe("SSOModals", () => {
       expect(getSSOSettings).toHaveBeenCalledWith("test-token");
     });
 
-    formInstance?.setFieldsValue({ sso_provider: "saml" });
+    formInstance!.setValue("sso_provider", "saml");
 
     await waitFor(() => {
       expect(screen.getByLabelText("IdP Metadata URL")).toBeInTheDocument();
@@ -464,7 +457,7 @@ describe("SSOModals", () => {
     fireEvent.change(screen.getByLabelText("SP Entity ID"), {
       target: { value: "https://proxy.example.com/sso/saml/metadata" },
     });
-    fireEvent.click(screen.getByLabelText("Allow IdP-initiated (unsolicited) responses"));
+    await user().click(screen.getAllByLabelText("Allow IdP-initiated (unsolicited) responses")[0]);
 
     fireEvent.click(screen.getByText("Save"));
 
@@ -486,10 +479,10 @@ describe("SSOModals", () => {
   it("should show Clear button and clear SSO settings when configured", async () => {
     const mockHandleAddSSOOk = vi.fn();
     (updateSSOSettings as any).mockResolvedValue({});
-    (NotificationsManager.success as any).mockImplementation(() => {});
+    (toast.success as any).mockImplementation(() => {});
 
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
 
       return (
         <SSOModals
@@ -507,7 +500,7 @@ describe("SSOModals", () => {
       );
     };
 
-    renderWithProviders(<TestWrapper />);
+    render(<TestWrapper />);
 
     // Check that Clear button is visible when SSO is configured
     const clearButton = screen.getByText("Clear");
@@ -530,7 +523,6 @@ describe("SSOModals", () => {
         microsoft_tenant: null,
         generic_client_id: null,
         generic_client_secret: null,
-        generic_discovery_url: null,
         generic_authorization_endpoint: null,
         generic_token_endpoint: null,
         generic_userinfo_endpoint: null,
@@ -543,17 +535,16 @@ describe("SSOModals", () => {
         user_email: null,
         sso_provider: null,
         role_mappings: null,
-        team_mappings: null,
       });
     });
 
-    expect(NotificationsManager.success).toHaveBeenCalledWith("SSO settings cleared successfully");
+    expect(toast.success).toHaveBeenCalledWith("SSO settings cleared successfully");
     expect(mockHandleAddSSOOk).toHaveBeenCalled();
   });
 
   it("renders provider logos in the SSO provider dropdown", async () => {
     const TestWrapper = () => {
-      const [form] = Form.useForm();
+      const form = useSSOSettingsForm("admin-panel");
       return (
         <SSOModals
           isAddSSOModalVisible={true}
@@ -572,7 +563,7 @@ describe("SSOModals", () => {
 
     render(<TestWrapper />);
 
-    fireEvent.mouseDown(screen.getByLabelText("SSO Provider"));
+    await user().click(screen.getByLabelText("SSO Provider"));
 
     await waitFor(() => {
       expect(screen.getAllByAltText("Google SSO logo").length).toBeGreaterThan(0);

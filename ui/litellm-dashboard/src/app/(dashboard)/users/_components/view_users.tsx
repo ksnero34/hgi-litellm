@@ -1,24 +1,21 @@
 import { parseAsString, useQueryState } from "nuqs";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import BulkEditUserModal from "./BulkEditUsers";
+import BulkCreateUsersButton from "@/components/bulk_create_users_button";
 import { CreateUserButton } from "@/components/CreateUserButton";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import EditUserModal from "./edit_user";
 import {
   getPossibleUserRoles,
   getProxyBaseUrl,
   invitationCreateCall,
   userListCall,
   UserListResponse,
-  userUpdateUserCall,
 } from "@/components/networking";
 import OnboardingModal, { InvitationLink } from "@/components/onboarding_link";
 
-import { updateExistingKeys } from "@/utils/dataUtils";
 import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
 import { isAdminRole, isProxyAdminRole } from "@/utils/roles";
 import { useDebouncedValue } from "@tanstack/react-pacer/debouncer";
@@ -31,7 +28,7 @@ import {
   SortingState,
 } from "@tanstack/react-table";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { modelAvailableCall, userDeleteCall } from "@/components/networking";
 import { DefaultUserSettingsForm } from "./default-user-settings/DefaultUserSettingsForm";
 import { UsersTable } from "./view_users/UsersTable";
@@ -61,7 +58,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   teams,
   orgAdminOrgIds,
 }) => {
-  const { t } = useTranslation();
   const isProxyAdmin = userRole ? isProxyAdminRole(userRole) : false;
   const queryClient = useQueryClient();
 
@@ -78,8 +74,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const [selectedUserId, setSelectedUserId] = useQueryState("user", parseAsString.withOptions({ history: "push" }));
   const [openInEditMode, setOpenInEditMode] = useState(false);
 
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<UserInfo | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserInfo | null>(null);
@@ -163,19 +157,19 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const handleResetPassword = useCallback(
     async (userId: string) => {
       if (!accessToken) {
-        NotificationsManager.fromBackend(t("identityAdmin.users.tokenMissing"));
+        toast.fromError("Access token not found");
         return;
       }
       try {
-        NotificationsManager.success(t("identityAdmin.users.generatingReset"));
+        toast.success("Generating password reset link...");
         const data = await invitationCreateCall(accessToken, userId);
         setInvitationLinkData(data);
         setIsInvitationLinkModalVisible(true);
       } catch (error) {
-        NotificationsManager.fromBackend(t("identityAdmin.users.resetFailed"));
+        toast.fromError("Failed to generate password reset link");
       }
     },
-    [accessToken, t],
+    [accessToken],
   );
 
   const confirmDelete = async () => {
@@ -191,10 +185,10 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
           return { ...previousData, users: updatedUsers };
         });
 
-        NotificationsManager.success(t("identityAdmin.users.deleted"));
+        toast.success("User deleted successfully");
       } catch (error) {
         console.error("Error deleting user:", error);
-        NotificationsManager.fromBackend(t("identityAdmin.users.deleteFailed"));
+        toast.fromError("Failed to delete user");
       } finally {
         setIsDeleteModalOpen(false);
         setUserToDelete(null);
@@ -206,39 +200,6 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const cancelDelete = () => {
     setIsDeleteModalOpen(false);
     setUserToDelete(null);
-  };
-
-  const handleEditCancel = async () => {
-    setSelectedUser(null);
-    setEditModalVisible(false);
-  };
-
-  const handleEditSubmit = async (editedUser: any) => {
-    if (!accessToken || !token || !userRole || !userID) {
-      return;
-    }
-
-    try {
-      const response = await userUpdateUserCall(accessToken, editedUser, null);
-      queryClient.setQueriesData<UserListResponse>({ queryKey: ["userList"] }, (previousData) => {
-        if (previousData === undefined) return previousData;
-        const updatedUsers = previousData.users.map((user) => {
-          if (user.user_id === response.data.user_id) {
-            return updateExistingKeys(user, response.data);
-          }
-          return user;
-        });
-
-        return { ...previousData, users: updatedUsers };
-      });
-
-      NotificationsManager.success(t("identityAdmin.users.updated", { userId: editedUser.user_id }));
-    } catch (error) {
-      console.error("There was an error updating the user", error);
-    }
-    setSelectedUser(null);
-    setEditModalVisible(false);
-    // Close the modal
   };
 
   const handleToggleSelectionMode = () => {
@@ -359,6 +320,9 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         <div className="flex space-x-3">
           {userListQuery.isLoading && (
             <>
+              <div role="status" className="sr-only">
+                Loading users…
+              </div>
               <Skeleton className="h-9 w-28" />
               <Skeleton className="h-9 w-36" />
               <Skeleton className="h-9 w-28" />
@@ -367,12 +331,11 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
           {!userListQuery.isLoading && userID && accessToken && (
             <>
               {isProxyAdmin && (
-                <CreateUserButton
-                  userID={userID}
-                  accessToken={accessToken}
-                  teams={teams}
-                  possibleUIRoles={possibleUIRoles}
-                />
+                <CreateUserButton userID={userID} accessToken={accessToken} possibleUIRoles={possibleUIRoles} />
+              )}
+
+              {isProxyAdmin && (
+                <BulkCreateUsersButton accessToken={accessToken} teams={teams} possibleUIRoles={possibleUIRoles} />
               )}
 
               {isProxyAdmin && (
@@ -382,7 +345,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
                   variant={selectionMode ? "default" : "outline"}
                   data-testid="toggle-user-selection"
                 >
-                  {selectionMode ? t("identityAdmin.users.cancelSelection") : t("identityAdmin.users.select")}
+                  {selectionMode ? "Cancel Selection" : "Select Users"}
                 </Button>
               )}
 
@@ -393,7 +356,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
                   disabled={selectedUsers.length === 0}
                   data-testid="bulk-edit-users"
                 >
-                  {t("identityAdmin.users.bulkEdit", { count: selectedUsers.length })}
+                  Bulk Edit ({selectedUsers.length} selected)
                 </Button>
               )}
             </>
@@ -405,10 +368,10 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         <Tabs defaultValue="users" className="gap-0">
           <TabsList variant="line" className="mb-4">
             <TabsTrigger value="users" className="flex-none data-active:text-primary after:bg-primary">
-              {t("identityAdmin.users.title")}
+              Users
             </TabsTrigger>
             <TabsTrigger value="default-settings" className="flex-none data-active:text-primary after:bg-primary">
-              {t("identityAdmin.users.defaultSettings")}
+              Default User Settings
             </TabsTrigger>
           </TabsList>
 
@@ -421,7 +384,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
               <div
                 className="flex h-64 items-center justify-center"
                 role="status"
-                aria-label={t("identityAdmin.users.loadingDefaultSettings")}
+                aria-label="Loading default user settings"
               >
                 <div className="w-full max-w-lg space-y-3">
                   <Skeleton className="h-5 w-1/3" />
@@ -440,28 +403,20 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       )}
 
       {/* Existing Modals */}
-      <EditUserModal
-        visible={editModalVisible}
-        possibleUIRoles={possibleUIRoles}
-        onCancel={handleEditCancel}
-        user={selectedUser}
-        onSubmit={handleEditSubmit}
-      />
-
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
-        title={t("identityAdmin.users.deleteTitle")}
-        message={t("identityAdmin.users.deleteMessage")}
-        resourceInformationTitle={t("identityAdmin.users.info")}
+        title="Delete User?"
+        message="Are you sure you want to delete this user? This action cannot be undone."
+        resourceInformationTitle="User Information"
         resourceInformation={[
-          { label: t("identityAdmin.users.email"), value: userToDelete?.user_email },
-          { label: t("identityAdmin.users.userId"), value: userToDelete?.user_id, code: true },
+          { label: "Email", value: userToDelete?.user_email },
+          { label: "User ID", value: userToDelete?.user_id, code: true },
           {
-            label: t("identityAdmin.users.globalRole"),
+            label: "Global Proxy Role",
             value:
               (userToDelete && possibleUIRoles?.[userToDelete.user_role]?.ui_label) || userToDelete?.user_role || "-",
           },
-          { label: t("identityAdmin.users.totalSpend"), value: userToDelete?.spend?.toFixed(2) },
+          { label: "Total Spend (USD)", value: userToDelete?.spend?.toFixed(2) },
         ]}
         onCancel={cancelDelete}
         onOk={confirmDelete}

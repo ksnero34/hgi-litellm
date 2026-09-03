@@ -1,5 +1,5 @@
 import type { ColumnFiltersState, PaginationState } from "@tanstack/react-table";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,7 +16,7 @@ const ROWS: AuditLogEntry[] = [
     table_name: "LiteLLM_TeamTable",
     object_id: "team-obj-123",
     before_value: {},
-    updated_values: { foo: "bar", success: true },
+    updated_values: { foo: "bar" },
   },
   {
     id: "log-2",
@@ -26,41 +26,8 @@ const ROWS: AuditLogEntry[] = [
     action: "deleted",
     table_name: "LiteLLM_UserTable",
     object_id: "user-obj-456",
-    before_value: { a: 1, success: false },
+    before_value: { a: 1 },
     updated_values: {},
-  },
-  {
-    id: "log-3",
-    updated_at: "2026-07-20T10:00:00Z",
-    changed_by: "admin-user",
-    changed_by_api_key: "sk-hash-ghi",
-    action: "blocked",
-    table_name: "CorporatePersonalKeyRegistry",
-    object_id: "personal-key-1",
-    before_value: { success: true },
-    updated_values: { success: true },
-  },
-  {
-    id: "log-4",
-    updated_at: "2026-07-20T09:00:00Z",
-    changed_by: "admin-user",
-    changed_by_api_key: "sk-hash-jkl",
-    action: "unblocked",
-    table_name: "LiteLLM_TeamMembership",
-    object_id: "team-1",
-    before_value: { success: true },
-    updated_values: { success: true },
-  },
-  {
-    id: "log-5",
-    updated_at: "2026-07-20T08:00:00Z",
-    changed_by: "admin-user",
-    changed_by_api_key: "sk-hash-mno",
-    action: "creation_rejected",
-    table_name: "LiteLLM_OrganizationMembership",
-    object_id: "org-1:user-1",
-    before_value: { success: false },
-    updated_values: { success: false },
   },
 ];
 
@@ -88,20 +55,16 @@ describe("AuditLogsTable", () => {
   it("renders each audit column with the migrated shared cells", () => {
     renderTable();
 
+    // Action -> StatusBadge with a capitalized label
     expect(screen.getByText("Created")).toBeInTheDocument();
     expect(screen.getByText("Deleted")).toBeInTheDocument();
-    expect(screen.getByText("Blocked")).toBeInTheDocument();
-    expect(screen.getByText("Unblocked")).toBeInTheDocument();
-    expect(screen.getByText("Creation Rejected")).toBeInTheDocument();
+    // Table name -> display mapping
     expect(screen.getByText("Teams")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
-    expect(screen.getByText("Personal Key Registry")).toBeInTheDocument();
-    expect(screen.getByText("Team Memberships")).toBeInTheDocument();
-    expect(screen.getByText("Organization Memberships")).toBeInTheDocument();
-    expect(screen.getAllByText("Success").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Failure").length).toBeGreaterThan(0);
+    // Changed By -> DefaultProxyAdminTag (default_user_id becomes a labeled tag; other ids stay raw)
     expect(screen.getByText("Default Proxy Admin")).toBeInTheDocument();
     expect(screen.getByText("user-42")).toBeInTheDocument();
+    // Object ID + API key hash
     expect(screen.getByText("team-obj-123")).toBeInTheDocument();
     expect(screen.getByText("sk-hash-abc")).toBeInTheDocument();
   });
@@ -132,7 +95,7 @@ describe("AuditLogsTable", () => {
     renderTable({ isLoading: true, data: [] });
 
     expect(screen.getAllByTestId("skeleton-row").length).toBeGreaterThan(0);
-    expect(screen.queryByText("No audit logs yet")).toBeNull();
+    expect(screen.queryByText("No audit logs yet")).not.toBeInTheDocument();
   });
 
   it("uses a distinct empty state for unfiltered vs filtered-empty results", () => {
@@ -158,22 +121,12 @@ describe("AuditLogsTable", () => {
   });
 
   it("renders active filter chips with human-readable labels", () => {
-    const filters: ColumnFiltersState = [
-      { id: "action", value: "creation_rejected" },
-      { id: "table_name", value: "CorporatePersonalKeyRegistry" },
-      { id: "success", value: "true" },
-    ];
+    const filters: ColumnFiltersState = [{ id: "action", value: "created" }];
     renderTable({ columnFilters: filters });
 
     const chip = screen.getByTestId("filter-chip-action");
     expect(chip).toHaveTextContent("Action:");
-    expect(chip).toHaveTextContent("Creation Rejected");
-    const resourceChip = screen.getByTestId("filter-chip-table_name");
-    expect(resourceChip).toHaveTextContent("Resource Type:");
-    expect(resourceChip).toHaveTextContent("Personal Key Registry");
-    const successChip = screen.getByTestId("filter-chip-success");
-    expect(successChip).toHaveTextContent("Result:");
-    expect(successChip).toHaveTextContent("Success");
+    expect(chip).toHaveTextContent("Created");
   });
 
   it("commits a text filter through the filter drawer and reports it to the parent", async () => {
@@ -182,7 +135,7 @@ describe("AuditLogsTable", () => {
     renderTable({ onColumnFiltersChange });
 
     await user.click(screen.getByTestId("datatable-filters-trigger"));
-    await user.type(await screen.findByPlaceholderText("Enter resource ID…"), "obj-9");
+    fireEvent.change(await screen.findByPlaceholderText("Enter object ID…"), { target: { value: "obj-9" } });
     await user.click(screen.getByTestId("filter-drawer-apply"));
 
     expect(onColumnFiltersChange).toHaveBeenCalledTimes(1);
@@ -191,26 +144,30 @@ describe("AuditLogsTable", () => {
     expect(committed).toEqual([{ id: "object_id", value: "obj-9" }]);
   });
 
-  it("commits success and date filters through the filter drawer", async () => {
+  it("shows the human label on both filter triggers while unfiltered", async () => {
     const user = userEvent.setup();
-    const onColumnFiltersChange = vi.fn();
-    renderTable({ onColumnFiltersChange });
+    renderTable();
 
     await user.click(screen.getByTestId("datatable-filters-trigger"));
-    const filterComboboxes = await screen.findAllByRole("combobox");
-    await user.click(filterComboboxes[2]);
-    const failureOptions = await screen.findAllByText("Failure");
-    await user.click(failureOptions.at(-1)!);
-    await user.type(screen.getByLabelText("Start Date"), "2026-07-01");
-    await user.type(screen.getByLabelText("End Date"), "2026-07-31");
-    await user.click(screen.getByTestId("filter-drawer-apply"));
+    const [action, table] = await screen.findAllByRole("combobox");
 
-    const arg = onColumnFiltersChange.mock.calls[0][0];
-    const committed = typeof arg === "function" ? arg([]) : arg;
-    expect(committed).toEqual([
-      { id: "success", value: "false" },
-      { id: "start_date", value: "2026-07-01" },
-      { id: "end_date", value: "2026-07-31" },
-    ]);
+    expect(action).toHaveTextContent("All Actions");
+    expect(table).toHaveTextContent("All Tables");
+  });
+
+  it("shows the human label on the filter triggers for an applied filter", async () => {
+    const user = userEvent.setup();
+    renderTable({
+      columnFilters: [
+        { id: "action", value: "created" },
+        { id: "table_name", value: "LiteLLM_TeamTable" },
+      ],
+    });
+
+    await user.click(screen.getByTestId("datatable-filters-trigger"));
+    const [action, table] = await screen.findAllByRole("combobox");
+
+    expect(action).toHaveTextContent("Created");
+    expect(table).toHaveTextContent("Teams");
   });
 });

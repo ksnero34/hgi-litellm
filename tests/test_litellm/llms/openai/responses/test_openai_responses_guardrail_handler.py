@@ -5,21 +5,16 @@ Tests the handler's ability to process input/output for the Responses API
 with guardrail transformations.
 """
 
-import os
-import sys
 from types import SimpleNamespace
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest
-
-sys.path.insert(0, os.path.abspath("../../../../../.."))  # Adds the parent directory to the system path
-
 from fastapi import HTTPException
 from openai.types.responses import ResponseFunctionToolCall
 
-from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.exceptions import GuardrailRaisedException
+from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.llms import get_guardrail_translation_mapping
 from litellm.llms.openai.responses.guardrail_translation.handler import (
     OpenAIResponsesHandler,
@@ -37,7 +32,7 @@ class MockGuardrail(CustomGuardrail):
         inputs: GenericGuardrailAPIInputs,
         request_data: dict,
         input_type: Literal["request", "response"],
-        logging_obj: Optional[Any] = None,
+        logging_obj: Any | None = None,
     ) -> GenericGuardrailAPIInputs:
         """
         For requests: Append [GUARDRAILED] to text
@@ -60,14 +55,14 @@ class SourceCaptureGuardrail(CustomGuardrail):
 
     def __init__(self):
         super().__init__(guardrail_name="source-capture")
-        self.captured_inputs: List[GenericGuardrailAPIInputs] = []
+        self.captured_inputs: list[GenericGuardrailAPIInputs] = []
 
     async def apply_guardrail(
         self,
         inputs: GenericGuardrailAPIInputs,
         request_data: dict,
         input_type: Literal["request", "response"],
-        logging_obj: Optional[Any] = None,
+        logging_obj: Any | None = None,
     ) -> GenericGuardrailAPIInputs:
         self.captured_inputs.append(inputs)
         return inputs
@@ -760,10 +755,10 @@ class TestOpenAIResponsesHandlerToolCallExtraction:
             status="completed",
         )
 
-        texts_to_check: List[str] = []
-        images_to_check: List[str] = []
-        tool_calls_to_check: List[Any] = []
-        task_mappings: List[Tuple[int, int]] = []
+        texts_to_check: list[str] = []
+        images_to_check: list[str] = []
+        tool_calls_to_check: list[Any] = []
+        task_mappings: list[tuple[int, int]] = []
 
         # Extract tool calls
         handler._extract_output_text_and_images(
@@ -801,10 +796,10 @@ class TestOpenAIResponsesHandlerToolCallExtraction:
             "status": "completed",
         }
 
-        texts_to_check: List[str] = []
-        images_to_check: List[str] = []
-        tool_calls_to_check: List[Any] = []
-        task_mappings: List[Tuple[int, int]] = []
+        texts_to_check: list[str] = []
+        images_to_check: list[str] = []
+        tool_calls_to_check: list[Any] = []
+        task_mappings: list[tuple[int, int]] = []
 
         # Extract tool calls
         handler._extract_output_text_and_images(
@@ -864,10 +859,10 @@ class TestOpenAIResponsesHandlerToolCallExtraction:
         handler = OpenAIResponsesHandler()
 
         # Create a response with both text and tool call outputs
-        texts_to_check: List[str] = []
-        images_to_check: List[str] = []
-        tool_calls_to_check: List[Any] = []
-        task_mappings: List[Tuple[int, int]] = []
+        texts_to_check: list[str] = []
+        images_to_check: list[str] = []
+        tool_calls_to_check: list[Any] = []
+        task_mappings: list[tuple[int, int]] = []
 
         # First extract from a message output
         text_output = {
@@ -939,10 +934,10 @@ class TestOpenAIResponsesHandlerToolCallExtraction:
             ],
         )
 
-        texts_to_check: List[str] = []
-        images_to_check: List[str] = []
-        tool_calls_to_check: List[Any] = []
-        task_mappings: List[Tuple[int, int]] = []
+        texts_to_check: list[str] = []
+        images_to_check: list[str] = []
+        tool_calls_to_check: list[Any] = []
+        task_mappings: list[tuple[int, int]] = []
 
         # Extract text from the BaseModel instance
         handler._extract_output_text_and_images(
@@ -994,10 +989,10 @@ class TestOpenAIResponsesHandlerToolCallExtraction:
             ],
         )
 
-        texts_to_check: List[str] = []
-        images_to_check: List[str] = []
-        tool_calls_to_check: List[Any] = []
-        task_mappings: List[Tuple[int, int]] = []
+        texts_to_check: list[str] = []
+        images_to_check: list[str] = []
+        tool_calls_to_check: list[Any] = []
+        task_mappings: list[tuple[int, int]] = []
 
         # Extract all text items
         handler._extract_output_text_and_images(
@@ -1028,7 +1023,7 @@ class MockPassThroughGuardrail(CustomGuardrail):
         inputs: GenericGuardrailAPIInputs,
         request_data: dict,
         input_type: Literal["request", "response"],
-        logging_obj: Optional[Any] = None,
+        logging_obj: Any | None = None,
     ) -> GenericGuardrailAPIInputs:
         """Simply return inputs unchanged"""
         return inputs
@@ -1223,7 +1218,7 @@ class TestOpenAIResponsesHandlerStreamingOutputProcessing:
                 inputs: GenericGuardrailAPIInputs,
                 request_data: dict,
                 input_type: Literal["request", "response"],
-                logging_obj: Optional[Any] = None,
+                logging_obj: Any | None = None,
             ) -> GenericGuardrailAPIInputs:
                 texts = inputs.get("texts", [])
                 inputs["texts"] = [t.replace("<TOKEN_1>", "john@example.com") for t in texts]
@@ -1372,7 +1367,7 @@ class ToolAppendingGuardrail(CustomGuardrail):
         inputs: GenericGuardrailAPIInputs,
         request_data: dict,
         input_type: Literal["request", "response"],
-        logging_obj: Optional[Any] = None,
+        logging_obj: Any | None = None,
     ) -> GenericGuardrailAPIInputs:
         tools = list(inputs.get("tools") or [])
         tools.append(

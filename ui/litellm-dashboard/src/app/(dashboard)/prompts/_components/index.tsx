@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 
 import { Plus, Upload } from "lucide-react";
 import { getPromptsList, PromptSpec, ListPromptsResponse, deletePromptCall } from "@/components/networking";
@@ -7,7 +6,7 @@ import PromptTable from "./PromptTable";
 import PromptInfoView from "./prompt_info";
 import AddPromptForm from "./add_prompt_form";
 import PromptEditorView from "./prompt_editor_view";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { isProxyAdminRole } from "@/utils/roles";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,19 +20,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const ALL_ENVIRONMENTS_LABEL = "All Environments";
+
+const ENVIRONMENT_OPTIONS = [
+  { label: "Development", value: "development" },
+  { label: "Staging", value: "staging" },
+  { label: "Production", value: "production" },
+];
+
+// SelectValue falls back to the raw value unless the root can map it to a label.
+const ENVIRONMENT_ITEMS = [{ label: ALL_ENVIRONMENTS_LABEL, value: null }, ...ENVIRONMENT_OPTIONS];
+
 interface PromptsProps {
   accessToken: string | null;
   userRole?: string;
 }
 
 const PromptsPanel: React.FC<PromptsProps> = ({ accessToken, userRole }) => {
-  const { t } = useTranslation();
-  const promptsEnvironmentItems = [
-    { label: t("settings.prompts.allEnvironments"), value: null },
-    { label: t("settings.prompts.environment.development"), value: "development" },
-    { label: t("settings.prompts.environment.staging"), value: "staging" },
-    { label: t("settings.prompts.environment.production"), value: "production" },
-  ];
   const [promptsList, setPromptsList] = useState<PromptSpec[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEnvironment, setSelectedEnvironment] = useState<string | undefined>(undefined);
@@ -118,11 +121,11 @@ const PromptsPanel: React.FC<PromptsProps> = ({ accessToken, userRole }) => {
     setIsDeleting(true);
     try {
       await deletePromptCall(accessToken, promptToDelete.id);
-      NotificationsManager.success(`Prompt "${promptToDelete.name}" deleted successfully`);
-      fetchPrompts();
+      toast.success(`Prompt "${promptToDelete.name}" deleted successfully`);
+      fetchPrompts(); // Refresh the list
     } catch (error) {
       console.error("Error deleting prompt:", error);
-      NotificationsManager.fromBackend(t("settings.prompts.deleteError"));
+      toast.fromError("Failed to delete prompt");
     } finally {
       setIsDeleting(false);
       setPromptToDelete(null);
@@ -159,26 +162,27 @@ const PromptsPanel: React.FC<PromptsProps> = ({ accessToken, userRole }) => {
                 <>
                   <Button onClick={handleAddPrompt} disabled={!accessToken}>
                     <Plus />
-                    {t("settings.prompts.addNew")}
+                    Add New Prompt
                   </Button>
                   <Button onClick={handleAddPromptFromFile} disabled={!accessToken} variant="secondary">
                     <Upload />
-                    {t("settings.prompts.uploadFile")}
+                    Upload .prompt File
                   </Button>
                 </>
               )}
             </div>
             <Select
-              items={promptsEnvironmentItems}
+              items={ENVIRONMENT_ITEMS}
               value={selectedEnvironment ?? null}
               onValueChange={(value) => setSelectedEnvironment((value as string | null) ?? undefined)}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t("settings.prompts.allEnvironments")} />
+                <SelectValue placeholder={ALL_ENVIRONMENTS_LABEL} />
               </SelectTrigger>
               <SelectContent>
-                {promptsEnvironmentItems.map((option) => (
-                  <SelectItem key={option.value ?? "all"} value={option.value}>
+                <SelectItem value={null}>{ALL_ENVIRONMENTS_LABEL}</SelectItem>
+                {ENVIRONMENT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -213,16 +217,15 @@ const PromptsPanel: React.FC<PromptsProps> = ({ accessToken, userRole }) => {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t("settings.prompts.deleteTitle")}</AlertDialogTitle>
+              <AlertDialogTitle>Delete Prompt</AlertDialogTitle>
               <AlertDialogDescription>
-                <p>{t("settings.prompts.deleteConfirm", { name: promptToDelete.name })}</p>
-                <p>{t("settings.prompts.deleteIrreversible")}</p>
+                Are you sure you want to delete prompt: {promptToDelete.name} ? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
               <Button variant="destructive" onClick={handleDeleteConfirm} disabled={isDeleting}>
-                {t("settings.admin.allowedIps.delete")}
+                Delete
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

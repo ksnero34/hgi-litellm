@@ -1,7 +1,6 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { i18n } from "@/i18n/i18n";
 import { describe, expect, it, vi } from "vitest";
 
 import { Organization } from "@/components/networking";
@@ -69,39 +68,6 @@ describe("OrganizationsTable", () => {
     expect(onOrganizationClick).toHaveBeenCalledWith("org-123");
   });
 
-  it("keeps organization details read-only and non-clickable for ordinary members", async () => {
-    const user = userEvent.setup();
-    const onOrganizationClick = vi.fn();
-    render(
-      <OrganizationsTable
-        {...baseProps}
-        userRole="Internal User"
-        onOrganizationClick={onOrganizationClick}
-        organizations={[makeOrganization({ organization_id: "org-member" })]}
-      />,
-    );
-
-    expect(screen.queryByRole("button", { name: /org-member/ })).not.toBeInTheDocument();
-    await user.click(screen.getByText("org-member"));
-    expect(onOrganizationClick).not.toHaveBeenCalled();
-  });
-
-  it("opens organization details for an org admin", async () => {
-    const user = userEvent.setup();
-    const onOrganizationClick = vi.fn();
-    render(
-      <OrganizationsTable
-        {...baseProps}
-        userRole="org_admin"
-        onOrganizationClick={onOrganizationClick}
-        organizations={[makeOrganization({ organization_id: "org-admin" })]}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /org-admin/ }));
-    expect(onOrganizationClick).toHaveBeenCalledWith("org-admin");
-  });
-
   it("edits and deletes an organization through the ⋯ actions menu (admin)", async () => {
     const user = userEvent.setup();
     const onEditClick = vi.fn();
@@ -135,18 +101,6 @@ describe("OrganizationsTable", () => {
     );
 
     expect(screen.queryByTestId("organization-actions-org-9")).not.toBeInTheDocument();
-  });
-
-  it("shows the row actions menu for the proxy_admin role alias", () => {
-    render(
-      <OrganizationsTable
-        {...baseProps}
-        userRole="proxy_admin"
-        organizations={[makeOrganization({ organization_id: "org-proxy-admin" })]}
-      />,
-    );
-
-    expect(screen.getByTestId("organization-actions-org-proxy-admin")).toBeInTheDocument();
   });
 
   it("sorts by created_at descending by default", () => {
@@ -191,7 +145,7 @@ describe("OrganizationsTable", () => {
     expect(screen.getByText("$100.00")).toBeInTheDocument();
     expect(screen.getByText("TPM: 1000")).toBeInTheDocument();
     expect(screen.getByText("RPM: 60")).toBeInTheDocument();
-    expect(screen.getByText("3 members")).toBeInTheDocument();
+    expect(screen.getByText("3 Members")).toBeInTheDocument();
     // Five models, three visible -> the shared ModelsCell collapses the rest.
     expect(screen.getByText("+2 more")).toBeInTheDocument();
   });
@@ -230,42 +184,5 @@ describe("OrganizationsTable", () => {
 
     rerender(<OrganizationsTable {...baseProps} searchActive={true} organizations={[]} />);
     expect(screen.getByText("No matching organizations")).toBeInTheDocument();
-  });
-
-  it("localizes the empty state and row actions in Korean", async () => {
-    await act(async () => {
-      await i18n.changeLanguage("ko");
-    });
-
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <OrganizationsTable
-        {...baseProps}
-        organizations={[makeOrganization({ organization_id: "org-ko" })]}
-        searchActive={true}
-      />,
-    );
-
-    expect(screen.queryByText("일치하는 조직이 없습니다")).not.toBeInTheDocument();
-
-    rerender(<OrganizationsTable {...baseProps} searchActive={true} organizations={[]} />);
-    expect(screen.getByText("일치하는 조직이 없습니다")).toBeInTheDocument();
-    expect(screen.getByText("검색과 일치하는 조직이 없습니다. 다른 이름이나 ID로 시도하세요.")).toBeInTheDocument();
-
-    rerender(
-      <OrganizationsTable
-        {...baseProps}
-        organizations={[makeOrganization({ organization_id: "org-ko" })]}
-        searchActive={false}
-      />,
-    );
-
-    await user.click(screen.getByTestId("organization-actions-org-ko"));
-    expect(await screen.findByText("조직 수정")).toBeInTheDocument();
-    expect(screen.getByText("조직 삭제")).toBeInTheDocument();
-
-    await act(async () => {
-      await i18n.changeLanguage("en");
-    });
   });
 });

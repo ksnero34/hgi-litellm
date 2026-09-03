@@ -269,15 +269,6 @@ describe("useOrganizations", () => {
     expect(organizationListCall).not.toHaveBeenCalled();
   });
 
-  it("should not execute query when the caller disables it explicitly", async () => {
-    const { result } = renderHook(() => useOrganizations(undefined, { enabled: false }), { wrapper });
-
-    expect(result.current.isLoading).toBe(false);
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.isFetched).toBe(false);
-    expect(organizationListCall).not.toHaveBeenCalled();
-  });
-
   it("should execute query when all auth values are present", async () => {
     // Mock successful API call
     (organizationListCall as any).mockResolvedValue(mockOrganizations);

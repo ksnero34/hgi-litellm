@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { availableTeamListCall, teamMemberAddCall } from "@/components/networking";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 
 import AvailableTeamsTable from "./AvailableTeamsTable";
 import { AvailableTeam } from "./AvailableTeamsTableColumns";
@@ -56,15 +56,11 @@ const AvailableTeamsPanel: React.FC<AvailableTeamsProps> = ({ accessToken, userI
         role: "user",
       });
 
-      NotificationsManager.success(
-        t("access.teams.notifications.joined", { defaultValue: "Successfully joined team" }),
-      );
+      toast.success("Successfully joined team");
       setAvailableTeams((teams) => teams.filter((team) => team.team_id !== teamId));
     } catch (error) {
       console.error("Error joining team:", error);
-      NotificationsManager.fromBackend(
-        t("access.teams.notifications.joinFailed", { defaultValue: "Failed to join team" }),
-      );
+      toast.fromError("Failed to join team");
     }
   };
 

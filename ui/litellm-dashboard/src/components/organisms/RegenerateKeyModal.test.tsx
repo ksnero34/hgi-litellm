@@ -6,6 +6,7 @@ import { KeyResponse } from "../key_team_helpers/key_list";
 import { formatExpiresUtc } from "@/utils/keyExpiryUtils";
 import { i18n } from "@/i18n/i18n";
 import { languageStorageKey } from "@/i18n/resources";
+import { toast } from "@/lib/toast";
 
 // Mock the networking call
 const mockRegenerateKeyCall = vi.fn();
@@ -15,14 +16,7 @@ vi.mock("../networking", () => ({
   personalKeyRotateCall: (...args: unknown[]) => mockPersonalKeyRotateCall(...args),
 }));
 
-const mockNotificationFromBackend = vi.fn();
-const mockNotificationSuccess = vi.fn();
-vi.mock("../molecules/notifications_manager", () => ({
-  default: {
-    fromBackend: (...args: unknown[]) => mockNotificationFromBackend(...args),
-    success: (...args: unknown[]) => mockNotificationSuccess(...args),
-  },
-}));
+const mockNotificationFromBackend = vi.mocked(toast.fromError);
 
 const makeToken = (overrides: Partial<KeyResponse> = {}): KeyResponse =>
   ({
@@ -395,7 +389,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("Enter a value like 30s, 30m, 24h, 2d, 1w, or 1mo")).toBeInTheDocument();
+      expect(screen.getByText("Must be a duration like 30s, 30m, 24h, 2d, 1w, or 1mo")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     expect(mockNotificationFromBackend).not.toHaveBeenCalled();
@@ -500,7 +494,7 @@ describe("RegenerateKeyModal", () => {
     await user.click(screen.getByRole("button", { name: /Issue New Key/ }));
 
     await waitFor(() => {
-      expect(screen.getByText("Expired keys require a new expiration duration")).toBeInTheDocument();
+      expect(screen.getByText("Expiration is required for expired keys")).toBeInTheDocument();
     });
     expect(mockRegenerateKeyCall).not.toHaveBeenCalled();
     // Form validation rejections must not surface a backend-style toast.

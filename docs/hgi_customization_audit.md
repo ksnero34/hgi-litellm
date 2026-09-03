@@ -358,3 +358,101 @@ status, action과 Presidio detection 정보를 확인할 수 있다.
 Presidio의 blocked entity 치환은 request, response, standard logging object에 유지되어 있었다. 차단 예외가
 발생하면 정상 반환 뒤 실행되는 request snapshot 동기화에 도달하지 않을 수 있으므로, persistent spend-log에
 사용되는 최상위 `proxy_server_request.body`도 예외를 올리기 전에 `<ENTITY_TYPE>`으로 직접 치환하도록 보강했다.
+
+## 14. v1.99.1 업스트림 통합
+
+`hgi-v1.99.1`은 upstream `v1.99.1`의
+`10f4033437df30b91b5dbf2b64711d0a8683fc52`를 현재 HGI HEAD
+`433229e504c359e1538fa28a098229c82ec0974b`의 두 번째 parent로 병합한다. `v1.99.1`,
+`release/v1.99.1`, `stable/1.99.x`는 같은 commit을 가리킨다. tag object가 아닌 lightweight tag이므로 tag 자체의
+GPG 서명은 검증할 수 없다. 병합은 별도 worktree에서 `--no-ff --no-commit`으로 시작했으며 rebase, squash,
+upstream commit의 묶음 cherry-pick을 사용하지 않았다.
+
+### 14.1 3-way 충돌 및 구조 이식
+
+저장소의 역사상 기본 merge-base가 실제 HGI customization 기준보다 오래되어 일반 merge는 generated output을
+포함해 690개 충돌을 보고했다. 명시된 v1.98 기준점 `d8f71d7bdbd7c9873d98293f83d64c6db72847e6`로 base를
+고정해 다시 계산한 실제 충돌은 241개다. 분류는 dashboard 197개, backend와 build/test 37개, 삭제를 유지해야
+하는 Enterprise 7개다. `_experimental/out`은 HGI 충돌판이 아니라 upstream v1.99.1 생성물과 byte-for-byte 같은
+tree를 사용했다. `enterprise/`의 modify/delete 충돌은 전부 삭제로 해결했다.
+
+Dashboard 충돌은 v1.99의 shadcn/App Router 구조, `ThemeProvider`, `AuthProvider`, React Query와 sonner toast,
+same-origin asset/API helper를 먼저 수용하고 HGI의 `I18nProvider`, 한국어/영어 resource, `AntdGlobalProvider`,
+navigation/capability 정책을 새 component에 연결하는 방식으로 해결했다. Backend는 v1.99 repository 및 transaction
+protocol, JWT claim 정규화, usage-unit 집계와 retry/requeue 구조를 수용한 뒤 HGI authorization, rotation,
+observability, audit 및 guardrail 정책을 이식했다.
+
+semantic re-audit에서 자동/clean merge만으로는 발견하기 어려운 다음 누락을 찾았다.
+
+- `proxy_cli.py`의 중복 `envvar` 인자로 인한 import-time `SyntaxError`
+- Presidio constructor/initializer/in-memory update 경로의 `fail_open` 기본값 복원
+- audit helper의 premium fallback과 key hook 세 곳의 직접 global flag 검사
+- Prisma generate 실패의 process 종료 및 migration enforcement 기본값 누락
+- managed personal-key UI의 관리자 action, rotation acknowledgement와 mutation-field 제거 누락
+- team-scoped request log에서 `team_id`와 현재 `user_id`를 함께 보내 service-key 로그를 버리는 경로
+- Guardrail Monitor 변환에서 `guardrail_event`, `guardrail_run_id`, `input_source`와 `observed` 상태 유실
+- manifest에서 spend/team-permission backend 두 경로와 team permission UI/test 세 경로 누락
+- pre-call guardrail 이후 request snapshot 갱신 순서가 뒤집혀 Presidio의 raw token map이 persistent request
+  metadata로 재주입될 수 있던 경로
+- HGI 테스트 충돌 해결 과정에서 v1.99의 guardrail usage-unit/JWT·request-type 회귀 테스트 본문이 줄어든 경로
+- dashboard 충돌 파일 일부에서 v1.98 Ant Design/notification API와 v1.99 shadcn/App Router component가
+  한 파일에 섞여 lint/type 오류를 만들던 경로
+
+### 14.2 Customization ledger
+
+| # | 기능 그룹 | 상태 | v1.99.1 처리 및 실행 경로 근거 |
+|---:|---|---|---|
+| 1 | Enterprise 배포 경계 | 그대로 보존 | `enterprise/` tree와 root optional/workspace dependency를 제거하고 OSS runtime의 조건부 import만 구분했다. |
+| 2 | unrestricted OAuth2/OIDC/SSO | upstream 구조에 맞춰 이식 | v1.99 login/JWT validation을 유지하고 entitlement와 무료 사용자 수 gate만 복원하지 않았다. |
+| 3 | SSO claim 및 managed-team 동기화 | upstream 구조에 맞춰 이식 | access/id token claim merge에서 credential을 제거한 뒤 subject alias, department team과 membership sync에 연결했다. |
+| 4 | 중앙 auth, IP/CIDR, route/team permission | upstream 구조에 맞춰 이식 | v1.99 auth helper와 실제 `user_api_key_auth` 호출 경로에 HGI allowlist/policy를 유지했다. |
+| 5 | managed personal/service key 보호 | upstream 구조에 맞춰 이식 | create/update/delete/block/list endpoint와 ownership helper에서 일반 사용자 mutation을 차단한다. |
+| 6 | 수동·자동 rotation 및 deprecated lineage | upstream 구조에 맞춰 이식 | active token/lineage transaction 뒤 cache/access-group 정리와 hook을 한 번 실행한다. |
+| 7 | OSS team admin 및 로그 범위 | upstream 구조에 맞춰 이식 | role persistence와 key-hash observability scope를 유지하고 구형 member permission 우회를 허용하지 않는다. |
+| 8 | OSS DB audit | 누락되어 복구 | config/env opt-in은 유지하되 premium fallback을 제거하고 create/update/delete hook이 공통 helper와 mandatory await를 사용한다. |
+| 9 | spend-log 목록/detail/session scope | upstream 구조에 맞춰 이식 | v1.99 raw SQL/pagination에 HGI key-hash allowlist와 team-admin 범위를 적용한다. |
+| 10 | usage/performance/TTFT 지표 | upstream 구조에 맞춰 이식 | v1.99 daily repository에 count-weighted 응답시간, TTFT와 cache token 필드를 유지한다. |
+| 11 | Presidio fail-closed 및 PII rollback | 누락되어 복구 | 모든 initializer 기본값을 fail-closed로 통일하고 blocked payload의 request/response/log snapshot redaction을 유지한다. |
+| 12 | guardrail usage/policy/deferred logging | upstream 구조에 맞춰 이식 | usage-unit aggregation과 connection-safe retry/requeue에 HGI policy attribution을 연결했다. |
+| 13 | Microsoft Purview | 그대로 보존 | OSS guardrail hook, config와 telemetry 경로를 유지했다. 실제 Graph/Purview 호출은 외부 검증 항목이다. |
+| 14 | chat/responses/streaming guardrail translation | upstream 구조에 맞춰 이식 | v1.99 Responses 타입과 source mapping에 HGI metadata/redaction을 연결했다. |
+| 15 | dashboard i18n 및 폐쇄망 | upstream 구조에 맞춰 이식 | I18n/Nuqs/provider 순서, HGI labels와 same-origin resolution을 유지하고 Google Font import를 제거했다. |
+| 16 | Admin Viewer/navigation/capabilities | upstream 구조에 맞춰 이식 | read-only parity를 유지하고 Playground 및 write/cost action을 숨긴다. |
+| 17 | key info/edit/regenerate UI | 누락되어 복구 | managed personal key는 관리자 전용 API를 사용하고 generic regenerate는 premium gate 없이 backend 계약에 연결한다. |
+| 18 | Prisma v2 migration | 누락되어 복구 | migration check는 기본 강제, 명시적 opt-out만 허용하며 baked client의 generate 실패는 log-only다. |
+| 19 | upstream runtime reliability fixes | 더 안전한 upstream 구현으로 대체 | DB spend batch transaction, common retry와 repository helper는 v1.99 구현을 사용하고 HGI 정책만 덧붙였다. |
+| 20 | manifest, lock, schema, generated output | upstream 구조에 맞춰 이식 | base SHA와 누락 ownership 경로를 고치고 공식 uv/npm/OpenAPI/Prisma 생성 명령으로 검증한다. |
+
+ledger는 총 20개이며 상태별로 그대로 보존 2개, upstream 구조에 맞춰 이식 13개, 더 안전한 upstream 구현으로
+대체 1개, 누락되어 복구 4개다. `obsolete` 또는 `검증 불가`로 코드 기능을 제거한 항목은 없다.
+
+### 14.3 생성물 및 검증 결과
+
+Python 3.13 환경에서 `uv lock`과 proxy/proxy-dev/e2e-dev group의 `uv sync --frozen`을 수행했고, Python
+package version은 1.99.1, `litellm-proxy-extras`는 0.4.89로 맞췄다. 공식 Prisma client 및 OpenAPI dashboard
+type 생성 명령을 통과했고, `_experimental/out` tree는 upstream `v1.99.1`과 동일하다. Node 24.19.0,
+npm 11.17 환경에서 lockfile-only 갱신과 `npm ci`를 수행했다. production dependency audit은 취약점 0건이며,
+개발 의존성을 포함하면 upstream graph의 high 1건이 남는다.
+
+Backend 검증은 HGI suite 23건, auth/IP/personal-service-key/key/team/request-type 1,109건,
+rotation/deprecated/audit/observability 94건(2 skipped), guardrail/Presidio/Purview/deferred/translation의
+local/mock 408건, usage/proxy-type 33건을 통과했다. 실제 Presidio analyzer/anonymizer를 호출하는 6건은
+`PRESIDIO_ANALYZER_API_BASE`와 anonymizer endpoint가 없는 로컬 환경이라 외부 통합 미검증으로 분류한다.
+compileall과 Ruff F821 검사도 통과했다.
+
+Dashboard는 전체 761개 test file의 8,882건과 Vitest typecheck를 모두 통과했다. ESLint 오류는 0건이며
+기존 budget 파일을 늘리지 않고 모든 lint budget 안에 유지했다. 외부 proxy를 실패 주소로 고정한 production
+build는 TypeScript 검사와 51개 static page 생성을 완료했다. `enkrypt_ai.avif`를 최적화하지 않고 그대로
+emit한다는 Turbopack 경고 1건만 남았으며 외부 font import는 없다. merge 인덱스에는 unmerged path와 conflict
+marker가 없고 `git diff --cached --check`도 통과했다. 최종 staged `make pre-commit`은 Python Ruff,
+strict/type-discipline, basedpyright, test-quality, E2E typecheck, dashboard Prettier/ESLint budget 및 OpenAPI
+동기화를 모두 통과했다. 테스트 개선으로 줄어든 위반 수에 맞춰 strict 12건, test-quality 29건,
+basedpyright 874건만큼 budget 상한을 낮췄으며 상한을 늘린 항목은 없다.
+
+독립 reviewer는 첫 검토에서 manifest ownership 경로 누락 17건을 blocker로 보고했다. 각 경로를 해당
+virtual-key, Presidio, dashboard i18n, usage-performance, maintenance 그룹에 등록했고, 추가로 sync checker가
+찾은 Prometheus 설정 두 경로를 observability 그룹에 포함했다. 추적 중이던 dashboard `tsconfig.tsbuildinfo`는
+빌드 산출물을 commit하지 않는 정책에 맞춰 삭제·ignore했다. sync checker는 manifest에 산출물을 넣지 않고,
+알려진 dashboard 빌드 산출물이 실제 작업 tree에 없을 때에만 삭제를 customization coverage에서 제외한다.
+`python scripts/hgi/sync_upstream.py check`는 14개 그룹이 모든 변경을 덮는다고 확인했다. reviewer 재검토의
+최종 blocking finding 수는 0건이다.

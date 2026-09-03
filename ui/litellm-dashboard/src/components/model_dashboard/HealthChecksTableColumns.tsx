@@ -7,6 +7,7 @@ import { Info, Play, RefreshCw } from "lucide-react";
 import { Team } from "@/components/key_team_helpers/key_list";
 import { createSelectionColumn, DataTableSortHeader } from "@/components/shared/DataTable";
 import { IdentityCell, StatusBadge, type StatusTone } from "@/components/shared/table_cells";
+import { i18n } from "@/i18n/i18n";
 import { cn } from "@/lib/cva.config";
 
 export interface HealthStatus {
@@ -51,20 +52,7 @@ const CHECK_IN_PROGRESS = "Check in progress...";
 const NEVER_SUCCEEDED = "Never succeeded";
 const NONE = "None";
 
-function toHealthStatusLabel(status: string, t: TFunction): string {
-  switch (status) {
-    case "healthy":
-      return t("modelManagement.healthy");
-    case "unhealthy":
-      return t("modelManagement.unhealthy");
-    case "checking":
-      return t("modelManagement.checking");
-    case "none":
-      return t("modelManagement.none");
-    default:
-      return t("modelManagement.unknown");
-  }
-}
+const isKoreanLanguage = (language: string | undefined): boolean => language?.startsWith("ko") ?? false;
 
 function toHealthTimestampLabel(value: string, t: TFunction): string {
   if (value === NEVER_CHECKED) {
@@ -82,12 +70,32 @@ function toHealthTimestampLabel(value: string, t: TFunction): string {
   return value;
 }
 
-function HealthStatusBadge({ status, t }: { status: string; t: TFunction }) {
+function toHealthStatusLabel(status: string, t: TFunction): string {
+  if (!isKoreanLanguage(i18n.resolvedLanguage)) {
+    return status === "checking" ? "checking" : status;
+  }
+
+  if (status === "healthy") {
+    return t("modelManagement.healthy");
+  }
+  if (status === "unhealthy") {
+    return t("modelManagement.unhealthy");
+  }
+  if (status === "checking") {
+    return t("modelManagement.checking");
+  }
+  if (status === "none") {
+    return t("modelManagement.none");
+  }
+  return status;
+}
+
+function HealthStatusBadge({ status, label }: { status: string; label: string }) {
   const tone = HEALTH_STATUS_TONES[status];
   if (!tone) {
-    return <StatusBadge tone="neutral" label={t("modelManagement.unknown")} />;
+    return <StatusBadge tone="neutral" label="unknown" />;
   }
-  return <StatusBadge tone={tone} label={toHealthStatusLabel(status, t)} />;
+  return <StatusBadge tone={tone} label={label} />;
 }
 
 function DotPulse({ className }: { className: string }) {
@@ -137,7 +145,7 @@ function runButtonLabel(isLoading: boolean, hasExistingStatus: boolean, t: TFunc
 
 function RunButtonIcon({ isLoading, hasExistingStatus }: { isLoading: boolean; hasExistingStatus: boolean }) {
   if (isLoading) {
-    return <DotPulse className="size-1 bg-gray-400" />;
+    return <DotPulse className="size-1 bg-border" />;
   }
   if (hasExistingStatus) {
     return <RefreshCw className="size-4" />;
@@ -169,8 +177,8 @@ function RunHealthCheckButton({
       className={cn(
         "rounded-md p-2 transition-colors",
         isLoading
-          ? "cursor-not-allowed bg-gray-100 text-gray-400"
-          : "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700",
+          ? "cursor-not-allowed bg-muted text-muted-foreground"
+          : "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 dark:hover:text-indigo-200",
       )}
     >
       <RunButtonIcon isLoading={isLoading} hasExistingStatus={hasExistingStatus} />
@@ -354,12 +362,12 @@ export const getHealthChecksTableColumns = ({
 
       return (
         <div className="flex items-center space-x-2">
-          <HealthStatusBadge status={model.health_status} t={t} />
+          <HealthStatusBadge status={model.health_status} label={toHealthStatusLabel(model.health_status, t)} />
           {hasSuccessResponse && (
             <DetailButton
               label={t("modelManagement.viewResponseDetails")}
               testId="view-health-success-btn"
-              className="text-green-600 hover:bg-green-50 hover:text-green-800"
+              className="text-success hover:bg-success/10 "
               onClick={() => onShowSuccess(displayName, successResponse)}
             />
           )}
@@ -389,14 +397,14 @@ export const getHealthChecksTableColumns = ({
 
       return (
         <div className="flex items-center space-x-2">
-          <span className="block max-w-50 truncate text-sm text-red-600" title={cleanedError}>
+          <span className="block max-w-50 truncate text-sm text-destructive" title={cleanedError}>
             {cleanedError}
           </span>
           {fullError !== cleanedError && (
             <DetailButton
               label={t("modelManagement.viewFullErrorDetails")}
               testId="view-health-error-btn"
-              className="text-red-600 hover:bg-red-50 hover:text-red-800"
+              className="text-destructive hover:bg-destructive/10 "
               onClick={() => onShowError(displayName, cleanedError, fullError)}
             />
           )}

@@ -1,4 +1,6 @@
 import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
+import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
+import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
 import { useWorker } from "@/hooks/useWorker";
 import { getProxyBaseUrl } from "@/components/networking";
 import { migratedHref } from "@/utils/migratedPages";
@@ -10,9 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import React from "react";
-import { useTranslation } from "react-i18next";
+import { BlogDropdown } from "./Navbar/BlogDropdown/BlogDropdown";
+import { DocsLink } from "./Navbar/DocsLink/DocsLink";
+import { CommunityEngagementButtons } from "./Navbar/CommunityEngagementButtons/CommunityEngagementButtons";
+import { cn } from "@/lib/cva.config";
 import { NotificationsBell } from "./Navbar/NotificationsBell/NotificationsBell";
 import UserDropdown from "./Navbar/UserDropdown/UserDropdown";
+import ThemeToggle from "./ThemeToggle/ThemeToggle";
 import ViewSwitcher from "./Navbar/ViewSwitcher";
 import WorkerDropdown from "./Navbar/WorkerDropdown/WorkerDropdown";
 
@@ -23,22 +29,26 @@ interface NavbarProps {
   onToggleSidebar?: () => void;
 }
 
+const NAV_LOGO_CLASS_NAME = "h-auto max-h-full w-auto max-w-full object-contain";
+
 const Navbar: React.FC<NavbarProps> = ({
   accessToken,
   isPublicPage = false,
   sidebarCollapsed = false,
   onToggleSidebar,
 }) => {
-  const { t } = useTranslation();
   const baseUrl = getProxyBaseUrl();
   const proxySettings = useProxySettings(accessToken);
   const { logoUrl } = useTheme();
   const { data: healthData } = useHealthReadinessDetails(accessToken);
   const version = healthData?.litellm_version;
+  const disableBouncingIcon = useDisableBouncingIcon();
+  const hideCommunityLinks = useDisableShowPrompts();
   const { isControlPlane, selectedWorker } = useWorker();
   const showWorkerSwitch = isControlPlane && selectedWorker !== null;
 
   const imageUrl = logoUrl || `${baseUrl}/get_image`;
+  const darkImageUrl = logoUrl || `${baseUrl}/get_image?theme=dark`;
 
   const handleLogout = () => {
     clearTokenCookies();
@@ -56,15 +66,15 @@ const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <nav className="sticky top-0 z-10 border-b border-gray-200 bg-white">
+    <nav className="sticky top-0 z-10 border-b border-border bg-card">
       <div className="w-full">
         <div className="flex h-14 items-center px-4">
           <div className="flex shrink-0 items-center">
             {onToggleSidebar && (
               <button
                 onClick={onToggleSidebar}
-                className="mr-2 flex h-9 w-9 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+                className="mr-2 flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               >
                 <span className="text-lg">
                   {sidebarCollapsed ? (
@@ -80,24 +90,44 @@ const Navbar: React.FC<NavbarProps> = ({
               <Link href={migratedHref("")} className="flex items-center">
                 <div className="relative">
                   <div className="flex h-10 max-w-48 items-center justify-center overflow-hidden">
+                    <img src={imageUrl} alt="LiteLLM Brand" className={cn(NAV_LOGO_CLASS_NAME, "dark:hidden")} />
                     <img
-                      src={imageUrl}
-                      alt={t("app.name")}
-                      className="h-auto max-h-full w-auto max-w-full object-contain"
+                      src={darkImageUrl}
+                      alt=""
+                      aria-hidden
+                      className={cn(NAV_LOGO_CLASS_NAME, "hidden dark:block")}
                     />
                   </div>
                 </div>
               </Link>
               {version && (
-                <Badge variant="outline" className="text-xs font-medium">
-                  v{version}
-                </Badge>
+                <div className="relative">
+                  {!disableBouncingIcon && (
+                    <span
+                      className="absolute -left-2 -top-1 animate-bounce text-lg"
+                      style={{ animationDuration: "2s" }}
+                      title="Thanks for using LiteLLM!"
+                    >
+                      🌑
+                    </span>
+                  )}
+                  <Badge variant="outline" className="relative z-10 cursor-pointer text-xs font-medium">
+                    <a
+                      href="https://docs.litellm.ai/release_notes"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0"
+                    >
+                      v{version}
+                    </a>
+                  </Badge>
+                </div>
               )}
             </div>
           </div>
 
           {!isPublicPage && (
-            <div className="ml-4 flex shrink-0 items-center border-l border-gray-200 pl-4">
+            <div className="ml-4 flex shrink-0 items-center border-l border-border pl-4">
               <ViewSwitcher />
             </div>
           )}
@@ -109,17 +139,32 @@ const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
+            <nav
+              aria-label="Product documentation"
+              className={`flex min-w-0 items-center gap-2 ${showWorkerSwitch ? "border-l border-border pl-4" : ""}`}
+            >
+              <DocsLink />
+              <BlogDropdown />
+            </nav>
+
+            {!hideCommunityLinks && (
+              <div className="flex shrink-0 items-center border-l border-border pl-4">
+                <CommunityEngagementButtons />
+              </div>
+            )}
+
             {!isPublicPage && (
-              <div className="flex shrink-0 items-center border-l border-gray-200 pl-4">
-                <div className="flex items-center gap-0.5 rounded-lg bg-gray-50 px-1 py-0 transition-colors hover:bg-gray-100">
+              <div className="flex shrink-0 items-center border-l border-border pl-4">
+                <div className="flex items-center gap-0.5 rounded-lg bg-muted px-1 py-0 transition-colors hover:bg-accent">
+                  <ThemeToggle />
+                  <span className="mx-0.5 h-6 w-px shrink-0 bg-border" aria-hidden />
                   <NotificationsBell />
-                  <span className="mx-0.5 h-6 w-px shrink-0 bg-gray-200" aria-hidden />
+                  <span className="mx-0.5 h-6 w-px shrink-0 bg-border" aria-hidden />
                   <UserDropdown onLogout={handleLogout} />
                 </div>
               </div>
             )}
           </div>
-          {/* Dark mode toggle: keep disabled until the dashboard supports dark styles end-to-end. */}
         </div>
       </div>
     </nav>

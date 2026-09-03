@@ -29,11 +29,13 @@ Output: response.output is List[GenericResponseOutputItem] where each has:
 """
 
 import copy
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Final, Literal, cast
+from collections.abc import Awaitable, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Final, Literal, Union, cast
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+from openai.types.responses.tool_param import FunctionToolParam
 from pydantic import BaseModel
+from typing_extensions import ReadOnly, TypedDict
 
 from litellm._logging import verbose_proxy_logger
 from litellm.completion_extras.litellm_responses_transformation.transformation import (
@@ -50,6 +52,7 @@ from litellm.types.llms.openai import (
     AllMessageValues,
     ChatCompletionToolCallChunk,
     ChatCompletionToolParam,
+    OpenAIMcpServerTool,
     ResponsesAPIStreamEvents,
 )
 from litellm.types.responses.main import (
@@ -61,6 +64,8 @@ from litellm.types.utils import GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
     from litellm.integrations.custom_guardrail import CustomGuardrail
+    from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
+    from litellm.proxy._types import UserAPIKeyAuth
     from litellm.responses.litellm_completion_transformation.transformation import (
         ChatCompletionSession,
     )
@@ -68,6 +73,20 @@ if TYPE_CHECKING:
     from litellm.types.utils import ResponsesAPIResponse
 
 InputTextMapping = tuple[int, Literal["content", "output", "arguments"], int | None]
+
+
+class ResponseOutputEnvelope(TypedDict, total=False):
+    """Dict form of a Responses API response, as far as guardrail write-back reads it."""
+
+    output: ReadOnly[Sequence[object]]
+    model: ReadOnly[str | None]
+
+
+class ResponsesStreamChunk(TypedDict, total=False):
+    """Responses API streaming event, as far as the accumulated-stream helpers read it."""
+
+    type: ReadOnly[str]
+    text: ReadOnly[str]
 
 
 class OpenAIResponsesHandler(BaseTranslation):
@@ -184,8 +203,8 @@ class OpenAIResponsesHandler(BaseTranslation):
         self,
         data: dict,
         guardrail_to_apply: "CustomGuardrail",
-        litellm_logging_obj: Any | None = None,
-    ) -> Any:
+        litellm_logging_obj: "LiteLLMLoggingObj | None" = None,
+    ) -> dict[str, object]:
         """
         Process input by applying guardrails to text content.
 
@@ -398,7 +417,7 @@ class OpenAIResponsesHandler(BaseTranslation):
 
     def _extract_and_transform_tools(
         self,
-        tools: list[dict[str, Any]],
+        tools: list[FunctionToolParam | OpenAIMcpServerTool],
         tools_to_check: list[ChatCompletionToolParam],
     ) -> None:
         """
@@ -415,7 +434,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             ) = LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools(tools)
             tools_to_check.extend(cast(list[ChatCompletionToolParam], transformed_tools))
 
-    def _remap_tools_to_responses_api_format(self, guardrailed_tools: list[Any]) -> list[dict[str, Any]]:
+    def _remap_tools_to_responses_api_format(self, guardrailed_tools: list[Any]) -> list[dict[str, object]]:
         """
         Remap guardrail-returned tools (Chat Completion format) back to
         Responses API request tool format.
@@ -426,9 +445,9 @@ class OpenAIResponsesHandler(BaseTranslation):
 
     def _merge_tools_after_guardrail(
         self,
-        original_tools: list[dict[str, Any]],
-        remapped: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+        original_tools: list[dict[str, object]],
+        remapped: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
         """
         Merge remapped guardrailed tools with original tools that were not sent
         to the guardrail (e.g. web_search, web_search_preview), preserving order.
@@ -437,7 +456,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         """
         if not original_tools:
             return remapped
-        result: Final[list[dict[str, Any]]] = []
+        result: Final[list[dict[str, object]]] = []
         j = 0
         for tool in original_tools:
             if isinstance(tool, dict) and tool.get("type") in (
@@ -456,8 +475,8 @@ class OpenAIResponsesHandler(BaseTranslation):
     def _apply_guardrailed_tools_to_data(
         self,
         data: dict,
-        original_tools: list[dict[str, Any]],
-        guardrailed_tools: list[Any] | None,
+        original_tools: list[dict[str, object]],
+        guardrailed_tools: list[ChatCompletionToolParam] | None,
     ) -> None:
         """Remap guardrailed tools to Responses API format and merge with original, then set data['tools']."""
         if guardrailed_tools is not None:
@@ -466,7 +485,7 @@ class OpenAIResponsesHandler(BaseTranslation):
 
     def _extract_input_text_and_images(
         self,
-        message: Any,  # Can be Dict[str, Any] or ResponseInputParam
+        message: Any,
         msg_idx: int,
         texts_to_check: list[str],
         images_to_check: list[str],
@@ -568,12 +587,12 @@ class OpenAIResponsesHandler(BaseTranslation):
 
     async def process_output_response(
         self,
-        response: "ResponsesAPIResponse",
+        response: Union["ResponsesAPIResponse", ResponseOutputEnvelope],
         guardrail_to_apply: "CustomGuardrail",
-        litellm_logging_obj: Any | None = None,
-        user_api_key_dict: Any | None = None,
+        litellm_logging_obj: "LiteLLMLoggingObj | None" = None,
+        user_api_key_dict: "UserAPIKeyAuth | None" = None,
         request_data: dict | None = None,
-    ) -> Any:
+    ) -> Union["ResponsesAPIResponse", ResponseOutputEnvelope]:
         """
         Process output response by applying guardrails to text content and tool calls.
 
@@ -601,6 +620,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         # Track (output_item_index, content_index) for each text
 
         # Handle both dict and Pydantic object responses
+        response_output: Sequence[object]
         if isinstance(response, dict):
             response_output = response.get("output", [])
         elif hasattr(response, "output"):
@@ -656,7 +676,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             if tool_calls_to_check:
                 inputs["tool_calls"] = tool_calls_to_check
             # Include model information from the response if available
-            response_model = None
+            response_model: str | None = None
             if isinstance(response, dict):
                 response_model = response.get("model")
             elif hasattr(response, "model"):
@@ -688,8 +708,8 @@ class OpenAIResponsesHandler(BaseTranslation):
         self,
         responses_so_far: list[Any],
         guardrail_to_apply: "CustomGuardrail",
-        litellm_logging_obj: Any | None = None,
-        user_api_key_dict: Any | None = None,
+        litellm_logging_obj: "LiteLLMLoggingObj | None" = None,
+        user_api_key_dict: "UserAPIKeyAuth | None" = None,
         request_data: dict | None = None,
     ) -> list[Any]:
         """
@@ -718,10 +738,10 @@ class OpenAIResponsesHandler(BaseTranslation):
         # final chunk; iterate output items, apply guardrail, write back.     #
         # ------------------------------------------------------------------ #
         if final_chunk.get("type") == "response.completed":
-            response_obj: Final = final_chunk.get("response") or {}
+            response_obj: Final[ResponseOutputEnvelope] = final_chunk.get("response") or {}
             if not hasattr(response_obj, "get"):
                 return responses_so_far
-            outputs: Final[list[Any]] = response_obj.get("output") or []
+            outputs: Final[Sequence[object]] = response_obj.get("output") or []
 
             texts_to_check: Final[list[str]] = []
             tool_calls_to_check: Final[list[ChatCompletionToolCallChunk]] = []
@@ -816,7 +836,7 @@ class OpenAIResponsesHandler(BaseTranslation):
             )
         return responses_so_far
 
-    def _check_streaming_has_ended(self, responses_so_far: list[Any]) -> bool:
+    def _check_streaming_has_ended(self, responses_so_far: Sequence[ResponsesStreamChunk]) -> bool:
         """
         Check if the streaming has ended.
         """
@@ -829,7 +849,7 @@ class OpenAIResponsesHandler(BaseTranslation):
         }
         return responses_so_far[-1].get("type") in terminal_types
 
-    def get_streaming_string_so_far(self, responses_so_far: list[Any]) -> str:
+    def get_streaming_string_so_far(self, responses_so_far: Sequence[ResponsesStreamChunk]) -> str:
         """
         Get the string so far from the responses so far.
         """
@@ -871,7 +891,7 @@ class OpenAIResponsesHandler(BaseTranslation):
 
     def _extract_output_text_and_images(
         self,
-        output_item: Any,
+        output_item: object,
         output_idx: int,
         texts_to_check: list[str],
         images_to_check: list[str],

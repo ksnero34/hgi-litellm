@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Copy, Info } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -25,7 +24,6 @@ export function GuardrailTestPanel({
   errors,
   onClose,
 }: GuardrailTestPanelProps) {
-  const { t } = useTranslation();
   const [inputText, setInputText] = useState("");
   const [metadataText, setMetadataText] = useState("");
   const [metadataError, setMetadataError] = useState<string | null>(null);
@@ -47,14 +45,14 @@ export function GuardrailTestPanel({
 
   const handleSubmit = () => {
     if (!inputText.trim()) {
-      NotificationsManager.fromBackend(t("safety.test.enterText"));
+      toast.fromError("Please enter text to test");
       return;
     }
 
     const { metadata, error } = parseMetadata(metadataText);
     if (error) {
       setMetadataError(error);
-      NotificationsManager.fromBackend(`Metadata: ${error}`);
+      toast.fromError(`Metadata: ${error}`);
       return;
     }
     setMetadataError(null);
@@ -100,9 +98,9 @@ export function GuardrailTestPanel({
   const handleCopyInput = async () => {
     const success = await copyToClipboard(inputText);
     if (success) {
-      NotificationsManager.success(t("safety.test.inputCopied"));
+      toast.success("Input copied to clipboard");
     } else {
-      NotificationsManager.fromBackend(t("safety.test.copyInputFailed"));
+      toast.fromError("Failed to copy input");
     }
   };
 
@@ -113,22 +111,20 @@ export function GuardrailTestPanel({
         <div className="flex items-center space-x-3">
           <div className="flex-1 min-w-0">
             <div className="mb-1 flex items-center space-x-2">
-              <h2 className="text-lg font-semibold">{t("safety.test.title")}</h2>
+              <h2 className="text-lg font-semibold">Test Guardrails:</h2>
               <div className="flex flex-wrap gap-2">
                 {guardrailNames.map((name) => (
                   <div
                     key={name}
-                    className="inline-flex items-center space-x-1 rounded-md border border-blue-200 bg-blue-50 px-3 py-1"
+                    className="inline-flex items-center space-x-1 rounded-md border border-info/20 bg-info/10 px-3 py-1"
                   >
-                    <span className="font-mono text-sm font-medium text-blue-700">{name}</span>
+                    <span className="font-mono text-sm font-medium text-info">{name}</span>
                   </div>
                 ))}
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              {t("safety.test.compare", {
-                count: guardrailNames.length > 1 ? "guardrails" : "guardrail",
-              })}
+              Test {guardrailNames.length > 1 ? "guardrails" : "guardrail"} and compare results
             </p>
           </div>
         </div>
@@ -140,7 +136,7 @@ export function GuardrailTestPanel({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">{t("safety.test.input")}</label>
+                <label className="text-sm font-medium">Input Text</label>
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -149,13 +145,13 @@ export function GuardrailTestPanel({
                       </span>
                     }
                   />
-                  <TooltipContent>{t("safety.test.inputHelp")}</TooltipContent>
+                  <TooltipContent>Press Enter to submit. Use Shift+Enter for new line.</TooltipContent>
                 </Tooltip>
               </div>
               {inputText && (
                 <Button size="sm" variant="secondary" onClick={handleCopyInput}>
                   <Copy />
-                  {t("safety.test.copyInput")}
+                  Copy Input
                 </Button>
               )}
             </div>
@@ -163,15 +159,17 @@ export function GuardrailTestPanel({
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={t("safety.test.inputPlaceholder")}
+              placeholder="Enter text to test with guardrails..."
               rows={8}
               className="font-mono text-sm field-sizing-fixed"
             />
             <div className="mt-1 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{t("safety.test.submitHelp")}</span>
               <span className="text-xs text-muted-foreground">
-                {t("safety.test.characters", { count: inputText.length })}
+                Press <kbd className="rounded-sm border border-border bg-muted px-1 py-0.5 text-xs">Enter</kbd> to
+                submit • <kbd className="rounded-sm border border-border bg-muted px-1 py-0.5 text-xs">Shift+Enter</kbd>{" "}
+                for new line
               </span>
+              <span className="text-xs text-muted-foreground">Characters: {inputText.length}</span>
             </div>
           </div>
 
@@ -217,8 +215,8 @@ export function GuardrailTestPanel({
             >
               {isLoading && <UiLoadingSpinner className="size-4" />}
               {isLoading
-                ? t("safety.test.testing", { count: guardrailNames.length })
-                : t("safety.test.run", { count: guardrailNames.length })}
+                ? `Testing ${guardrailNames.length} guardrail${guardrailNames.length > 1 ? "s" : ""}...`
+                : `Test ${guardrailNames.length} guardrail${guardrailNames.length > 1 ? "s" : ""}`}
             </Button>
           </div>
         </div>

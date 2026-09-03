@@ -36,10 +36,10 @@ const LatencyBasedConfiguration: React.FC<LatencyBasedConfigurationProps> = ({ r
           {Object.entries(routingStrategyArgs || defaultLowestLatencyArgs).map(([param, value]) => (
             <div key={param} className="space-y-2">
               <label className="block">
-                <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">
+                <span className="text-xs font-medium text-foreground uppercase tracking-wide">
                   {param.replace(/_/g, " ")}
                 </span>
-                <p className="text-xs text-gray-500 mt-0.5 mb-2">{paramExplanation[param] || ""}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-2">{paramExplanation[param] || ""}</p>
                 <Input
                   name={param}
                   defaultValue={typeof value === "object" ? JSON.stringify(value, null, 2) : value?.toString()}
@@ -51,7 +51,7 @@ const LatencyBasedConfiguration: React.FC<LatencyBasedConfigurationProps> = ({ r
         </div>
       </div>
 
-      <div className="border-t border-gray-200" />
+      <div className="border-t border-border" />
     </>
   );
 };

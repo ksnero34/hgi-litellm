@@ -1,7 +1,6 @@
 import React from "react";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/../tests/test-utils";
-import { languageStorageKey } from "@/i18n/resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AddGuardrailForm from "./add_guardrail_form";
 
@@ -21,18 +20,17 @@ const renderForm = () => {
 describe("AddGuardrailForm close behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.setItem(languageStorageKey, "en");
   });
 
   it("does not close when the user clicks outside the modal on the mask", () => {
     const { onClose } = renderForm();
     expect(screen.getByText("Create guardrail")).toBeInTheDocument();
 
-    const wrap = document.querySelector(".ant-modal-wrap") as HTMLElement;
-    expect(wrap).toBeTruthy();
-    fireEvent.mouseDown(wrap);
-    fireEvent.mouseUp(wrap);
-    fireEvent.click(wrap);
+    const backdrop = document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement;
+    expect(backdrop).toBeTruthy();
+    fireEvent.mouseDown(backdrop);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
 
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -54,6 +52,6 @@ describe("AddGuardrailForm provider options", () => {
     fireEvent.mouseDown(screen.getByLabelText("Guardrail Provider"));
 
     const logo = await screen.findByAltText("Presidio PII logo");
-    expect(logo.getAttribute("src")).toContain("microsoft_azure.svg");
+    expect(logo).toHaveAttribute("src", expect.stringContaining("microsoft_azure.svg"));
   });
 });

@@ -4,10 +4,9 @@ import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import type { ColumnFiltersState, OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
 import moment from "moment";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import { AutoRouterModelGroupsProvider } from "@/components/shared/table_cells";
-import { internalUserRoles } from "../../utils/roles";
+import { spendScopeUserId } from "@/utils/roles";
 import type { KeyResponse } from "../key_team_helpers/key_list";
 import { keyInfoV1Call, uiSpendLogsCall } from "../networking";
 import KeyInfoView from "../templates/key_info_view";
@@ -54,7 +53,6 @@ export default function RequestLogsPanel({
   selectedTeamId = null,
   scopeReady = true,
 }: RequestLogsPanelProps) {
-  const { t } = useTranslation();
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
   const [sorting, setSorting] = useState<SortingState>(DEFAULT_LOGS_SORTING);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -85,17 +83,17 @@ export default function RequestLogsPanel({
     sessionStorage.setItem("isLiveTail", JSON.stringify(isLiveTail));
   }, [isLiveTail]);
 
-  const filterByCurrentUser = internalUserRoles.includes(userRole);
+  const filterByCurrentUser = spendScopeUserId(userRole, userID) === userID && userID !== null;
 
   const { logsQuery, filteredLogs, allTeams } = useLogFilterLogic({
     accessToken,
     token,
     userRole,
     userID,
-    columnFilters,
     filterByCurrentUser,
     selectedTeamId,
     scopeReady,
+    columnFilters,
     activeTab: isActive ? "request logs" : "inactive",
     isLiveTail,
     startTime,
@@ -114,7 +112,7 @@ export default function RequestLogsPanel({
   );
 
   const keyInfoQueryOptions: UseQueryOptions<KeyResponse | null> = {
-    queryKey: ["requestLogsKeyInfo", selectedKeyIdInfoView],
+    queryKey: ["requestLogsKeyInfo", selectedKeyIdInfoView, accessToken],
     queryFn: async () => {
       if (selectedKeyIdInfoView === null) return null;
       const keyData = await keyInfoV1Call(accessToken, selectedKeyIdInfoView);
@@ -130,7 +128,7 @@ export default function RequestLogsPanel({
   const { data: selectedKeyInfo } = useQuery(keyInfoQueryOptions);
 
   const urlLogQueryOptions: UseQueryOptions<LogEntry | null> = {
-    queryKey: ["logs", "byId", urlLogId],
+    queryKey: ["logs", "byId", urlLogId, accessToken],
     queryFn: async () => {
       if (urlLogId === null) return null;
       const window = formatLogsWindow(startTime, endTime, isCustomDate);
@@ -287,7 +285,7 @@ export default function RequestLogsPanel({
         keyData={selectedKeyInfo}
         teams={allTeams ?? []}
         onClose={() => setSelectedKeyIdInfoView(null)}
-        backButtonText={t("observabilityExtra.requestLogs.backToLogs")}
+        backButtonText="Back to Logs"
       />
     );
   }
@@ -295,7 +293,7 @@ export default function RequestLogsPanel({
   return (
     <AutoRouterModelGroupsProvider>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">{t("observabilityExtra.requestLogs.title")}</h1>
+        <h1 className="text-xl font-semibold">Request Logs</h1>
       </div>
 
       {isLiveTail && pagination.pageIndex === 0 && <LiveTailBanner onStop={() => setIsLiveTail(false)} />}

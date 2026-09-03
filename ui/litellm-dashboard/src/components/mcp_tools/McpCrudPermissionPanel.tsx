@@ -38,27 +38,114 @@ interface McpCrudPermissionPanelProps {
 const CRUD_ORDER: CrudOp[] = ["read", "create", "update", "delete", "unknown"];
 
 const RISK_BADGE: Record<string, string> = {
-  low: "bg-green-100 text-green-800",
-  medium: "bg-yellow-100 text-yellow-800",
-  high: "bg-red-100 text-red-800 font-semibold",
-  unknown: "bg-gray-100 text-gray-700",
+  low: "bg-success/15 text-success",
+  medium: "bg-warning/15 text-warning",
+  high: "bg-destructive/15 text-destructive font-semibold",
+  unknown: "bg-muted text-foreground",
 };
 
 const GROUP_BORDER: Record<CrudOp, string> = {
-  read: "border-green-200",
-  create: "border-blue-200",
-  update: "border-yellow-200",
-  delete: "border-red-300",
-  unknown: "border-gray-200",
+  read: "border-success/20",
+  create: "border-info/20",
+  update: "border-warning/20",
+  delete: "border-destructive/30",
+  unknown: "border-border",
 };
 
 const GROUP_HEADER_BG: Record<CrudOp, string> = {
-  read: "bg-green-50",
-  create: "bg-blue-50",
-  update: "bg-yellow-50",
-  delete: "bg-red-50",
-  unknown: "bg-gray-50",
+  read: "bg-success/10",
+  create: "bg-info/10",
+  update: "bg-warning/10",
+  delete: "bg-destructive/10",
+  unknown: "bg-muted",
 };
+
+const CRUD_GROUP_LABELS_KO: Record<CrudOp, string> = {
+  read: "읽기",
+  create: "생성",
+  update: "수정",
+  delete: "삭제",
+  unknown: "기타",
+};
+
+const CRUD_GROUP_DESCRIPTIONS_KO: Record<CrudOp, string> = {
+  read: "안전한 작업 — 조회, 목록, 검색. 부작용이 없습니다.",
+  create: "새 리소스 추가 — 삽입, 업로드, 등록.",
+  update: "기존 리소스 수정 — 편집, 패치, 이름 변경.",
+  delete: "파괴적 작업 — 제거, 정리, 삭제.",
+  unknown: "자동 분류할 수 없는 작업입니다.",
+};
+
+const RISK_LABELS_KO: Record<"low" | "medium" | "high" | "unknown", string> = {
+  low: "안전",
+  medium: "중간 위험",
+  high: "높은 위험",
+  unknown: "분류되지 않음",
+};
+
+const GROUP_TOGGLE_STATE_KO = {
+  allOn: "모두 허용",
+  partial: "일부 허용",
+  allOff: "모두 차단",
+} as const;
+
+const isKoreanLanguage = (language: string | undefined): boolean => language?.startsWith("ko") ?? false;
+
+function getRiskLabel(risk: "low" | "medium" | "high" | "unknown", isKorean: boolean): string {
+  if (isKorean) {
+    return RISK_LABELS_KO[risk];
+  }
+  if (risk === "high") {
+    return "High Risk";
+  }
+  if (risk === "medium") {
+    return "Medium Risk";
+  }
+  if (risk === "low") {
+    return "Safe";
+  }
+  return "Unclassified";
+}
+
+function getGroupStateLabel(isKorean: boolean, fullyAllowed: boolean, partial: boolean): string {
+  if (isKorean) {
+    if (fullyAllowed) {
+      return GROUP_TOGGLE_STATE_KO.allOn;
+    }
+    if (partial) {
+      return GROUP_TOGGLE_STATE_KO.partial;
+    }
+    return GROUP_TOGGLE_STATE_KO.allOff;
+  }
+  if (fullyAllowed) {
+    return "All on";
+  }
+  if (partial) {
+    return "Partial";
+  }
+  return "All off";
+}
+
+function getAllowedSummary(allowedCount: number, totalCount: number, isKorean: boolean): string {
+  if (isKorean) {
+    return `${allowedCount}/${totalCount} 허용됨`;
+  }
+  return `${allowedCount}/${totalCount} allowed`;
+}
+
+function getToggleAriaLabel(groupLabel: string, fallbackLabel: string, isKorean: boolean): string {
+  if (isKorean) {
+    return `${groupLabel} 도구 모두 허용`;
+  }
+  return `Allow all ${fallbackLabel} tools`;
+}
+
+function getToolStateLabel(allowed: boolean, isKorean: boolean): string {
+  if (isKorean) {
+    return allowed ? "허용" : "차단";
+  }
+  return allowed ? "on" : "off";
+}
 
 // ---------------------------------------------------------------------------
 
@@ -69,7 +156,7 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
   readOnly = false,
   searchFilter = "",
 }) => {
-  const { t } = useTranslation();
+  const { i18n } = useTranslation();
   const [collapsed, setCollapsed] = useState<Record<CrudOp, boolean>>({
     read: false,
     create: false,
@@ -136,6 +223,8 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
 
   if (tools.length === 0) return null;
 
+  const isKorean = isKoreanLanguage(i18n.resolvedLanguage);
+
   return (
     <div className="space-y-3">
       {CRUD_ORDER.map((op) => {
@@ -153,10 +242,15 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
         }
 
         const meta = CRUD_GROUP_META[op];
-        const groupLabel = t(`toolsModels.mcp.crud.groups.${op}.label`);
         const fullyAllowed = isGroupFullyAllowed(op);
         const partial = isGroupPartiallyAllowed(op);
         const isCollapsed = collapsed[op];
+        const groupLabel = isKorean ? CRUD_GROUP_LABELS_KO[op] : meta.label;
+        const groupDescription = isKorean ? CRUD_GROUP_DESCRIPTIONS_KO[op] : meta.description;
+        const riskLabel = getRiskLabel(meta.risk, isKorean);
+        const groupStateLabel = getGroupStateLabel(isKorean, fullyAllowed, partial);
+        const allowedCount = group.filter((tool) => effectiveAllowed.has(tool.name)).length;
+        const allowedSummary = getAllowedSummary(allowedCount, group.length, isKorean);
 
         return (
           <div key={op} className={`rounded-lg border ${GROUP_BORDER[op]} overflow-hidden`}>
@@ -168,42 +262,21 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
                 onClick={() => toggleCollapse(op)}
               >
                 {isCollapsed ? (
-                  <ChevronRightIcon className="w-4 h-4 text-gray-500 shrink-0" />
+                  <ChevronRightIcon className="w-4 h-4 text-muted-foreground shrink-0" />
                 ) : (
-                  <ChevronDownIcon className="w-4 h-4 text-gray-500 shrink-0" />
+                  <ChevronDownIcon className="w-4 h-4 text-muted-foreground shrink-0" />
                 )}
-                <span className="font-semibold text-gray-900 text-sm">{groupLabel}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${RISK_BADGE[meta.risk]}`}>
-                  {meta.risk === "high"
-                    ? t("toolsModels.mcp.crud.risk.high")
-                    : meta.risk === "medium"
-                      ? t("toolsModels.mcp.crud.risk.medium")
-                      : meta.risk === "low"
-                        ? t("toolsModels.mcp.crud.risk.safe")
-                        : t("toolsModels.mcp.crud.risk.unclassified")}
-                </span>
-                <span className="text-xs text-gray-500 ml-1">
-                  {t("toolsModels.mcp.crud.allowedCount", {
-                    allowed: group.filter((tool) => effectiveAllowed.has(tool.name)).length,
-                    total: group.length,
-                  })}
-                </span>
+                <span className="font-semibold text-foreground text-sm">{groupLabel}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${RISK_BADGE[meta.risk]}`}>{riskLabel}</span>
+                <span className="text-xs text-muted-foreground ml-1">{allowedSummary}</span>
               </button>
 
               {!readOnly && (
                 <div className="flex items-center gap-2 ml-4">
-                  <p className="text-xs text-gray-500">
-                    {t(
-                      fullyAllowed
-                        ? "toolsModels.mcp.crud.allOn"
-                        : partial
-                          ? "toolsModels.mcp.crud.partial"
-                          : "toolsModels.mcp.crud.allOff",
-                    )}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{groupStateLabel}</p>
                   {/* Checkbox supports `indeterminate`; Switch does not. */}
                   <Checkbox
-                    aria-label={`${groupLabel}: ${t("toolsModels.mcp.crud.allOn")}`}
+                    aria-label={getToggleAriaLabel(groupLabel, meta.label, isKorean)}
                     checked={fullyAllowed}
                     indeterminate={partial}
                     onCheckedChange={(checked) => toggleGroup(op, checked)}
@@ -215,14 +288,14 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
 
             {/* Description row */}
             {!isCollapsed && (
-              <div className="px-4 pt-2 pb-1 text-xs text-gray-500 bg-white border-b border-gray-100">
-                {t(`toolsModels.mcp.crud.groups.${op}.description`)}
+              <div className="px-4 pt-2 pb-1 text-xs text-muted-foreground bg-card border-b border-border">
+                {groupDescription}
               </div>
             )}
 
             {/* Tool list — searchFilter narrows display only; group toggles still cover all tools */}
             {!isCollapsed && (
-              <div className="bg-white divide-y divide-gray-50">
+              <div className="bg-card divide-y divide-gray-50">
                 {group
                   .filter(
                     (t) =>
@@ -235,7 +308,7 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
                     return (
                       <div
                         key={tool.name}
-                        className={`flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-gray-50 ${
+                        className={`flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-accent ${
                           !readOnly ? "cursor-pointer" : ""
                         } ${allowed ? "" : "opacity-60"}`}
                         onClick={() => toggleTool(tool.name)}
@@ -247,17 +320,17 @@ const McpCrudPermissionPanel: React.FC<McpCrudPermissionPanelProps> = ({
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 text-sm">{tool.name}</p>
+                          <p className="font-medium text-foreground text-sm">{tool.name}</p>
                           {tool.description && (
-                            <p className="text-xs text-gray-500 mt-0.5 leading-snug">{tool.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{tool.description}</p>
                           )}
                         </div>
                         <span
                           className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
-                            allowed ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                            allowed ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
                           }`}
                         >
-                          {t(allowed ? "toolsModels.mcp.crud.on" : "toolsModels.mcp.crud.off")}
+                          {getToolStateLabel(allowed, isKorean)}
                         </span>
                       </div>
                     );

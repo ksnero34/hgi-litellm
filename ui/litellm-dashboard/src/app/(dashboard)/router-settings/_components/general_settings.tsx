@@ -197,7 +197,7 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
       return;
     }
     getGeneralSettingsCall(accessToken).then((data) => {
-      let general_settings = data;
+      const general_settings = data;
       setGeneralSettings(general_settings);
     });
   }, [accessToken]);
@@ -215,7 +215,7 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
       return;
     }
 
-    let fieldValue = generalSettings.find((setting) => setting.field_name === fieldName)?.field_value;
+    const fieldValue = generalSettings.find((setting) => setting.field_name === fieldName)?.field_value;
 
     if (fieldValue == null || fieldValue == undefined) {
       return;
@@ -267,19 +267,19 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
           <TabsTrigger value="prompt-caching">{t("settings.router.tabs.promptCaching")}</TabsTrigger>
           <TabsTrigger value="general">{t("settings.router.tabs.general")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="loadbalancing" className="px-8 py-6">
+        <TabsContent value="loadbalancing" className="px-8 py-6" keepMounted>
           <RouterSettings accessToken={accessToken} userRole={userRole} userID={userID} />
         </TabsContent>
-        <TabsContent value="routing-groups" className="px-8 py-6">
+        <TabsContent value="routing-groups" className="px-8 py-6" keepMounted>
           <RoutingGroups />
         </TabsContent>
-        <TabsContent value="fallbacks" className="px-8 py-6">
+        <TabsContent value="fallbacks" className="px-8 py-6" keepMounted>
           <Fallbacks accessToken={accessToken} userRole={userRole} userID={userID} />
         </TabsContent>
-        <TabsContent value="prompt-caching" className="px-8 py-6">
+        <TabsContent value="prompt-caching" className="px-8 py-6" keepMounted>
           <PromptCachingPanel accessToken={accessToken} settings={generalSettings} onChange={handleInputChange} />
         </TabsContent>
-        <TabsContent value="general" className="px-8 py-6">
+        <TabsContent value="general" className="px-8 py-6" keepMounted>
           <Card>
             <CardContent>
               <Table>
@@ -327,7 +327,7 @@ const GeneralSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, user
                           </Button>
                           <span
                             onClick={() => handleResetField(value.field_name)}
-                            className="inline-flex shrink-0 cursor-pointer items-center justify-center px-1.5 py-1.5 text-red-500"
+                            className="inline-flex shrink-0 cursor-pointer items-center justify-center px-1.5 py-1.5 text-destructive"
                           >
                             <Trash2 className="h-5 w-5 shrink-0" />
                           </span>

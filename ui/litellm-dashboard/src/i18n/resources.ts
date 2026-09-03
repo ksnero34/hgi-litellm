@@ -6,7 +6,7 @@ export { type MessageCatalog } from "./messages/types";
 
 export const supportedLanguages = ["ko", "en"] as const;
 export type SupportedLanguage = (typeof supportedLanguages)[number];
-export const defaultLanguage: SupportedLanguage = "ko";
+export const defaultLanguage: SupportedLanguage = "en";
 export const languageStorageKey = "litellm-ui-language";
 
 const toTranslationResource = (catalog: MessageCatalog) => ({

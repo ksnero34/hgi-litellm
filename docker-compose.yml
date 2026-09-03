@@ -6,7 +6,7 @@ services:
       target: runtime
       args:
         PROXY_EXTRAS_SOURCE: "local"
-    image: docker.litellm.ai/berriai/litellm:hgi-v1.98.0.2
+    image: docker.litellm.ai/berriai/litellm:hgi-v1.99.1
     platform: linux/amd64
     #########################################
     ## Uncomment these lines to start proxy with a config.yaml file ##

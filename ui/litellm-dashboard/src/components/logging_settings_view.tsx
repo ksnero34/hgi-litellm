@@ -75,7 +75,7 @@ export function LoggingSettingsView({
               return (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 rounded-lg bg-blue-50 border border-blue-200"
+                  className="flex items-center justify-between p-3 rounded-lg bg-info/10 border border-info/20"
                 >
                   <div className="flex items-center gap-3">
                     <Logo
@@ -124,7 +124,7 @@ export function LoggingSettingsView({
               return (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-200"
+                  className="flex items-center justify-between p-3 rounded-lg bg-destructive/10 border border-destructive/20"
                 >
                   <div className="flex items-center gap-3">
                     <Logo
@@ -154,7 +154,7 @@ export function LoggingSettingsView({
 
   if (variant === "card") {
     return (
-      <div className={`bg-white border border-gray-200 rounded-lg p-6 ${className}`}>
+      <div className={`bg-card border border-border rounded-lg p-6 ${className}`}>
         <div className="flex items-center gap-2 mb-6">
           <div>
             <span className="block font-semibold text-gray-900">{t("settingsExtra.logging.title")}</span>

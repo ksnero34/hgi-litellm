@@ -78,7 +78,11 @@ function OrganizationRowActions({ organization, onEditClick, onDeleteClick }: Or
 
 function MembersCell({ count }: { count: number }) {
   const { t } = useTranslation();
-  return <span className="text-sm">{t("identityAdmin.organization.memberCount", { count })}</span>;
+  if (i18n.resolvedLanguage?.startsWith("ko")) {
+    return <span className="text-sm">{t("identityAdmin.organization.memberCount", { count })}</span>;
+  }
+
+  return <span className="text-sm">{`${count} Member${count === 1 ? "" : "s"}`}</span>;
 }
 
 function ActionsHeader() {

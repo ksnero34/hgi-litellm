@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -15,7 +14,7 @@ import AddPluginForm from "./add_plugin_form";
 import PluginTable from "./PluginTable";
 import SkillDetail from "@/components/claude_code_plugins/skill_detail";
 import { isAdminRole } from "@/utils/roles";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { Plugin, ListPluginsResponse } from "@/components/claude_code_plugins/types";
 
 interface ClaudeCodePluginsPanelProps {
@@ -24,7 +23,6 @@ interface ClaudeCodePluginsPanelProps {
 }
 
 const ClaudeCodePluginsPanel: React.FC<ClaudeCodePluginsPanelProps> = ({ accessToken, userRole }) => {
-  const { t } = useTranslation();
   const [pluginsList, setPluginsList] = useState<Plugin[]>([]);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,11 +66,11 @@ const ClaudeCodePluginsPanel: React.FC<ClaudeCodePluginsPanelProps> = ({ accessT
     setIsDeleting(true);
     try {
       await deleteClaudeCodePlugin(accessToken, pluginToDelete.name);
-      NotificationsManager.success(t("hubSkills.skills.deleteSuccess", { name: pluginToDelete.displayName }));
+      toast.success(`Skill "${pluginToDelete.displayName}" deleted successfully`);
       fetchPlugins();
     } catch (error) {
       console.error("Error deleting skill:", error);
-      NotificationsManager.error(t("hubSkills.skills.deleteError"));
+      toast.error("Failed to delete skill");
     } finally {
       setIsDeleting(false);
       setPluginToDelete(null);
@@ -92,14 +90,14 @@ const ClaudeCodePluginsPanel: React.FC<ClaudeCodePluginsPanelProps> = ({ accessT
       ) : (
         <>
           <div className="flex flex-col gap-2 mb-4">
-            <h1 className="text-2xl font-bold">{t("hubSkills.skills.title")}</h1>
-            <p className="text-sm text-gray-600">
-              {t("hubSkills.skills.subtitle")}{" "}
-              <code className="bg-gray-100 px-1 rounded-sm">/claude-code/marketplace.json</code>.
+            <h1 className="text-2xl font-bold">Skills</h1>
+            <p className="text-sm text-muted-foreground">
+              Register Claude Code skills. Published skills appear in the Skill Hub for all users and are served via{" "}
+              <code className="bg-muted px-1 rounded-sm">/claude-code/marketplace.json</code>.
             </p>
             <div className="mt-2 flex gap-2">
               <Button onClick={() => setIsAddModalVisible(true)} disabled={!accessToken || !isAdmin}>
-                + {t("hubSkills.skills.add")}
+                + Add Skill
               </Button>
             </div>
           </div>
@@ -133,16 +131,16 @@ const ClaudeCodePluginsPanel: React.FC<ClaudeCodePluginsPanelProps> = ({ accessT
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t("hubSkills.skills.deleteTitle")}</AlertDialogTitle>
+              <AlertDialogTitle>Delete Skill</AlertDialogTitle>
               <AlertDialogDescription>
-                <p>{t("hubSkills.skills.deleteConfirm", { name: pluginToDelete.displayName })}</p>
-                <p>{t("hubSkills.skills.deleteWarning")}</p>
+                Are you sure you want to delete skill: <strong>{pluginToDelete.displayName}</strong>?
               </AlertDialogDescription>
+              <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>{t("hubSkills.common.delete").replace("Delete", "Cancel")}</AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
               <Button variant="destructive" onClick={handleDeleteConfirm} disabled={isDeleting}>
-                {t("hubSkills.common.delete")}
+                Delete
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

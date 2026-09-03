@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useTranslation } from "react-i18next";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -17,16 +17,16 @@ describe("I18nProvider", () => {
     await i18n.changeLanguage("ko");
   });
 
-  it("uses Korean by default and persists language changes", async () => {
+  it("uses English by default and persists language changes", async () => {
     const user = userEvent.setup();
     render(
       <I18nProvider>
         <Probe />
       </I18nProvider>,
     );
-    const button = await screen.findByRole("button", { name: "로그아웃" });
+    const button = await screen.findByRole("button", { name: "Log out" });
     await user.click(button);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument());
+    expect(await screen.findByRole("button", { name: "Log out" })).toBeInTheDocument();
     expect(localStorage.getItem(languageStorageKey)).toBe("en");
     expect(document.documentElement.lang).toBe("en");
   });

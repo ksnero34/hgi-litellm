@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import { useInfiniteSpendLogEndUsers } from "@/app/(dashboard)/hooks/spendLogs/useSpendLogEndUsers";
+import { useInfiniteSpendLogUsers } from "@/app/(dashboard)/hooks/spendLogs/useSpendLogUsers";
 import { useInfiniteKeyAliases } from "@/app/(dashboard)/hooks/keys/useKeyAliases";
 import { useInfiniteModelInfo } from "@/app/(dashboard)/hooks/models/useModels";
 import { DataTableFilterField } from "@/components/shared/DataTable";
@@ -25,7 +25,15 @@ import { ERROR_CODE_OPTIONS } from "./constants";
 import { LOG_FILTER_IDS, type LogsWindow } from "./log_filter_logic";
 
 const ALL_VALUE = "all";
+
+const STATUS_FILTER_ITEMS = [
+  { value: ALL_VALUE, label: "All Statuses" },
+  { value: "success", label: "Success" },
+  { value: "failure", label: "Failure" },
+] as const;
 const PAGE_SIZE = 50;
+
+const SEARCH_INPUT_REASONS: ReadonlySet<string> = new Set(["input-change", "input-clear", "clear-press"]);
 
 const asString = (value: unknown): string => (typeof value === "string" ? value : "");
 const emptyToUndefined = (value: string): string | undefined => (value === "" ? undefined : value);
@@ -39,7 +47,6 @@ function TeamFilterField({
   onChange: (value: string | undefined) => void;
   teams: Team[];
 }) {
-  const { t } = useTranslation();
   const options = useMemo<SearchSelectOption[]>(
     () =>
       teams.map((team) => ({
@@ -51,13 +58,13 @@ function TeamFilterField({
   );
 
   return (
-    <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.teamId")}>
+    <DataTableFilterField label="Team ID">
       <SearchSelect
         options={options}
         value={value}
         onValueChange={(next) => onChange(emptyToUndefined(next))}
-        placeholder={t("observabilityExtra.requestLogs.filters.searchOrSelectTeam")}
-        emptyText={t("observabilityExtra.requestLogs.filters.noTeamsFound")}
+        placeholder="Search or select a team"
+        emptyText="No teams found"
       />
     </DataTableFilterField>
   );
@@ -72,7 +79,6 @@ function KeyAliasFilterField({
   onChange: (value: string | undefined) => void;
   teamId: string;
 }) {
-  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteKeyAliases(
     PAGE_SIZE,
@@ -92,7 +98,7 @@ function KeyAliasFilterField({
   }, [data]);
 
   return (
-    <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.keyAlias")}>
+    <DataTableFilterField label="Key Alias">
       <PaginatedSearchSelect
         options={options}
         value={value}
@@ -102,15 +108,14 @@ function KeyAliasFilterField({
         hasNextPage={hasNextPage}
         isLoading={isLoading}
         isFetchingNextPage={isFetchingNextPage}
-        placeholder={t("observabilityExtra.requestLogs.filters.searchKeyAlias")}
-        emptyText={t("observabilityExtra.requestLogs.filters.noKeyAliasesFound")}
+        placeholder="Search a key alias"
+        emptyText="No key aliases found"
       />
     </DataTableFilterField>
   );
 }
 
 function ModelFilterField({ value, onChange }: { value: string; onChange: (value: string | undefined) => void }) {
-  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteModelInfo(
     PAGE_SIZE,
@@ -125,19 +130,13 @@ function ModelFilterField({ value, onChange }: { value: string; onChange: (value
         const modelName = model.model_name ?? "";
         if (!modelId || seen.has(modelId)) return [];
         seen.add(modelId);
-        return [
-          {
-            label: modelName || modelId,
-            value: modelId,
-            sublabel: t("observabilityExtra.requestLogs.filters.modelId", { id: modelId }),
-          },
-        ];
+        return [{ label: modelName || modelId, value: modelId, sublabel: `Model ID: ${modelId}` }];
       }),
     );
-  }, [data, t]);
+  }, [data]);
 
   return (
-    <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.model")}>
+    <DataTableFilterField label="Model">
       <PaginatedSearchSelect
         options={options}
         value={value}
@@ -147,8 +146,53 @@ function ModelFilterField({ value, onChange }: { value: string; onChange: (value
         hasNextPage={hasNextPage}
         isLoading={isLoading}
         isFetchingNextPage={isFetchingNextPage}
-        placeholder={t("observabilityExtra.requestLogs.filters.searchModel")}
-        emptyText={t("observabilityExtra.requestLogs.filters.noModelsFound")}
+        placeholder="Search a model"
+        emptyText="No models found"
+      />
+    </DataTableFilterField>
+  );
+}
+
+function UserIdFilterField({
+  value,
+  onChange,
+  logsWindow,
+}: {
+  value: string;
+  onChange: (value: string | undefined) => void;
+  logsWindow: LogsWindow;
+}) {
+  const [search, setSearch] = useState("");
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteSpendLogUsers(
+    logsWindow,
+    PAGE_SIZE,
+    emptyToUndefined(search),
+  );
+
+  const options = useMemo<SearchSelectOption[]>(() => {
+    const seen = new Set<string>();
+    return (data?.pages ?? []).flatMap((page) =>
+      page.data.flatMap((userId) => {
+        if (!userId || seen.has(userId)) return [];
+        seen.add(userId);
+        return [{ label: userId, value: userId }];
+      }),
+    );
+  }, [data]);
+
+  return (
+    <DataTableFilterField label="User ID">
+      <PaginatedSearchSelect
+        options={options}
+        value={value}
+        onValueChange={(next) => onChange(emptyToUndefined(next))}
+        onSearchChange={setSearch}
+        onLoadMore={() => void fetchNextPage()}
+        hasNextPage={hasNextPage}
+        isLoading={isLoading}
+        isFetchingNextPage={isFetchingNextPage}
+        placeholder="Search an internal user"
+        emptyText="No users found"
       />
     </DataTableFilterField>
   );
@@ -163,7 +207,6 @@ function EndUserFilterField({
   onChange: (value: string | undefined) => void;
   logsWindow: LogsWindow;
 }) {
-  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteSpendLogEndUsers(
     logsWindow,
@@ -183,7 +226,7 @@ function EndUserFilterField({
   }, [data]);
 
   return (
-    <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.endUser")}>
+    <DataTableFilterField label="End User">
       <PaginatedSearchSelect
         options={options}
         value={value}
@@ -193,27 +236,26 @@ function EndUserFilterField({
         hasNextPage={hasNextPage}
         isLoading={isLoading}
         isFetchingNextPage={isFetchingNextPage}
-        placeholder={t("observabilityExtra.requestLogs.filters.searchEndUser")}
-        emptyText={t("observabilityExtra.requestLogs.filters.noEndUsersInRange")}
+        placeholder="Search an end user"
+        emptyText="No end users in this time range"
       />
     </DataTableFilterField>
   );
 }
 
 function ErrorCodeFilterField({ value, onChange }: { value: string; onChange: (value: string | undefined) => void }) {
-  const { t } = useTranslation();
   const [query, setQuery] = useState("");
 
   const options = useMemo<SearchSelectOption[]>(() => {
     const trimmed = query.trim();
     const lowered = trimmed.toLowerCase();
     const matches = ERROR_CODE_OPTIONS.filter((option) => option.label.toLowerCase().includes(lowered));
-    if (trimmed === "" || ERROR_CODE_OPTIONS.some((option) => option.value === trimmed)) return matches;
-    return [
-      ...matches,
-      { label: t("observabilityExtra.requestLogs.filters.useCustomCode", { code: trimmed }), value: trimmed },
-    ];
-  }, [query, t]);
+    const isKnownCode = ERROR_CODE_OPTIONS.some(
+      (option) => option.value === trimmed || option.label.toLowerCase() === lowered,
+    );
+    if (trimmed === "" || isKnownCode) return matches;
+    return [...matches, { label: `Use custom code: ${trimmed}`, value: trimmed }];
+  }, [query]);
 
   const selected = useMemo<SearchSelectOption | null>(() => {
     if (value === "") return null;
@@ -227,23 +269,27 @@ function ErrorCodeFilterField({ value, onChange }: { value: string; onChange: (v
   }, [options, selected]);
 
   return (
-    <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.errorCode")}>
+    <DataTableFilterField label="Error Code">
       <Combobox
         items={items}
         value={selected}
         onValueChange={(item: SearchSelectOption | null) => onChange(emptyToUndefined(item?.value ?? ""))}
-        onInputValueChange={setQuery}
+        onInputValueChange={(next, eventDetails) => setQuery(SEARCH_INPUT_REASONS.has(eventDetails.reason) ? next : "")}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setQuery("");
+        }}
         isItemEqualToValue={(a: SearchSelectOption, b: SearchSelectOption) => a.value === b.value}
         itemToStringLabel={(item: SearchSelectOption) => item.label}
         filter={null}
       >
         <ComboboxInput
-          placeholder={t("observabilityExtra.requestLogs.filters.selectOrTypeErrorCode")}
+          onFocus={(event) => event.currentTarget.select()}
+          placeholder="Select or type an error code"
           showClear={value !== ""}
           className="w-full"
         />
         <ComboboxContent>
-          <ComboboxEmpty>{t("observabilityExtra.requestLogs.filters.noErrorCodesFound")}</ComboboxEmpty>
+          <ComboboxEmpty>No error codes found</ComboboxEmpty>
           <ComboboxList data-testid="error-code-filter-list">
             {(item: SearchSelectOption) => (
               <ComboboxItem key={item.value} value={item}>
@@ -265,7 +311,6 @@ interface RequestLogsFiltersProps {
 }
 
 export function RequestLogsFilters({ get, set, teams, logsWindow }: RequestLogsFiltersProps) {
-  const { t } = useTranslation();
   const valueOf = (id: string): string => asString(get(id));
   const setter = (id: string) => (next: string | undefined) => set(id, next);
 
@@ -277,18 +322,21 @@ export function RequestLogsFilters({ get, set, teams, logsWindow }: RequestLogsF
         teams={teams}
       />
 
-      <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.status")}>
+      <DataTableFilterField label="Status">
         <Select
+          items={STATUS_FILTER_ITEMS}
           value={valueOf(LOG_FILTER_IDS.STATUS) === "" ? ALL_VALUE : valueOf(LOG_FILTER_IDS.STATUS)}
           onValueChange={(next) => set(LOG_FILTER_IDS.STATUS, next === null || next === ALL_VALUE ? undefined : next)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder={t("observabilityExtra.requestLogs.filters.allStatuses")} />
+            <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_VALUE}>{t("observabilityExtra.requestLogs.filters.allStatuses")}</SelectItem>
-            <SelectItem value="success">{t("observabilityExtra.requestLogs.status.success")}</SelectItem>
-            <SelectItem value="failure">{t("observabilityExtra.requestLogs.status.failure")}</SelectItem>
+            {STATUS_FILTER_ITEMS.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </DataTableFilterField>
@@ -299,6 +347,12 @@ export function RequestLogsFilters({ get, set, teams, logsWindow }: RequestLogsF
         teamId={valueOf(LOG_FILTER_IDS.TEAM_ID)}
       />
 
+      <UserIdFilterField
+        value={valueOf(LOG_FILTER_IDS.USER_ID)}
+        onChange={setter(LOG_FILTER_IDS.USER_ID)}
+        logsWindow={logsWindow}
+      />
+
       <EndUserFilterField
         value={valueOf(LOG_FILTER_IDS.END_USER)}
         onChange={setter(LOG_FILTER_IDS.END_USER)}
@@ -307,37 +361,37 @@ export function RequestLogsFilters({ get, set, teams, logsWindow }: RequestLogsF
 
       <ErrorCodeFilterField value={valueOf(LOG_FILTER_IDS.ERROR_CODE)} onChange={setter(LOG_FILTER_IDS.ERROR_CODE)} />
 
-      <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.errorMessage")}>
+      <DataTableFilterField label="Error Message">
         <Input
           value={valueOf(LOG_FILTER_IDS.ERROR_MESSAGE)}
           onChange={(event) => set(LOG_FILTER_IDS.ERROR_MESSAGE, emptyToUndefined(event.target.value))}
-          placeholder={t("observabilityExtra.requestLogs.filters.enterErrorMessage")}
+          placeholder="Enter error message…"
         />
       </DataTableFilterField>
 
-      <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.keyHash")}>
+      <DataTableFilterField label="Key Hash">
         <Input
           value={valueOf(LOG_FILTER_IDS.KEY_HASH)}
           onChange={(event) => set(LOG_FILTER_IDS.KEY_HASH, emptyToUndefined(event.target.value))}
-          placeholder={t("observabilityExtra.requestLogs.filters.enterKeyHash")}
+          placeholder="Enter key hash…"
         />
       </DataTableFilterField>
 
-      <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.sessionId")}>
+      <DataTableFilterField label="Session ID">
         <Input
           value={valueOf(LOG_FILTER_IDS.SESSION_ID)}
           onChange={(event) => set(LOG_FILTER_IDS.SESSION_ID, emptyToUndefined(event.target.value))}
-          placeholder={t("observabilityExtra.requestLogs.filters.enterSessionId")}
+          placeholder="Enter session ID…"
         />
       </DataTableFilterField>
 
       <ModelFilterField value={valueOf(LOG_FILTER_IDS.MODEL_ID)} onChange={setter(LOG_FILTER_IDS.MODEL_ID)} />
 
-      <DataTableFilterField label={t("observabilityExtra.requestLogs.filters.publicModelOrSearchTool")}>
+      <DataTableFilterField label="Public model / search tool">
         <Input
           value={valueOf(LOG_FILTER_IDS.PUBLIC_MODEL_OR_SEARCH_TOOL)}
           onChange={(event) => set(LOG_FILTER_IDS.PUBLIC_MODEL_OR_SEARCH_TOOL, emptyToUndefined(event.target.value))}
-          placeholder={t("observabilityExtra.requestLogs.filters.enterPublicModelOrSearchTool")}
+          placeholder="Enter public model or search tool…"
         />
       </DataTableFilterField>
     </>

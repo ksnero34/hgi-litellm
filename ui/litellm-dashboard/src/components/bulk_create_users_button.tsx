@@ -7,8 +7,7 @@ import { userCreateCall, invitationCreateCall, getProxyUISettings } from "./netw
 import Papa from "papaparse";
 import { CheckCircleIcon, XCircleIcon, ExclamationIcon } from "@heroicons/react/outline";
 import { CopyToClipboard } from "react-copy-to-clipboard";
-import NotificationsManager from "./molecules/notifications_manager";
-import { useTranslation } from "react-i18next";
+import { toast } from "@/lib/toast";
 
 interface BulkCreateUsersProps {
   accessToken: string;
@@ -49,7 +48,6 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
   possibleUIRoles,
   onUsersCreated,
 }) => {
-  const { t } = useTranslation();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [parsedData, setParsedData] = useState<UserData[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -93,7 +91,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
     // Check file type
     if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
       setFileError(`Invalid file type: ${file.name}. Please upload a CSV file (.csv extension).`);
-      NotificationsManager.fromBackend("Invalid file type. Please upload a CSV file.");
+      toast.fromError("Invalid file type. Please upload a CSV file.");
       return;
     }
 
@@ -249,7 +247,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
               `Found ${userData.length - validData.length} row(s) with errors out of ${userData.length} total rows. Please correct them before proceeding.`,
             );
           } else {
-            NotificationsManager.success(`Successfully parsed ${validData.length} users`);
+            toast.success(`Successfully parsed ${validData.length} users`);
           }
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -466,34 +464,29 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
       return (
         <div>
           <div className="flex items-center">
-            <XCircleIcon className="h-5 w-5 text-red-500 mr-2" />
-            <span className="text-red-500">{t("identityAdmin.bulk.invalid")}</span>
+            <XCircleIcon className="h-5 w-5 text-destructive mr-2" />
+            <span className="text-destructive">Invalid</span>
           </div>
-          {record.error && <span className="text-sm text-red-500 ml-7">{record.error}</span>}
+          {record.error && <span className="text-sm text-destructive ml-7">{record.error}</span>}
         </div>
       );
     }
     if (!record.status || record.status === "pending") {
-      return <span className="text-gray-500">{t("identityAdmin.bulk.pending")}</span>;
+      return <span className="text-muted-foreground">Pending</span>;
     }
     if (record.status === "success") {
       return (
         <div>
           <div className="flex items-center">
-            <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-            <span className="text-green-500">{t("identityAdmin.bulk.success")}</span>
+            <CheckCircleIcon className="h-5 w-5 text-success mr-2" />
+            <span className="text-success">Success</span>
           </div>
           {record.invitation_link && (
             <div className="mt-1">
               <div className="flex items-center">
-                <span className="text-xs text-gray-500 truncate max-w-[150px]">{record.invitation_link}</span>
-                <CopyToClipboard
-                  text={record.invitation_link}
-                  onCopy={() => NotificationsManager.success(t("identityAdmin.bulk.invitationCopied"))}
-                >
-                  <button className="ml-1 text-blue-500 text-xs hover:text-blue-700">
-                    {t("identityAdmin.bulk.copy")}
-                  </button>
+                <span className="text-xs text-muted-foreground truncate max-w-[150px]">{record.invitation_link}</span>
+                <CopyToClipboard text={record.invitation_link} onCopy={() => toast.success("Invitation link copied!")}>
+                  <button className="ml-1 text-info text-xs hover:text-info/80">Copy</button>
                 </CopyToClipboard>
               </div>
             </div>
@@ -504,10 +497,10 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
     return (
       <div>
         <div className="flex items-center">
-          <XCircleIcon className="h-5 w-5 text-red-500 mr-2" />
-          <span className="text-red-500">{t("identityAdmin.bulk.failed")}</span>
+          <XCircleIcon className="h-5 w-5 text-destructive mr-2" />
+          <span className="text-destructive">Failed</span>
         </div>
-        {record.error && <span className="text-sm text-red-500 ml-7">{JSON.stringify(record.error)}</span>}
+        {record.error && <span className="text-sm text-destructive ml-7">{JSON.stringify(record.error)}</span>}
       </div>
     );
   };
@@ -519,23 +512,23 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
   return (
     <>
       <Button className="mb-0" onClick={() => setIsModalVisible(true)}>
-        + {t("identityAdmin.bulk.inviteTitle")}
+        + Bulk Invite Users
       </Button>
 
       <Dialog open={isModalVisible} onOpenChange={(open) => !open && setIsModalVisible(false)}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[800px]">
           <DialogHeader>
-            <DialogTitle>{t("identityAdmin.bulk.inviteTitle")}</DialogTitle>
+            <DialogTitle>Bulk Invite Users</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col">
             {/* Step indicator */}
             {parsedData.length === 0 ? (
               <div className="mb-6">
                 <div className="flex items-center mb-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-3">
+                  <div className="w-8 h-8 rounded-full bg-info text-info-foreground flex items-center justify-center mr-3">
                     1
                   </div>
-                  <h3 className="text-lg font-medium">{t("identityAdmin.bulk.downloadTemplate")}</h3>
+                  <h3 className="text-lg font-medium">Download and fill the template</h3>
                 </div>
 
                 <div className="ml-11 mb-6">
@@ -547,56 +540,58 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                     <li>After creation, download the results file containing the Virtual Keys for each user</li>
                   </ol>
 
-                  <div className="bg-gray-50 p-4 rounded-md border border-gray-200 mb-4">
+                  <div className="bg-muted p-4 rounded-md border border-border mb-4">
                     <h4 className="font-medium mb-2">Template Column Names</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-red-500 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-destructive mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">user_email</p>
-                          <p className="text-sm text-gray-600">User&apos;s email address (required)</p>
+                          <p className="text-sm text-muted-foreground">User&apos;s email address (required)</p>
                         </div>
                       </div>
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-red-500 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-destructive mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">user_role</p>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-muted-foreground">
                             User&apos;s role (one of: &quot;proxy_admin&quot;, &quot;proxy_admin_viewer&quot;,
                             &quot;internal_user&quot;, &quot;internal_user_viewer&quot;)
                           </p>
                         </div>
                       </div>
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-gray-300 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-border mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">teams</p>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-muted-foreground">
                             Comma-separated team IDs (e.g., &quot;team-1,team-2&quot;)
                           </p>
                         </div>
                       </div>
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-gray-300 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-border mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">max_budget</p>
-                          <p className="text-sm text-gray-600">Maximum budget as a number (e.g., &quot;100&quot;)</p>
+                          <p className="text-sm text-muted-foreground">
+                            Maximum budget as a number (e.g., &quot;100&quot;)
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-gray-300 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-border mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">budget_duration</p>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-muted-foreground">
                             Budget reset period (e.g., &quot;30d&quot;, &quot;1mo&quot;)
                           </p>
                         </div>
                       </div>
                       <div className="flex items-start">
-                        <div className="w-3 h-3 rounded-full bg-gray-300 mt-1.5 mr-2 shrink-0"></div>
+                        <div className="w-3 h-3 rounded-full bg-border mt-1.5 mr-2 shrink-0"></div>
                         <div>
                           <p className="font-medium">models</p>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-muted-foreground">
                             Comma-separated allowed models (e.g., &quot;gpt-3.5-turbo,gpt-4&quot;)
                           </p>
                         </div>
@@ -611,29 +606,29 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                 </div>
 
                 <div className="flex items-center mb-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-3">
+                  <div className="w-8 h-8 rounded-full bg-info text-info-foreground flex items-center justify-center mr-3">
                     2
                   </div>
-                  <h3 className="text-lg font-medium">{t("identityAdmin.bulk.uploadTitle")}</h3>
+                  <h3 className="text-lg font-medium">Upload your completed CSV</h3>
                 </div>
 
                 <div className="ml-11">
                   {selectedFile ? (
                     <div
-                      className={`mb-4 p-4 rounded-md border ${fileError ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-200"}`}
+                      className={`mb-4 p-4 rounded-md border ${fileError ? "bg-destructive/10 border-destructive/20" : "bg-info/10 border-info/20"}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center min-w-0">
                           {fileError ? (
-                            <FileWarning className="size-5 shrink-0 text-red-500 mr-3" />
+                            <FileWarning className="size-5 shrink-0 text-destructive mr-3" />
                           ) : (
-                            <FileText className="size-5 shrink-0 text-blue-500 mr-3" />
+                            <FileText className="size-5 shrink-0 text-info mr-3" />
                           )}
                           <div className="min-w-0">
-                            <strong className={`break-words ${fileError ? "text-red-800" : "text-blue-800"}`}>
+                            <strong className={`break-words ${fileError ? "text-destructive" : "text-info"}`}>
                               {selectedFile.name}
                             </strong>
-                            <span className={`block text-xs ${fileError ? "text-red-600" : "text-blue-600"}`}>
+                            <span className={`block text-xs ${fileError ? "text-destructive" : "text-info"}`}>
                               {(selectedFile.size / 1024).toFixed(1)} KB • {new Date().toLocaleDateString()}
                             </span>
                           </div>
@@ -645,17 +640,17 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                       </div>
 
                       {fileError ? (
-                        <div className="mt-3 text-red-600 text-sm flex items-start">
+                        <div className="mt-3 text-destructive text-sm flex items-start">
                           <TriangleAlert className="size-3.5 shrink-0 mr-2 mt-0.5" />
                           <span className="min-w-0 break-words">{fileError}</span>
                         </div>
                       ) : (
                         !csvStructureError && (
                           <div className="mt-3 flex items-center">
-                            <div className="w-full bg-gray-200 rounded-full h-1.5">
-                              <div className="bg-blue-500 h-1.5 rounded-full w-full animate-pulse"></div>
+                            <div className="w-full bg-border rounded-full h-1.5">
+                              <div className="bg-info h-1.5 rounded-full w-full animate-pulse"></div>
                             </div>
-                            <span className="ml-2 text-xs text-blue-600">{t("identityAdmin.bulk.processing")}</span>
+                            <span className="ml-2 text-xs text-info">Processing...</span>
                           </div>
                         )
                       )}
@@ -669,7 +664,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                       onDrop={handleDrop}
                     >
                       <div
-                        className={`border-2 border-dashed ${isDraggingOver ? "border-blue-500" : "border-gray-300"} rounded-lg p-8 text-center hover:border-blue-500 focus-within:border-blue-500 transition-colors cursor-pointer`}
+                        className={`border-2 border-dashed ${isDraggingOver ? "border-info" : "border-border"} rounded-lg p-8 text-center hover:border-info focus-within:border-info transition-colors cursor-pointer`}
                       >
                         <input
                           id={csvInputId}
@@ -678,25 +673,23 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                           className="sr-only"
                           onChange={handleFileInputChange}
                         />
-                        <Upload className="size-[30px] text-gray-400 mb-2" />
-                        <p className="mb-1">{t("identityAdmin.bulk.dragDrop")}</p>
-                        <p className="text-sm text-gray-500 mb-3">{t("identityAdmin.bulk.or")}</p>
-                        <span className={buttonVariants({ variant: "outline", size: "sm" })}>
-                          {t("identityAdmin.bulk.browse")}
-                        </span>
-                        <p className="text-xs text-gray-500 mt-4">{t("identityAdmin.bulk.csvOnly")}</p>
+                        <Upload className="size-[30px] text-muted-foreground mb-2" />
+                        <p className="mb-1">Drag and drop your CSV file here</p>
+                        <p className="text-sm text-muted-foreground mb-3">or</p>
+                        <span className={buttonVariants({ variant: "outline", size: "sm" })}>Browse files</span>
+                        <p className="text-xs text-muted-foreground mt-4">Only CSV files (.csv) are supported</p>
                       </div>
                     </label>
                   )}
 
                   {csvStructureError && (
-                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="mb-4 p-4 bg-warning/10 border border-warning/20 rounded-md">
                       <div className="flex items-start">
-                        <ExclamationIcon className="h-5 w-5 shrink-0 text-yellow-500 mr-2 mt-0.5" />
+                        <ExclamationIcon className="h-5 w-5 shrink-0 text-warning mr-2 mt-0.5" />
                         <div className="min-w-0">
-                          <strong className="text-yellow-800">CSV Structure Error</strong>
-                          <p className="text-yellow-700 mt-1 mb-0 break-words">{csvStructureError}</p>
-                          <p className="text-yellow-700 mt-2 mb-0">
+                          <strong className="text-warning">CSV Structure Error</strong>
+                          <p className="text-warning mt-1 mb-0 break-words">{csvStructureError}</p>
+                          <p className="text-warning mt-2 mb-0">
                             Please download our template and ensure your CSV follows the required format.
                           </p>
                         </div>
@@ -708,24 +701,24 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
             ) : (
               <div className="mb-6">
                 <div className="flex items-center mb-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-3">
+                  <div className="w-8 h-8 rounded-full bg-info text-info-foreground flex items-center justify-center mr-3">
                     3
                   </div>
                   <h3 className="text-lg font-medium">
                     {parsedData.some((user) => user.status === "success" || user.status === "failed")
-                      ? t("identityAdmin.bulk.results")
-                      : t("identityAdmin.bulk.review")}
+                      ? "User Creation Results"
+                      : "Review and create users"}
                   </h3>
                 </div>
 
                 {parseError && (
-                  <div className="ml-11 mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                  <div className="ml-11 mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-md">
                     <div className="flex items-start">
-                      <TriangleAlert className="size-4 shrink-0 text-red-500 mr-2 mt-1" />
+                      <TriangleAlert className="size-4 shrink-0 text-destructive mr-2 mt-1" />
                       <div className="min-w-0">
-                        <p className="text-red-600 font-medium break-words">{parseError}</p>
+                        <p className="text-destructive font-medium break-words">{parseError}</p>
                         {parsedData.some((user) => !user.isValid) && (
-                          <ul className="mt-2 list-disc list-inside text-red-600 text-sm">
+                          <ul className="mt-2 list-disc list-inside text-destructive text-sm">
                             <li>Check the table below for specific errors in each row</li>
                             <li>
                               Common issues include invalid email formats, missing required fields, or incorrect role
@@ -744,20 +737,20 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                     <div className="flex items-center">
                       {parsedData.some((user) => user.status === "success" || user.status === "failed") ? (
                         <div className="flex items-center">
-                          <p className="text-lg font-medium mr-3">{t("identityAdmin.bulk.summary")}</p>
-                          <p className="text-sm bg-green-100 text-green-800 px-2 py-1 rounded-sm mr-2">
+                          <p className="text-lg font-medium mr-3">Creation Summary</p>
+                          <p className="text-sm bg-success/15 text-success px-2 py-1 rounded-sm mr-2">
                             {parsedData.filter((d) => d.status === "success").length} Successful
                           </p>
                           {parsedData.some((d) => d.status === "failed") && (
-                            <p className="text-sm bg-red-100 text-red-800 px-2 py-1 rounded-sm">
+                            <p className="text-sm bg-destructive/15 text-destructive px-2 py-1 rounded-sm">
                               {parsedData.filter((d) => d.status === "failed").length} Failed
                             </p>
                           )}
                         </div>
                       ) : (
                         <div className="flex items-center">
-                          <p className="text-lg font-medium mr-3">{t("identityAdmin.bulk.preview")}</p>
-                          <p className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-sm">
+                          <p className="text-lg font-medium mr-3">User Preview</p>
+                          <p className="text-sm bg-info/15 text-info px-2 py-1 rounded-sm">
                             {parsedData.filter((d) => d.isValid).length} of {parsedData.length} users valid
                           </p>
                         </div>
@@ -773,25 +766,21 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                           onClick={handleBulkCreate}
                           disabled={parsedData.filter((d) => d.isValid).length === 0 || isProcessing}
                         >
-                          {isProcessing
-                            ? t("identityAdmin.bulk.creating")
-                            : t("identityAdmin.bulk.create", {
-                                count: parsedData.filter((d) => d.isValid).length,
-                              })}
+                          {isProcessing ? "Creating..." : `Create ${parsedData.filter((d) => d.isValid).length} Users`}
                         </Button>
                       </div>
                     )}
                   </div>
 
                   {parsedData.some((user) => user.status === "success") && (
-                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="mb-4 p-4 bg-info/10 border border-info/20 rounded-md">
                       <div className="flex items-start">
                         <div className="mr-3 mt-1">
-                          <CheckCircleIcon className="h-5 w-5 text-blue-500" />
+                          <CheckCircleIcon className="h-5 w-5 text-info" />
                         </div>
                         <div>
-                          <p className="font-medium text-blue-800">{t("identityAdmin.bulk.complete")}</p>
-                          <p className="block text-sm text-blue-700 mt-1">
+                          <p className="font-medium text-info">User creation complete</p>
+                          <p className="block text-sm text-info mt-1">
                             <span className="font-medium">Next step:</span> Download the credentials file containing
                             Virtual Keys and invitation links. Users will need these Virtual Keys to make LLM requests
                             through LiteLLM.
@@ -805,17 +794,17 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-20">{t("identityAdmin.bulk.row")}</TableHead>
-                          <TableHead>{t("identityAdmin.bulk.email")}</TableHead>
-                          <TableHead>{t("identityAdmin.bulk.role")}</TableHead>
-                          <TableHead>{t("identityAdmin.bulk.teams")}</TableHead>
-                          <TableHead>{t("identityAdmin.bulk.budget")}</TableHead>
-                          <TableHead>{t("identityAdmin.bulk.status")}</TableHead>
+                          <TableHead className="w-20">Row</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Teams</TableHead>
+                          <TableHead>Budget</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {visibleRows.map((record) => (
-                          <TableRow key={record.rowNumber} className={!record.isValid ? "bg-red-50" : ""}>
+                          <TableRow key={record.rowNumber} className={!record.isValid ? "bg-destructive/10" : ""}>
                             <TableCell>{record.rowNumber}</TableCell>
                             <TableCell className="whitespace-normal break-words">{record.user_email}</TableCell>
                             <TableCell className="whitespace-normal break-words">{record.user_role}</TableCell>
@@ -830,7 +819,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
 
                   {pageCount > 1 && (
                     <div className="flex items-center justify-end gap-3 mt-2">
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-muted-foreground">
                         Page {currentPage + 1} of {pageCount}
                       </span>
                       <Button
@@ -861,9 +850,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                         onClick={handleBulkCreate}
                         disabled={parsedData.filter((d) => d.isValid).length === 0 || isProcessing}
                       >
-                        {isProcessing
-                          ? t("identityAdmin.bulk.creating")
-                          : t("identityAdmin.bulk.create", { count: parsedData.filter((d) => d.isValid).length })}
+                        {isProcessing ? "Creating..." : `Create ${parsedData.filter((d) => d.isValid).length} Users`}
                       </Button>
                     </div>
                   )}

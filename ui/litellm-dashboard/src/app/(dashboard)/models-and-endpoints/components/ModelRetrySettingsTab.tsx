@@ -53,6 +53,10 @@ const ModelRetrySettingsTab = ({
 }: ModelRetrySettingsTabProps) => {
   const { t } = useTranslation();
   const isGlobalScope = selectedModelGroup === "global";
+  const scopeItems = [
+    { value: "global", label: "Global Default" },
+    ...availableModelGroups.map((group) => ({ value: group, label: group })),
+  ];
 
   const setGlobalValue = (retryPolicyKey: string, value: number | null) => {
     if (value == null) return;
@@ -84,6 +88,7 @@ const ModelRetrySettingsTab = ({
         <Label htmlFor="retry-policy-scope">{t("toolsModels.models.retryScope")}</Label>
         <div className="w-48">
           <Select
+            items={scopeItems}
             value={isGlobalScope ? "global" : selectedModelGroup || availableModelGroups[0]}
             onValueChange={(value) => setSelectedModelGroup(value)}
           >

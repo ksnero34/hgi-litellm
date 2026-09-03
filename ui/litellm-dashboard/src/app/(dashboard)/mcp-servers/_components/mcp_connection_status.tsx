@@ -18,6 +18,46 @@ interface MCPConnectionStatusProps {
   fetchTools: () => Promise<void>;
 }
 
+function getConnectionStatusTitle({
+  isLoadingTools,
+  hasTools,
+  hasError,
+  isPreviewForbidden,
+  isEnglish,
+  t,
+}: {
+  isLoadingTools: boolean;
+  hasTools: boolean;
+  hasError: boolean;
+  isPreviewForbidden: boolean;
+  isEnglish: boolean;
+  t: (key: string) => string;
+}): string {
+  if (isLoadingTools) {
+    return t("toolsModels.mcp.testingConnection");
+  }
+  if (hasTools) {
+    return t("toolsModels.mcp.connectionSuccessful");
+  }
+  if (!hasError) {
+    return t("toolsModels.mcp.readyToTest");
+  }
+  if (isPreviewForbidden) {
+    return t("toolsModels.mcp.readyToSubmit");
+  }
+  if (isEnglish) {
+    return "Connection failed";
+  }
+  return t("toolsModels.mcp.connectionFailed");
+}
+
+function getConnectionFailedTitle(isEnglish: boolean, t: (key: string) => string): string {
+  if (isEnglish) {
+    return "Connection Failed";
+  }
+  return t("toolsModels.mcp.connectionFailed");
+}
+
 const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
   formValues,
   tools,
@@ -28,8 +68,20 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
   canFetchTools,
   fetchTools,
 }) => {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const isEnglish = (i18n.resolvedLanguage ?? i18n.language ?? "en").startsWith("en");
   const isPreviewForbidden = toolsErrorStatus === 403;
+  const hasTools = tools.length > 0;
+  const hasError = Boolean(toolsError);
+  const connectionStatusTitle = getConnectionStatusTitle({
+    isLoadingTools,
+    hasTools,
+    hasError,
+    isPreviewForbidden,
+    isEnglish,
+    t,
+  });
+  const connectionFailedTitle = getConnectionFailedTitle(isEnglish, t);
   // Don't show anything if required fields aren't filled
   if (!canFetchTools && !formValues.url && !formValues.spec_path) {
     return null;
@@ -55,17 +107,7 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
           <div>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">
-                  {isLoadingTools
-                    ? t("toolsModels.mcp.testingConnection")
-                    : tools.length > 0
-                      ? t("toolsModels.mcp.connectionSuccessful")
-                      : toolsError
-                        ? isPreviewForbidden
-                          ? t("toolsModels.mcp.readyToSubmit")
-                          : t("toolsModels.mcp.connectionFailed")
-                        : t("toolsModels.mcp.readyToTest")}
-                </p>
+                <p className="text-sm font-medium">{connectionStatusTitle}</p>
                 <p className="text-sm text-muted-foreground">
                   {t("toolsModels.mcp.serverLabel")}: {formValues.url || formValues.spec_path}
                 </p>
@@ -78,14 +120,14 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
                 </div>
               )}
 
-              {!isLoadingTools && !toolsError && tools.length > 0 && (
+              {!isLoadingTools && !hasError && hasTools && (
                 <div className="flex items-center gap-1">
                   <CircleCheck className="size-4" />
                   <p className="text-sm font-medium">{t("toolsModels.mcp.connected")}</p>
                 </div>
               )}
 
-              {toolsError && !isPreviewForbidden && (
+              {hasError && !isPreviewForbidden && (
                 <div className="flex items-center gap-1 text-destructive">
                   <CircleAlert className="size-4" />
                   <p className="text-sm font-medium">{t("toolsModels.mcp.failed")}</p>
@@ -100,7 +142,7 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
               </div>
             )}
 
-            {toolsError && isPreviewForbidden && (
+            {hasError && isPreviewForbidden && (
               <Alert>
                 <Info />
                 <AlertTitle>{t("toolsModels.mcp.toolPreviewUnavailable")}</AlertTitle>
@@ -108,10 +150,10 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
               </Alert>
             )}
 
-            {toolsError && !isPreviewForbidden && (
+            {hasError && !isPreviewForbidden && (
               <Alert variant="destructive">
                 <CircleAlert />
-                <AlertTitle>{t("toolsModels.mcp.connectionFailed")}</AlertTitle>
+                <AlertTitle>{connectionFailedTitle}</AlertTitle>
                 <AlertDescription>
                   <div>{toolsError}</div>
                   {toolsErrorStackTrace && (
@@ -140,7 +182,7 @@ const MCPConnectionStatus: React.FC<MCPConnectionStatusProps> = ({
               </Alert>
             )}
 
-            {!isLoadingTools && tools.length === 0 && !toolsError && (
+            {!isLoadingTools && !hasTools && !hasError && (
               <div className="rounded-lg border border-dashed py-6 text-center">
                 <CircleCheck className="mx-auto mb-2 size-6" />
                 <p className="text-sm font-medium">{t("toolsModels.mcp.connectionSuccessfulBang")}</p>

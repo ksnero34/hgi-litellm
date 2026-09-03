@@ -1,8 +1,7 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { type ComponentProps, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useState } from "react";
 
 import { useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentials";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
@@ -17,13 +16,9 @@ import { stripMaskedSecrets } from "@/utils/maskedSecretUtils";
 import { isProxyAdminRole } from "@/utils/roles";
 
 import DeleteResourceModal from "../common_components/DeleteResourceModal";
-import NotificationsManager from "../molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import CredentialModal from "./CredentialModal";
 import CredentialsTable from "./CredentialsTable";
-
-interface CredentialsPanelProps {
-  uploadProps: ComponentProps<typeof CredentialModal>["uploadProps"];
-}
 
 const restrictedFields = ["credential_name", "custom_llm_provider"];
 
@@ -38,8 +33,7 @@ const buildCredential = (values: Record<string, unknown>, credentialValues: Reco
 const withoutRestrictedFields = (values: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(values).filter(([key]) => !restrictedFields.includes(key)));
 
-export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps) {
-  const { t } = useTranslation();
+export default function CredentialsPanel() {
   const { accessToken, userRole } = useAuthorized();
   // Admin Viewer follows the read-parity rule: see credentials, do not modify.
   const canModifyCredentials = isProxyAdminRole(userRole ?? "");
@@ -60,11 +54,11 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
     try {
       const newCredential = buildCredential(values, stripMaskedSecrets(withoutRestrictedFields(values)));
       await credentialUpdateCall(accessToken, values.credential_name as string, newCredential);
-      NotificationsManager.success(t("modelManagement.credentialUpdated"));
+      toast.success("Credential updated successfully");
       setIsUpdateModalOpen(false);
       await refetchCredentials();
     } catch (error) {
-      NotificationsManager.error(t("modelManagement.credentialUpdateFailed"));
+      toast.error("Failed to update credential");
     }
   };
 
@@ -75,11 +69,11 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
     try {
       const newCredential = buildCredential(values, withoutRestrictedFields(values));
       await credentialCreateCall(accessToken, newCredential);
-      NotificationsManager.success(t("modelManagement.credentialAdded"));
+      toast.success("Credential added successfully");
       setIsAddModalOpen(false);
       await refetchCredentials();
     } catch (error) {
-      NotificationsManager.error(t("modelManagement.credentialAddFailed"));
+      toast.error("Failed to add credential");
     }
   };
 
@@ -90,10 +84,10 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
     setIsCredentialDeleting(true);
     try {
       await credentialDeleteCall(accessToken, credentialToDelete.credential_name);
-      NotificationsManager.success(t("modelManagement.credentialDeleted"));
+      toast.success("Credential deleted successfully");
       await refetchCredentials();
     } catch (error) {
-      NotificationsManager.error(t("modelManagement.credentialDeleteFailed"));
+      toast.error("Failed to delete credential");
     } finally {
       setCredentialToDelete(null);
       setIsDeleteModalOpen(false);
@@ -119,11 +113,13 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
   return (
     <div className="mx-auto flex w-full flex-auto flex-col gap-4 overflow-y-auto p-2">
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">{t("modelManagement.credentialsDescription")}</p>
+        <p className="text-sm text-muted-foreground">
+          Configured credentials for different AI providers. Add and manage your API credentials.
+        </p>
         {canModifyCredentials && (
           <Button onClick={() => setIsAddModalOpen(true)}>
             <Plus className="size-4" />
-            {t("modelManagement.addCredential")}
+            Add Credential
           </Button>
         )}
       </div>
@@ -142,7 +138,6 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
           onSubmit={handleAddCredential}
           open={isAddModalOpen}
           onCancel={() => setIsAddModalOpen(false)}
-          uploadProps={uploadProps}
         />
       )}
       {isUpdateModalOpen && (
@@ -151,7 +146,6 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
           open={isUpdateModalOpen}
           existingCredential={selectedCredential}
           onSubmit={handleUpdateCredential}
-          uploadProps={uploadProps}
           onCancel={() => setIsUpdateModalOpen(false)}
         />
       )}
@@ -160,15 +154,12 @@ export default function CredentialsPanel({ uploadProps }: CredentialsPanelProps)
         isOpen={isDeleteModalOpen}
         onCancel={closeDeleteModal}
         onOk={handleDeleteCredential}
-        title={t("modelManagement.deleteCredential")}
-        message={t("modelManagement.deleteCredentialConfirm")}
-        resourceInformationTitle={t("modelManagement.credentialInformation")}
+        title="Delete Credential?"
+        message="Are you sure you want to delete this credential? This action cannot be undone and may break existing integrations."
+        resourceInformationTitle="Credential Information"
         resourceInformation={[
-          { label: t("modelManagement.credentialName"), value: credentialToDelete?.credential_name },
-          {
-            label: t("modelManagement.providerColumn"),
-            value: credentialToDelete?.credential_info?.custom_llm_provider || "-",
-          },
+          { label: "Credential Name", value: credentialToDelete?.credential_name },
+          { label: "Provider", value: credentialToDelete?.credential_info?.custom_llm_provider || "-" },
         ]}
         confirmLoading={isCredentialDeleting}
         requiredConfirmation={credentialToDelete?.credential_name}

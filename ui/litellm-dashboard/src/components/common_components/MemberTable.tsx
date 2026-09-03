@@ -1,11 +1,10 @@
-import { Tooltip } from "@/components/atoms/Tooltip";
+import { SimpleTooltip } from "@/components/ui/tooltip";
 import { Member } from "@/components/networking";
 import { StatusBadge } from "@/components/shared/table_cells";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Crown, Info, User, UserPlus } from "lucide-react";
 import React from "react";
-import { useTranslation } from "react-i18next";
 import TableIconActionButton from "./IconActionButton/TableIconActionButtons/TableIconActionButton";
 
 export interface MemberTableColumn {
@@ -47,42 +46,39 @@ export default function MemberTable({
   showDeleteForMember,
   emptyText,
 }: MemberTableProps) {
-  const { t } = useTranslation();
-  const translatedRoleColumnTitle =
-    roleColumnTitle === "Role" ? t("identityAdmin.team.memberTable.role") : roleColumnTitle;
   return (
     <div className="flex w-full flex-col gap-2">
-      <span className="inline-flex text-sm text-gray-700">
-        {t("identityAdmin.team.memberTable.memberCount", { count: members.length })}
+      <span className="inline-flex text-sm text-foreground">
+        {members.length} Member{members.length !== 1 ? "s" : ""}
       </span>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t("identityAdmin.team.memberTable.userEmail")}</TableHead>
-            <TableHead>{t("identityAdmin.team.memberTable.userId")}</TableHead>
+            <TableHead>User Email</TableHead>
+            <TableHead>User ID</TableHead>
             <TableHead>
               {roleTooltip ? (
                 <span className="inline-flex items-center gap-2">
-                  {translatedRoleColumnTitle}
-                  <Tooltip content={roleTooltip}>
+                  {roleColumnTitle}
+                  <SimpleTooltip content={roleTooltip}>
                     <Info className="size-3.5" />
-                  </Tooltip>
+                  </SimpleTooltip>
                 </span>
               ) : (
-                translatedRoleColumnTitle
+                roleColumnTitle
               )}
             </TableHead>
             {extraColumns.map((column) => (
               <TableHead key={column.key}>{column.title}</TableHead>
             ))}
-            <TableHead className={STICKY_ACTIONS_CLASS}>{t("identityAdmin.team.memberTable.actions")}</TableHead>
+            <TableHead className={STICKY_ACTIONS_CLASS}>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {members.length === 0 ? (
             <TableRow>
               <TableCell colSpan={extraColumns.length + 4} className="text-center text-muted-foreground">
-                {emptyText ?? t("identityAdmin.team.memberTable.noData")}
+                {emptyText ?? "No data"}
               </TableCell>
             </TableRow>
           ) : (
@@ -91,7 +87,7 @@ export default function MemberTable({
                 <TableCell>{member.user_email || "-"}</TableCell>
                 <TableCell>
                   {member.user_id === "default_user_id" ? (
-                    <StatusBadge tone="info" label={t("identityAdmin.team.memberTable.defaultProxyAdmin")} />
+                    <StatusBadge tone="info" label="Default Proxy Admin" />
                   ) : (
                     member.user_id || "-"
                   )}
@@ -114,14 +110,14 @@ export default function MemberTable({
                     <span className="inline-flex items-center gap-2">
                       <TableIconActionButton
                         variant="Edit"
-                        tooltipText={t("identityAdmin.team.memberTable.editMember")}
+                        tooltipText="Edit member"
                         dataTestId="edit-member"
                         onClick={() => onEdit(member)}
                       />
                       {(!showDeleteForMember || showDeleteForMember(member)) && (
                         <TableIconActionButton
                           variant="Delete"
-                          tooltipText={t("identityAdmin.team.memberTable.deleteMember")}
+                          tooltipText="Delete member"
                           dataTestId="delete-member"
                           onClick={() => onDelete(member)}
                         />
@@ -137,7 +133,7 @@ export default function MemberTable({
       {onAddMember && canEdit && (
         <Button onClick={onAddMember} className="self-start">
           <UserPlus className="size-4" />
-          {t("identityAdmin.team.memberTable.addMember")}
+          Add Member
         </Button>
       )}
     </div>

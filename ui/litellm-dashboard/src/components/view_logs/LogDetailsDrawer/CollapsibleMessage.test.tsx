@@ -2,32 +2,23 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
-import { i18n } from "@/i18n/i18n";
 import { CollapsibleMessage } from "./CollapsibleMessage";
 
 describe("CollapsibleMessage", () => {
   it("should return null when content is empty", () => {
     const { container } = render(<CollapsibleMessage label="SYSTEM" content="" />);
-    expect(container.innerHTML).toBe("");
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("should return null when content is undefined", () => {
     const { container } = render(<CollapsibleMessage label="SYSTEM" />);
-    expect(container.innerHTML).toBe("");
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("should render the label and char count", () => {
     render(<CollapsibleMessage label="SYSTEM" content="Hello" />);
     expect(screen.getByText("SYSTEM")).toBeInTheDocument();
     expect(screen.getByText("(5 chars)")).toBeInTheDocument();
-  });
-
-  it("renders the character count in Korean", async () => {
-    await i18n.changeLanguage("ko");
-    const { unmount } = render(<CollapsibleMessage label="Reasoning" content="검토" />);
-    expect(screen.getByText("(2자)")).toBeInTheDocument();
-    unmount();
-    await i18n.changeLanguage("en");
   });
 
   it("should show content when defaultExpanded is true", () => {

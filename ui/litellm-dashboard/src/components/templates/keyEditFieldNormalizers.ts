@@ -17,3 +17,45 @@ export const keyTypeFromRoutes = (allowedRoutes: string[] | null | undefined): s
   if (allowedRoutes.includes("info_routes")) return "read_only";
   return "default";
 };
+
+export const parseAllowedRoutes = (value: unknown): string[] =>
+  typeof value === "string" && value.trim() !== ""
+    ? value
+        .split(",")
+        .map((route) => route.trim())
+        .filter((route) => route.length > 0)
+    : [];
+
+export const parseAllowlistValues = (value: unknown): string[] | undefined => {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+  }
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+    if (trimmedValue === "") return [];
+    return trimmedValue
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  return undefined;
+};
+
+export const modelSentinelOptions = (
+  keyTeamId: string | null | undefined,
+  teamLoaded: boolean,
+): { value: string; label: string }[] => {
+  if (keyTeamId == null) return [{ value: "all-proxy-models", label: "All Proxy Models" }];
+  return teamLoaded ? [{ value: "all-team-models", label: "All Team Models" }] : [];
+};
+
+export const currentValuePlaceholder = (
+  premiumUser: boolean,
+  current: unknown,
+  premiumHint: string,
+  emptyHint: string,
+): string => {
+  if (!premiumUser) return premiumHint;
+  return Array.isArray(current) && current.length > 0 ? `Current: ${current.join(", ")}` : emptyHint;
+};

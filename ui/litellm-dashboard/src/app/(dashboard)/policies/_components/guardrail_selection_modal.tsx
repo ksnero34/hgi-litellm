@@ -42,6 +42,10 @@ const GuardrailSelectionModal: React.FC<GuardrailSelectionModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [selectedGuardrails, setSelectedGuardrails] = useState<Set<string>>(new Set());
+  const confirmButtonLabel =
+    selectedGuardrails.size > 0
+      ? `Create ${selectedGuardrails.size} Guardrail${selectedGuardrails.size > 1 ? "s" : ""} & Use Template`
+      : "Use Template";
 
   const guardrailsInfo: GuardrailInfo[] = (template?.guardrailDefinitions || []).map((def: any) => ({
     guardrail_name: def.guardrail_name,
@@ -152,7 +156,7 @@ const GuardrailSelectionModal: React.FC<GuardrailSelectionModalProps> = ({
                 <div className="flex items-start gap-3">
                   <div className="shrink-0 pt-0.5">
                     {guardrail.alreadyExists ? (
-                      <CheckCircle2 className="size-4 text-green-600" />
+                      <CheckCircle2 className="size-4 text-success" />
                     ) : (
                       <Checkbox
                         checked={selectedGuardrails.has(guardrail.guardrail_name)}
@@ -247,7 +251,11 @@ const GuardrailSelectionModal: React.FC<GuardrailSelectionModalProps> = ({
           <Button variant="outline" onClick={onCancel} disabled={isLoading}>
             {t("policies.guardrailSelection.cancel")}
           </Button>
-          <Button onClick={handleConfirm} disabled={isLoading || (selectedCount === 0 && existingCount === 0)}>
+          <Button
+            onClick={handleConfirm}
+            disabled={isLoading || (selectedCount === 0 && existingCount === 0)}
+            aria-label={confirmButtonLabel}
+          >
             {selectedCount > 0
               ? t("policies.guardrailSelection.createAndUseTemplate", { count: selectedCount })
               : t("policies.guardrailSelection.useTemplate")}

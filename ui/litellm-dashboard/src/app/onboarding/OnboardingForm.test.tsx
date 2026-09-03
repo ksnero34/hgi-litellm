@@ -1,7 +1,6 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../../../tests/test-utils";
 import { OnboardingForm } from "./OnboardingForm";
 
 const mockUseOnboardingCredentials = vi.fn();
@@ -73,7 +72,7 @@ describe("OnboardingForm", () => {
       isError: false,
     });
 
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     expect(screen.getByTestId("loading-view")).toBeInTheDocument();
   });
@@ -85,7 +84,7 @@ describe("OnboardingForm", () => {
       isError: true,
     });
 
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     expect(screen.getByTestId("error-view")).toBeInTheDocument();
   });
@@ -97,7 +96,7 @@ describe("OnboardingForm", () => {
       isError: false,
     });
 
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     expect(screen.getByTestId("form-body")).toBeInTheDocument();
     expect(screen.getByTestId("form-body")).toHaveAttribute("data-email", "alice@example.com");
@@ -110,12 +109,13 @@ describe("OnboardingForm", () => {
       isError: false,
     });
 
-    renderWithProviders(<OnboardingForm variant="reset_password" />);
+    render(<OnboardingForm variant="reset_password" />);
 
     expect(screen.getByTestId("form-body")).toHaveAttribute("data-variant", "reset_password");
   });
 
   it("should overwrite a prior admin sessionStorage token after successful claim", async () => {
+    // Simulate the prior admin session that the inviter left behind in the same tab.
     sessionStorage.setItem("token", "ADMIN_SESSION_TOKEN");
 
     mockUseOnboardingCredentials.mockReturnValue({
@@ -127,12 +127,14 @@ describe("OnboardingForm", () => {
       options.onSuccess({ token: "NEW_USER_TOKEN" });
     });
 
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Submit" }));
     });
 
+    // After signup the new user's token must replace the admin's sessionStorage entry,
+    // otherwise the HttpOnly-fallback path in getCookie() keeps returning the admin token.
     expect(sessionStorage.getItem("token")).toBe("NEW_USER_TOKEN");
   });
 
@@ -147,15 +149,17 @@ describe("OnboardingForm", () => {
     });
 
     const cookieSpy = vi.spyOn(document, "cookie", "set");
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Submit" }));
     });
 
+    // The /ui path is what storeLoginToken writes to (and what LoginPage reads from);
+    // a cookie at path=/ alone leaves any pre-existing /ui-scoped admin cookie winning.
     const newTokenCookieAtUiPath = cookieSpy.mock.calls.some(([value]) => {
-      const nextValue = String(value);
-      return nextValue.includes("token=NEW_USER_TOKEN") && nextValue.includes("path=/ui");
+      const v = String(value);
+      return v.includes("token=NEW_USER_TOKEN") && v.includes("path=/ui");
     });
     expect(newTokenCookieAtUiPath).toBe(true);
 
@@ -172,13 +176,13 @@ describe("OnboardingForm", () => {
       options.onSuccess({});
     });
 
-    renderWithProviders(<OnboardingForm variant="signup" />);
+    render(<OnboardingForm variant="signup" />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Submit" }));
     });
 
-    expect(screen.getByTestId("claim-error")).toHaveTextContent("Failed to start session. Please try again.");
+    expect(screen.getByTestId("claim-error")).toHaveTextContent("Failed to start session");
     expect(document.cookie).not.toContain("fake-jwt-token");
   });
 });

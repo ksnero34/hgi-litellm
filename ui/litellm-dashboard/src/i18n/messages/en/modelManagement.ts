@@ -80,6 +80,7 @@ export const modelManagementMessages: MessageCatalog = {
   "modelManagement.team": "Team",
   "modelManagement.view": "View",
   "modelManagement.statusColumn": "Status",
+  "modelManagement.sourceColumn": "Source",
   "modelManagement.dbModel": "DB Model",
   "modelManagement.configModel": "Config Model",
   "modelManagement.unknownProvider": "Unknown provider",

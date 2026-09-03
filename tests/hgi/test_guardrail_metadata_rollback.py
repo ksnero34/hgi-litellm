@@ -203,7 +203,7 @@ def test_cleanup_preflight_requires_live_columns_and_migrations(tmp_path: Path) 
     )
     store = FakeStore(state=state)
 
-    with pytest.raises(ValueError, match="missing column.*missing migration"):
+    with pytest.raises(ValueError, match=r"missing column.*missing migration"):
         rollback.run(store, "cleanup", False, tmp_path)
 
 

@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import moment from "moment";
-import { renderWithProviders as render } from "../../../../tests/test-utils";
 import { AuditLogDrawer } from "./AuditLogDrawer";
 import { AuditLogEntry } from "../AuditLogsTableColumns";
 
@@ -22,7 +21,7 @@ const baseLog: AuditLogEntry = {
   updated_values: { max_budget: 25, tpm_limit: 100 },
 };
 
-const defaultProps = { open: true, onClose: vi.fn(), log: baseLog, accessToken: null };
+const defaultProps = { open: true, onClose: vi.fn(), log: baseLog };
 
 function blockNamed(label: string) {
   const heading = screen.getByText(label);
@@ -44,13 +43,13 @@ describe("AuditLogDrawer", () => {
 
   it("should show the action and the local timestamp in the header", () => {
     render(<AuditLogDrawer {...defaultProps} />);
-    expect(screen.getByText("Updated")).toBeInTheDocument();
+    expect(screen.getByText("updated")).toBeInTheDocument();
     expect(screen.getByText(moment.utc(baseLog.updated_at).local().format("MMM D, YYYY HH:mm:ss"))).toBeInTheDocument();
   });
 
   it("should show the friendly table name for a known table", () => {
     render(<AuditLogDrawer {...defaultProps} />);
-    expect(screen.getByText("Resource Type")).toBeInTheDocument();
+    expect(screen.getByText("Table")).toBeInTheDocument();
     expect(screen.getByText("Teams")).toBeInTheDocument();
   });
 

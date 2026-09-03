@@ -1,12 +1,9 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Trash2 } from "lucide-react";
-import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/shared/DataTable";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ACTION_ITEMS } from "./action_options";
+import InlineSelect from "./InlineSelect";
 
 interface Pattern {
   id: string;
@@ -23,79 +20,89 @@ interface PatternTableProps {
   onRemove: (id: string) => void;
 }
 
-const PatternTable: React.FC<PatternTableProps> = ({ patterns, onActionChange, onRemove }) => {
-  const { t } = useTranslation();
-  const actionItems = ACTION_ITEMS.map((item) => ({
-    ...item,
-    label: t(item.value === "BLOCK" ? "safety.contentFilter.block" : "safety.contentFilter.mask"),
-  }));
-  const columns: ColumnDef<Pattern>[] = [
-    {
-      header: t("safety.contentFilter.type"),
-      accessorKey: "type",
-      size: 100,
-      cell: ({ row }) => (
-        <Badge variant="secondary">
-          {t(row.original.type === "prebuilt" ? "safety.contentFilter.prebuilt" : "safety.contentFilter.custom")}
-        </Badge>
-      ),
-    },
-    {
-      header: t("safety.contentFilter.patternName"),
-      accessorKey: "name",
-      cell: ({ row }) => row.original.display_name || row.original.name,
-    },
-    {
-      header: t("safety.contentFilter.regex"),
-      accessorKey: "pattern",
-      cell: ({ row }) =>
-        row.original.pattern ? (
-          <code className="rounded-sm bg-muted px-1 py-0.5 text-xs">{row.original.pattern.substring(0, 40)}...</code>
-        ) : (
-          "-"
-        ),
-    },
-    {
-      header: t("safety.contentFilter.action"),
-      accessorKey: "action",
-      size: 150,
-      cell: ({ row }) => (
-        <Select
-          items={actionItems}
-          value={row.original.action}
-          onValueChange={(value: string | null) => value && onActionChange(row.original.id, value as "BLOCK" | "MASK")}
-        >
-          <SelectTrigger size="sm" className="w-[120px]" aria-label={t("safety.contentFilter.action")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false}>
-            {actionItems.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ),
-    },
-    {
-      header: "",
-      id: "actions",
-      size: 100,
-      cell: ({ row }) => (
-        <Button variant="ghost" size="sm" onClick={() => onRemove(row.original.id)}>
-          <Trash2 />
-          {t("safety.contentFilter.delete")}
-        </Button>
-      ),
-    },
-  ];
+const getPatternTypeLabel = (isKorean: boolean, type: Pattern["type"], t: (key: string) => string) => {
+  if (isKorean) {
+    return t(type === "prebuilt" ? "safety.contentFilter.prebuilt" : "safety.contentFilter.custom");
+  }
+  return type === "prebuilt" ? "Prebuilt" : "Custom";
+};
 
+const PatternTable: React.FC<PatternTableProps> = ({ patterns, onActionChange, onRemove }) => {
+  const { t, i18n } = useTranslation();
+  const isKorean = i18n.resolvedLanguage?.startsWith("ko") ?? false;
+  const actionItems = isKorean
+    ? ACTION_ITEMS.map((item) => ({
+        ...item,
+        label: t(item.value === "BLOCK" ? "safety.contentFilter.block" : "safety.contentFilter.mask"),
+      }))
+    : ACTION_ITEMS;
   if (patterns.length === 0) {
-    return <div className="py-10 text-center text-muted-foreground">{t("safety.contentFilter.noPatterns")}</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        {isKorean ? t("safety.contentFilter.noPatterns") : "No patterns added."}
+      </div>
+    );
   }
 
-  return <DataTable data={patterns} columns={columns} getRowId={(row) => row.id} size="compact" />;
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table data-slot="table" className="w-full text-sm">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium">
+              {isKorean ? t("safety.contentFilter.type") : "Type"}
+            </th>
+            <th className="px-3 py-2 text-left text-xs font-medium">
+              {isKorean ? t("safety.contentFilter.patternName") : "Pattern name"}
+            </th>
+            <th className="px-3 py-2 text-left text-xs font-medium">
+              {isKorean ? t("safety.contentFilter.regex") : "Regex pattern"}
+            </th>
+            <th className="px-3 py-2 text-left text-xs font-medium">
+              {isKorean ? t("safety.contentFilter.action") : "Action"}
+            </th>
+            <th className="px-3 py-2 text-left text-xs font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {patterns.map((pattern) => (
+            <tr key={pattern.id} className="border-t border-border align-top">
+              <td className="px-3 py-2">
+                <Badge variant="secondary">{getPatternTypeLabel(isKorean, pattern.type, t)}</Badge>
+              </td>
+              <td className="px-3 py-2">{pattern.display_name || pattern.name}</td>
+              <td className="px-3 py-2">
+                {pattern.pattern ? (
+                  <code className="rounded-sm bg-muted px-1 py-0.5 text-xs">{pattern.pattern.substring(0, 40)}...</code>
+                ) : (
+                  "-"
+                )}
+              </td>
+              <td className="px-3 py-2">
+                <InlineSelect
+                  ariaLabel={isKorean ? t("safety.contentFilter.action") : "Action"}
+                  value={pattern.action}
+                  options={actionItems}
+                  className="w-[120px] justify-between"
+                  onChange={(value) => onActionChange(pattern.id, value)}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm hover:bg-muted"
+                  onClick={() => onRemove(pattern.id)}
+                >
+                  <Trash2 className="size-4" />
+                  {isKorean ? t("safety.contentFilter.delete") : "Delete"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };
 
 export default PatternTable;

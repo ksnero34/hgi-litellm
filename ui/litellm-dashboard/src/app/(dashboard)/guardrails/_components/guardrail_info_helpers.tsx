@@ -66,9 +66,8 @@ export const populateGuardrailProviders = (providerParamsResponse: Record<string
 };
 
 // Function to get current guardrail providers (dynamic or fallback to legacy)
-export const getGuardrailProviders = (): Record<string, string> => {
-  if (Object.keys(DynamicGuardrailProviders).length > 0) return DynamicGuardrailProviders;
-  return { ...GuardrailProviders };
+export const getGuardrailProviders = () => {
+  return Object.keys(DynamicGuardrailProviders).length > 0 ? DynamicGuardrailProviders : GuardrailProviders;
 };
 
 export const guardrail_provider_map: Record<string, string> = {
@@ -84,7 +83,6 @@ export const guardrail_provider_map: Record<string, string> = {
   Deepkeep: "deepkeep",
   QostodianNexus: "qostodian_nexus",
   Repelloai: "repelloai",
-  MicrosoftPurview: "microsoft_purview",
 };
 
 // Function to populate provider map from API response - updates the original map
@@ -124,15 +122,6 @@ export const getSupportedModesForProvider = (
       : undefined;
   return perProvider ?? settings?.supported_modes;
 };
-
-export const guardrailModeDescriptionKeys = {
-  pre_call: "guardrails.modes.pre_call",
-  during_call: "guardrails.modes.during_call",
-  post_call: "guardrails.modes.post_call",
-  logging_only: "guardrails.modes.logging_only",
-  pre_mcp_call: "guardrails.modes.pre_mcp_call",
-  during_mcp_call: "guardrails.modes.during_mcp_call",
-} as const;
 
 // Decides if we should render the PII config settings for a given provider
 // For now we only support PII config settings for Presidio PII
@@ -204,7 +193,6 @@ export const guardrailLogoMap = {
   "Qostodian Nexus": qohashLogo.src,
   "RepelloAI Argus": repelloAiLogo.src,
   Straiker: straikerLogo.src,
-  "Microsoft Purview": microsoftAzureLogo.src,
 } satisfies Record<string, string>;
 
 export const getGuardrailLogo = (displayName: string): string | undefined =>

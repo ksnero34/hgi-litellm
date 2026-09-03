@@ -1,8 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders, screen } from "../../../../../../tests/test-utils";
-import { i18n } from "@/i18n/i18n";
-import { languageStorageKey } from "@/i18n/resources";
 import { CreateProjectModal } from "./CreateProjectModal";
 
 const mockMutate = vi.fn();
@@ -10,20 +8,15 @@ vi.mock("@/app/(dashboard)/hooks/projects/useCreateProject", () => ({
   useCreateProject: () => ({ mutate: mockMutate, isPending: false }),
 }));
 
+// Mock the form to keep tests focused on modal behavior
 vi.mock("./ProjectBaseForm", () => ({
   ProjectBaseForm: () => <div data-testid="project-base-form" />,
 }));
-
-beforeAll(() => {
-  void i18n.changeLanguage("en");
-});
 
 describe("CreateProjectModal", () => {
   const onClose = vi.fn();
 
   beforeEach(() => {
-    window.localStorage.setItem(languageStorageKey, "en");
-    void i18n.changeLanguage("en");
     vi.clearAllMocks();
   });
 

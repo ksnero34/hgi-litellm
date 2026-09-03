@@ -27,6 +27,7 @@ import {
   Bell,
   Blocks,
   Bot,
+  BookOpen,
   Boxes,
   Building2,
   ChevronRight,
@@ -75,11 +76,14 @@ import {
 import BetaBadge from "./BetaBadge";
 import NewBadge from "./common_components/NewBadge";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
+import SidebarUsageCard from "./SidebarUsageCard";
 import { i18n } from "@/i18n/i18n";
 import { useTranslation } from "react-i18next";
 import { MIGRATED_PAGES, migratedHref, legacyPageHref } from "@/utils/migratedPages";
 
 const ICON = { strokeWidth: 1.75 } as const;
+
+const LOGO_CLASS_NAME = "h-7 w-auto max-w-[150px] object-contain group-data-[collapsed=true]/sidebar:w-7";
 
 interface SidebarProps {
   setPage: (page: string) => void;
@@ -255,12 +259,25 @@ const menuGroups: MenuGroup[] = [
       { key: "api_ref", page: "api_ref", label: "API Reference", icon: <Code2 {...ICON} /> },
       { key: "model-hub-table", page: "model-hub-table", label: "AI Hub", icon: <LayoutGrid {...ICON} /> },
       {
+        key: "learning-resources",
+        page: "learning-resources",
+        label: "Learning Resources",
+        icon: <BookOpen {...ICON} />,
+        external_url: "https://models.litellm.ai/cookbook",
+      },
+      {
+        key: "caching",
+        page: "caching",
+        label: "Response Cache",
+        icon: <Database {...ICON} />,
+        roles: all_admin_roles,
+      },
+      {
         key: "experimental",
         page: "experimental",
         label: "Experimental",
         icon: <FlaskConical {...ICON} />,
         children: [
-          { key: "caching", page: "caching", label: "Caching", icon: <Database {...ICON} />, roles: all_admin_roles },
           {
             key: "prompts",
             page: "prompts",
@@ -395,9 +412,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   experimental: "nav.experimental",
   caching: "nav.caching",
   prompts: "nav.prompts",
-  "transform-request": "nav.transformRequest",
   "tag-management": "nav.tagManagement",
-  "4": "nav.legacyUsage",
   settings: "nav.settings",
   "router-settings": "nav.routerSettings",
   "logging-and-alerts": "nav.loggingAlerts",
@@ -413,11 +428,11 @@ const labelText = (item: MenuItem): string => {
   return item.label;
 };
 const SECTION_DISPLAY: Record<string, string> = {
-  "AI GATEWAY": "section.gateway",
-  OBSERVABILITY: "section.observability",
-  "ACCESS CONTROL": "section.access",
-  "DEVELOPER TOOLS": "section.developer",
-  SETTINGS: "section.settings",
+  "AI GATEWAY": "AI Gateway",
+  OBSERVABILITY: "Observability",
+  "ACCESS CONTROL": "Access Control",
+  "DEVELOPER TOOLS": "Developer Tools",
+  SETTINGS: "SETTINGS",
 };
 
 const prettify = (key: string): string =>
@@ -437,7 +452,8 @@ const isViewOnlyNavRole = (role: string): boolean => {
 export const getBreadcrumb = (page: string): { section: string | null; title: string } => {
   for (const group of menuGroups) {
     for (const item of group.items) {
-      const section = SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel;
+      const section =
+        group.groupLabel === "SETTINGS" ? "Settings" : SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel;
       if (item.page === page) return { section, title: labelText(item) };
       const child = item.children?.find((c) => c.page === page);
       if (child) return { section, title: labelText(child) };
@@ -462,7 +478,8 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const { userId, accessToken, userRole, isViewOnly } = useAuthorized();
   const isOrgAdmin = useIsOrgAdmin();
   const { data: teams } = useTeams();
-  const { logoUrl } = useTheme();
+  const { logoUrl, logoUrlDark } = useTheme();
+  const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
   const { data: healthData } = useHealthReadinessDetails(accessToken);
   const logout = useLogout(accessToken);
 
@@ -639,6 +656,8 @@ const Sidebar_: React.FC<SidebarProps> = ({
   };
 
   const logoSrc = logoUrl || `${baseUrl}/get_image`;
+  const reachableDarkLogo = logoUrlDark === erroredDarkLogo ? null : logoUrlDark;
+  const darkLogoSrc = reachableDarkLogo || (logoUrl ? logoSrc : `${baseUrl}/get_image?theme=dark`);
 
   return (
     <Sidebar collapsed={collapsed}>
@@ -646,15 +665,19 @@ const Sidebar_: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between gap-2 group-data-[collapsed=true]/sidebar:flex-col">
           <div className="flex min-w-0 items-center gap-2">
             <Link href={migratedHref("")} className="flex min-w-0 items-center" aria-label={i18n.t("shell.home")}>
+              <img src={logoSrc} alt="LiteLLM" className={cn(LOGO_CLASS_NAME, "dark:hidden")} />
               <img
-                src={logoSrc}
-                alt="LiteLLM"
-                className="h-7 w-auto max-w-[150px] object-contain group-data-[collapsed=true]/sidebar:w-7"
+                src={darkLogoSrc}
+                alt=""
+                aria-hidden
+                onError={() => setErroredDarkLogo(logoUrlDark)}
+                className={cn(LOGO_CLASS_NAME, "hidden dark:block")}
               />
             </Link>
             {version && (
               <Badge
                 variant="outline"
+                render={<a href="https://docs.litellm.ai/release_notes" target="_blank" rel="noopener noreferrer" />}
                 className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
               >
                 v{version}
@@ -680,9 +703,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
           {visibleGroups.map((group, gi) => (
             <SidebarGroup key={group.groupLabel}>
               {gi > 0 && <SidebarSeparator className="hidden group-data-[collapsed=true]/sidebar:block" />}
-              <SidebarGroupLabel>
-                {SECTION_DISPLAY[group.groupLabel] ? i18n.t(SECTION_DISPLAY[group.groupLabel]!) : group.groupLabel}
-              </SidebarGroupLabel>
+              <SidebarGroupLabel>{SECTION_DISPLAY[group.groupLabel] ?? group.groupLabel}</SidebarGroupLabel>
               <SidebarMenu>{group.items.map((item) => renderItem(item))}</SidebarMenu>
             </SidebarGroup>
           ))}
@@ -690,6 +711,13 @@ const Sidebar_: React.FC<SidebarProps> = ({
       </ScrollArea>
 
       <SidebarFooter>
+        {isAdminRole(userRole) && (
+          <SidebarUsageCard
+            accessToken={accessToken}
+            collapsed={collapsed}
+            onExpandRail={() => onToggleCollapsed?.()}
+          />
+        )}
         <SidebarAccountMenu onLogout={logout} collapsed={collapsed} />
       </SidebarFooter>
     </Sidebar>

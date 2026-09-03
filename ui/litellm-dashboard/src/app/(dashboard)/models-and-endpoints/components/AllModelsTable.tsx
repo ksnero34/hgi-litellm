@@ -1,6 +1,13 @@
 "use client";
 
-import { ColumnFiltersState, OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
+import {
+  ColumnFiltersState,
+  type ColumnDef,
+  type HeaderContext,
+  OnChangeFn,
+  PaginationState,
+  SortingState,
+} from "@tanstack/react-table";
 import { Search, Settings } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +17,7 @@ import {
   DataTable,
   DataTableFilterDrawer,
   DataTableFilterField,
+  DataTableSortHeader,
   DataTableToolbar,
 } from "@/components/shared/DataTable";
 import { SearchSelect } from "@/components/shared/SearchSelect";
@@ -145,7 +153,20 @@ export function AllModelsTable({
       onTogglePauseClick,
       pausingModelId,
     };
-    return getModelsTableColumns(columnDeps);
+    return getModelsTableColumns(columnDeps).map((column): ColumnDef<ModelData, unknown> => {
+      if (column.id !== STATUS_COLUMN_ID) {
+        return column;
+      }
+
+      return {
+        ...column,
+        id: STATUS_COLUMN_ID,
+        meta: { ...(column.meta ?? {}), title: t("modelManagement.sourceColumn") },
+        header: ({ column: tableColumn }: HeaderContext<ModelData, unknown>) => (
+          <DataTableSortHeader column={tableColumn} title={t("modelManagement.sourceColumn")} />
+        ),
+      } as ColumnDef<ModelData, unknown>;
+    });
   }, [userRole, userID, t, onModelIdClick, onTeamIdClick, onDeleteClick, onTogglePauseClick, pausingModelId]);
 
   const modelGroupOptions = useMemo(
@@ -223,7 +244,7 @@ export function AllModelsTable({
                 <span
                   className={cn(
                     "size-2 shrink-0 rounded-full",
-                    selectedTeamValue === PERSONAL_TEAM_VALUE ? "bg-blue-500" : "bg-green-500",
+                    selectedTeamValue === PERSONAL_TEAM_VALUE ? "bg-info" : "bg-success",
                   )}
                 />
                 <span className="text-muted-foreground">{t("modelManagement.team")}</span>

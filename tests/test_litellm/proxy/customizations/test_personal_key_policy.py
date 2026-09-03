@@ -16,10 +16,10 @@ from litellm.proxy.customizations.personal_key_policy import (
 def test_resolve_department_team_requires_exactly_one_managed_team():
     assert resolve_department_team_id({"litellm_sso_managed_team_ids": ["department-1"]}) == "department-1"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="exactly one OIDC-managed department team"):
         resolve_department_team_id({"litellm_sso_managed_team_ids": []})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="exactly one OIDC-managed department team"):
         resolve_department_team_id({"litellm_sso_managed_team_ids": ["department-1", "project-1"]})
 
 

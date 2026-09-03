@@ -4,23 +4,20 @@ Tests PII detection and masking for different message formats
 """
 
 import asyncio
-import os
-import sys
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.abspath("../../../../../.."))
-
 import litellm
 from litellm.caching.caching import DualCache
+from litellm.exceptions import BlockedPiiEntityError
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.presidio import (
     _OPTIONAL_PresidioPIIMasking,
+    _PresidioServiceError,
 )
-from litellm.exceptions import BlockedPiiEntityError
-from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.guardrails import LitellmParams, PiiAction, PiiEntityType
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.utils import Choices, Message, ModelResponse
@@ -68,6 +65,7 @@ async def test_virtual_key_logging_only_invokes_presidio_from_async_success_hand
         )
 
     presidio.check_pii.assert_awaited_once()
+    assert response.choices[0].message.content == "안녕하세요"
 
 
 @pytest.mark.asyncio
@@ -306,7 +304,6 @@ async def test_multimodal_message_format_completion_call_type(presidio_guardrail
     assert "test@example.com" not in content_item["text"]
     assert "555-123-4567" not in content_item["text"]
 
-    print("✓ Multimodal message format test for completion call type passed")
 
 
 @pytest.mark.asyncio
@@ -375,7 +372,6 @@ async def test_multimodal_message_format_anthropic_messages_call_type(
     assert "test@example.com" not in content_item["text"]
     assert "555-123-4567" not in content_item["text"]
 
-    print("✓ Multimodal message format test for anthropic_messages call type passed")
 
 
 @pytest.mark.asyncio
@@ -429,7 +425,6 @@ async def test_multimodal_message_multiple_content_items(presidio_guardrail, moc
     assert "[CREDIT_CARD]" in content_items[0]["text"]
     assert "[EMAIL]" in content_items[1]["text"]
 
-    print("✓ Multiple content items test passed")
 
 
 @pytest.mark.asyncio
@@ -494,7 +489,6 @@ async def test_mixed_string_and_list_content(presidio_guardrail, mock_user_api_k
     assert isinstance(messages[2]["content"], list)
     assert "[EMAIL]" in messages[2]["content"][0]["text"]
 
-    print("✓ Mixed string and list content test passed")
 
 
 @pytest.mark.asyncio
@@ -551,7 +545,6 @@ async def test_content_list_without_text_field(presidio_guardrail, mock_user_api
     assert content_items[1]["type"] == "text"
     assert "[EMAIL]" in content_items[1]["text"]
 
-    print("✓ Content list without text field test passed")
 
 
 @pytest.mark.asyncio
@@ -574,7 +567,6 @@ async def test_empty_messages(presidio_guardrail, mock_user_api_key, mock_cache)
 
     # Should return data unchanged
     assert result == test_data
-    print("✓ Empty messages test passed")
 
 
 @pytest.mark.asyncio
@@ -597,7 +589,6 @@ async def test_no_messages_field(presidio_guardrail, mock_user_api_key, mock_cac
 
     # Should return data unchanged
     assert result == test_data
-    print("✓ No messages field test passed")
 
 
 @pytest.mark.asyncio
@@ -652,7 +643,6 @@ async def test_logging_hook_multimodal_message_format(presidio_guardrail):
     assert "4111-1111-1111-1111" not in content_item["text"]
     assert "test@example.com" not in content_item["text"]
 
-    print("✓ Logging hook multimodal message format test passed")
 
 
 @pytest.mark.asyncio
@@ -705,7 +695,6 @@ async def test_logging_hook_multiple_content_items(presidio_guardrail):
     assert "[CREDIT_CARD]" in content_items[0]["text"]
     assert "[EMAIL]" in content_items[1]["text"]
 
-    print("✓ Logging hook multiple content items test passed")
 
 
 @pytest.mark.asyncio
@@ -747,7 +736,6 @@ async def test_logging_only_does_not_mask_pre_call_request(mock_user_api_key, mo
     assert result["messages"][0]["content"] == original_text
     assert "[PHONE]" not in result["messages"][0]["content"]
 
-    print("✓ logging_only leaves the pre-call request unmasked")
 
 
 @pytest.mark.asyncio
@@ -1059,7 +1047,6 @@ async def test_presidio_sets_guardrail_information_in_request_data():
     assert guardrail_info["masked_entity_count"]["EMAIL_ADDRESS"] == 1
     assert guardrail_info["masked_entity_count"]["PERSON"] == 1
 
-    print("✓ Presidio sets guardrail_information in request_data")
 
 
 @pytest.mark.asyncio
@@ -1181,7 +1168,6 @@ async def test_request_data_flows_to_apply_guardrail():
         assert "metadata" in request_data
         assert request_data["metadata"].get("test_flag") == "passed_correctly"
 
-    print("✓ request_data correctly passed to apply_guardrail")
 
 
 @pytest.mark.asyncio
@@ -1345,7 +1331,7 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     cb = initialize_presidio(params_input, guardrail_dict)
     assert cb is created[0]
     assert created[0].apply_to_output is False
-    assert created[0].unreachable_fallback == "fail_open"
+    assert created[0].unreachable_fallback == "fail_closed"
 
     created.clear()
     params_logging_only = LitellmParams(
@@ -1474,7 +1460,6 @@ async def test_empty_content_handling(presidio_guardrail, mock_user_api_key, moc
     # Verify messages are preserved
     assert len(result["messages"]) == 3
 
-    print("✓ Empty content handling test passed")
 
 
 @pytest.mark.asyncio
@@ -1509,7 +1494,6 @@ async def test_whitespace_only_content(presidio_guardrail, mock_user_api_key, mo
     assert result is not None
     assert len(result["messages"]) == 3
 
-    print("✓ Whitespace-only content test passed")
 
 
 @pytest.mark.asyncio
@@ -1541,7 +1525,6 @@ async def test_analyze_text_with_empty_string():
     )
     assert result == [], "Whitespace-only text should return empty list"
 
-    print("✓ analyze_text empty string test passed")
 
 
 @pytest.mark.asyncio
@@ -1570,7 +1553,6 @@ async def test_analyze_text_error_dict_handling():
         )
     assert result == [], "Error dict should be handled gracefully"
 
-    print("✓ analyze_text error dict handling test passed")
 
 
 @pytest.mark.asyncio
@@ -1618,13 +1600,16 @@ async def test_analyze_text_invalid_response_raises_when_block_configured():
         "_get_session_iterator",
         _make_mock_session_iterator("Internal Server Error"),
     ):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(
+            _PresidioServiceError,
+            match="Presidio analyzer returned invalid response",
+        ) as exc_info:
             await presidio.analyze_text(
                 text="some text",
                 presidio_config=None,
                 request_data={},
             )
-    assert "BLOCK" in str(exc_info.value) or "Presidio" in str(exc_info.value)
+    assert "Internal Server Error" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -1645,7 +1630,10 @@ async def test_analyze_text_invalid_response_raises_when_mask_configured():
         "_get_session_iterator",
         _make_mock_session_iterator("Internal Server Error"),
     ):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(
+            _PresidioServiceError,
+            match="Presidio analyzer returned invalid response",
+        ) as exc_info:
             await presidio.analyze_text(
                 text="some text",
                 presidio_config=None,
@@ -1655,7 +1643,7 @@ async def test_analyze_text_invalid_response_raises_when_mask_configured():
 
 
 @pytest.mark.asyncio
-async def test_check_pii_defaults_to_fail_open_when_presidio_is_unavailable():
+async def test_check_pii_defaults_to_fail_closed_when_presidio_is_unavailable():
     presidio = _OPTIONAL_PresidioPIIMasking(
         presidio_analyzer_api_base="http://mock-presidio:5002/",
         presidio_anonymizer_api_base="http://mock-presidio:5001/",
@@ -1672,14 +1660,14 @@ async def test_check_pii_defaults_to_fail_open_when_presidio_is_unavailable():
             text_response="unavailable",
         ),
     ):
-        result = await presidio.check_pii(
-            text="4111-1111-1111-1111",
-            output_parse_pii=False,
-            presidio_config=None,
-            request_data=request_data,
-        )
+        with pytest.raises(Exception, match="HTTP 503"):
+            await presidio.check_pii(
+                text="4111-1111-1111-1111",
+                output_parse_pii=False,
+                presidio_config=None,
+                request_data=request_data,
+            )
 
-    assert result == "4111-1111-1111-1111"
     guardrail_entries = request_data["metadata"]["standard_logging_guardrail_information"]
     assert guardrail_entries[-1]["guardrail_status"] == "guardrail_failed_to_respond"
     assert guardrail_entries[-1]["enforcement_mode"] == "enforce"
@@ -1895,7 +1883,7 @@ async def test_blocked_pii_split_across_stream_chunks_is_redacted_from_logging_p
 
 
 @pytest.mark.asyncio
-async def test_check_pii_fails_open_when_presidio_anonymizer_is_unavailable():
+async def test_check_pii_fails_closed_when_presidio_anonymizer_is_unavailable():
     class AnalyzerOnlyPresidio(_OPTIONAL_PresidioPIIMasking):
         async def analyze_text(self, text, presidio_config, request_data):
             return [{"entity_type": "EMAIL_ADDRESS", "start": 0, "end": len(text), "score": 0.99}]
@@ -1909,14 +1897,14 @@ async def test_check_pii_fails_open_when_presidio_anonymizer_is_unavailable():
     )
     request_data = {}
 
-    result = await presidio.check_pii(
-        text="person@example.com",
-        output_parse_pii=False,
-        presidio_config=None,
-        request_data=request_data,
-    )
+    with pytest.raises(Exception, match="Presidio PII anonymization failed"):
+        await presidio.check_pii(
+            text="person@example.com",
+            output_parse_pii=False,
+            presidio_config=None,
+            request_data=request_data,
+        )
 
-    assert result == "person@example.com"
     guardrail_entries = request_data["metadata"]["standard_logging_guardrail_information"]
     assert guardrail_entries[-1]["guardrail_status"] == "guardrail_failed_to_respond"
 
@@ -2080,7 +2068,6 @@ async def test_tool_calling_complete_scenario(presidio_guardrail, mock_user_api_
     # Verify other messages preserved
     assert len(result["messages"]) == 4
 
-    print("✓ Tool calling complete scenario test passed")
 
 
 def test_filter_drops_low_score_detection():
@@ -2248,7 +2235,7 @@ def test_blocking_respects_threshold_filter():
 
     high_score_results = [{"entity_type": PiiEntityType.CREDIT_CARD, "score": 0.95, "start": 0, "end": 4}]
     filtered_high = guardrail.filter_analyze_results_by_score(high_score_results)
-    with pytest.raises(Exception):
+    with pytest.raises(BlockedPiiEntityError):
         guardrail.raise_exception_if_blocked_entities_detected(filtered_high)
 
 
@@ -2339,7 +2326,6 @@ async def test_get_session_iterator_thread_safety(presidio_guardrail):
     # (Changed behavior: no longer closes immediately, cached per loop for efficiency)
     assert not bg_session.closed, "Background session should remain open for reuse"
 
-    print("✓ Session iterator thread safety test passed")
 
 
 from litellm.types.utils import ModelResponseStream
@@ -2442,7 +2428,10 @@ async def test_analyze_text_non_json_content_type_fail_closed():
     )
 
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(
+            _PresidioServiceError,
+            match="expected application/json Content-Type",
+        ) as exc_info:
             await guardrail.analyze_text(
                 text="Hello world",
                 presidio_config=None,
@@ -2500,7 +2489,7 @@ async def test_analyze_text_http_error_status():
     )
 
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(_PresidioServiceError, match="HTTP 500") as exc_info:
             await guardrail.analyze_text(
                 text="Hello world",
                 presidio_config=None,

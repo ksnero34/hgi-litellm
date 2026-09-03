@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import EmailSettings from "./email_settings";
 import { Logo } from "@/components/molecules/logo/Logo";
-import NotificationsManager from "./molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 
 import AlertingSettings from "./alerting/alerting_settings";
 import CloudZeroCostTracking from "./CloudZeroCostTracking/CloudZeroCostTracking";
@@ -34,7 +34,6 @@ import {
 import { LoggingCallbacksTable } from "./Settings/LoggingAndAlerts/LoggingCallbacks/LoggingCallbacksTable";
 import { AlertingObject } from "./Settings/LoggingAndAlerts/LoggingCallbacks/types";
 import { parseErrorMessage } from "./shared/errorUtils";
-import { useTranslation } from "react-i18next";
 interface SettingsPageProps {
   accessToken: string | null;
   userRole: string | null;
@@ -59,7 +58,6 @@ interface DynamicParamsFieldsProps {
 }
 
 const DynamicParamsFields: React.FC<DynamicParamsFieldsProps> = ({ params, callbackConfigs, selectedCallback }) => {
-  const { t } = useTranslation();
   const { register, formState } = useFormContext<CallbackFormValues>();
   const fieldIdPrefix = React.useId();
 
@@ -68,7 +66,7 @@ const DynamicParamsFields: React.FC<DynamicParamsFieldsProps> = ({ params, callb
   }
 
   return (
-    <div className="space-y-4 mt-6 p-4 bg-gray-50 rounded-lg border">
+    <div className="space-y-4 mt-6 p-4 bg-muted rounded-lg border">
       {params.map((param) => {
         const callbackConfig = callbackConfigs.find((config) => config.id === selectedCallback);
         const paramConfig = callbackConfig?.dynamic_params?.[param] || {};
@@ -78,37 +76,33 @@ const DynamicParamsFields: React.FC<DynamicParamsFieldsProps> = ({ params, callb
         const fieldId = `${fieldIdPrefix}-${param}`;
         const registration = register(
           param,
-          isRequired ? { required: t("settings.shared.enterField", { field: fieldLabel.toLowerCase() }) } : undefined,
+          isRequired ? { required: `Please enter the ${fieldLabel.toLowerCase()}` } : undefined,
         );
 
         return (
           <Field key={param} className="mb-4">
             <FieldLabel htmlFor={fieldId}>
-              <span className="text-sm font-medium text-gray-700">{fieldLabel} </span>
+              <span className="text-sm font-medium text-foreground">{fieldLabel} </span>
             </FieldLabel>
             {paramType === "password" ? (
               <Input
                 id={fieldId}
                 type="password"
-                placeholder={t("settings.shared.enterYourField", { field: fieldLabel.toLowerCase() })}
+                placeholder={`Enter your ${fieldLabel.toLowerCase()}`}
                 {...registration}
               />
             ) : paramType === "number" ? (
               <Input
                 id={fieldId}
                 type="number"
-                placeholder={t("settings.shared.enterFieldGeneric", { field: fieldLabel.toLowerCase() })}
+                placeholder={`Enter ${fieldLabel.toLowerCase()}`}
                 min={0}
                 max={1}
                 step={0.1}
                 {...registration}
               />
             ) : (
-              <Input
-                id={fieldId}
-                placeholder={t("settings.shared.enterYourField", { field: fieldLabel.toLowerCase() })}
-                {...registration}
-              />
+              <Input id={fieldId} placeholder={`Enter your ${fieldLabel.toLowerCase()}`} {...registration} />
             )}
             <FieldError errors={[formState.errors[param]]} />
           </Field>
@@ -138,7 +132,6 @@ export const CallbackSelector: React.FC<CallbackSelectorProps> = ({
   onCallbackChange,
   disabled = false,
 }) => {
-  const { t } = useTranslation();
   const { control } = useFormContext<CallbackFormValues>();
   const inputId = React.useId();
   const selectedConfig = callbackConfigs.find((config) => config.id === selectedCallback) ?? null;
@@ -147,10 +140,10 @@ export const CallbackSelector: React.FC<CallbackSelectorProps> = ({
     <Controller
       control={control}
       name="callback"
-      rules={disabled ? undefined : { required: t("settings.shared.callbackRequired") }}
+      rules={disabled ? undefined : { required: "Please select a callback" }}
       render={({ field, fieldState }) => (
         <Field>
-          <FieldLabel htmlFor={inputId}>{t("settings.shared.callback")}</FieldLabel>
+          <FieldLabel htmlFor={inputId}>Callback</FieldLabel>
           <Combobox
             items={callbackConfigs}
             value={selectedConfig}
@@ -167,7 +160,7 @@ export const CallbackSelector: React.FC<CallbackSelectorProps> = ({
           >
             <ComboboxInput
               id={inputId}
-              placeholder={t("settings.shared.callbackPlaceholder")}
+              placeholder="Choose a logging callback..."
               className="w-full"
               disabled={disabled}
               onBlur={field.onBlur}
@@ -186,7 +179,7 @@ export const CallbackSelector: React.FC<CallbackSelectorProps> = ({
                           className="w-6 h-6 rounded-sm object-contain"
                         />
                       </div>
-                      <span className="font-medium text-gray-900">{callbackConfig.displayName}</span>
+                      <span className="font-medium text-foreground">{callbackConfig.displayName}</span>
                     </div>
                   </ComboboxItem>
                 )}
@@ -229,7 +222,6 @@ const buildCallbackPayload = (formValues: Record<string, any>, callbackName: str
 };
 
 const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, premiumUser }) => {
-  const { t } = useTranslation();
   const [callbacks, setCallbacks] = useState<AlertingObject[]>([]);
   const [isLoadingCallbacks, setIsLoadingCallbacks] = useState(true);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -272,11 +264,9 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
         setCallbackConfigs(data || []);
       })
       .catch((error) => {
-        NotificationsManager.fromBackend(
-          t("settings.shared.callbackConfigsLoadError", { error: parseErrorMessage(error) }),
-        );
+        toast.fromError("Failed to load callback configs: " + parseErrorMessage(error));
       });
-  }, [accessToken, t]);
+  }, [accessToken]);
 
   useEffect(() => {
     if (showEditCallback && selectedEditCallback) {
@@ -306,6 +296,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
     daily_reports: "Weekly/Monthly Spend Reports",
     outage_alerts: "Outage Alerts",
     region_outage_alerts: "Region Outage Alerts",
+    model_deprecation_warnings: "Model Deprecation Warnings",
   };
 
   useEffect(() => {
@@ -360,11 +351,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
 
     try {
       await setCallbacksCall(accessToken, payload);
-      NotificationsManager.success(
-        isEdit
-          ? t("settings.shared.callbackUpdatedSuccess")
-          : t("settings.shared.callbackAddedSuccess", { name: callbackName }),
-      );
+      toast.success(isEdit ? "Callback updated successfully" : `Callback ${callbackName} added successfully`);
 
       if (isEdit) {
         setShowEditCallback(false);
@@ -383,7 +370,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
         setCallbacks(updatedData.callbacks);
       }
     } catch (error) {
-      NotificationsManager.fromBackend(error);
+      toast.fromError(error);
     } finally {
       if (isEdit) {
         setIsUpdatingCallback(false);
@@ -453,9 +440,9 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
     try {
       await setCallbacksCall(accessToken, payload);
     } catch (error) {
-      NotificationsManager.fromBackend(error);
+      toast.fromError(error);
     }
-    NotificationsManager.success(t("settings.shared.alertsUpdatedSuccess"));
+    toast.success("Alerts updated successfully");
   };
 
   const handleDeleteCallback = (callback: any) => {
@@ -471,7 +458,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
     try {
       setIsDeletingCallback(true);
       await deleteCallback(accessToken, callbackToDelete.name);
-      NotificationsManager.success(t("settings.shared.deleteCallbackSuccess", { name: callbackToDelete.name }));
+      toast.success(`Callback ${callbackToDelete.name} deleted successfully`);
 
       // Refresh the callbacks list
       if (userID && userRole) {
@@ -483,7 +470,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
       setCallbackToDelete(null);
     } catch (error) {
       console.error("Failed to delete callback:", error);
-      NotificationsManager.fromBackend(error);
+      toast.fromError(error);
     } finally {
       setIsDeletingCallback(false);
     }
@@ -504,7 +491,7 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
             <TabsTrigger value="alerting-settings">Alerting Settings</TabsTrigger>
             <TabsTrigger value="email-alerts">Email Alerts</TabsTrigger>
           </TabsList>
-          <TabsContent value="logging-callbacks">
+          <TabsContent value="logging-callbacks" keepMounted>
             <LoggingCallbacksTable
               callbacks={callbacks}
               availableCallbacks={allCallbacks}
@@ -518,19 +505,19 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
               onTest={async (cb) => {
                 try {
                   await serviceHealthCheck(accessToken, cb.name);
-                  NotificationsManager.success(t("settings.shared.healthCheckTriggered"));
+                  toast.success("Health check triggered");
                 } catch (error) {
-                  NotificationsManager.fromBackend(parseErrorMessage(error));
+                  toast.fromError(parseErrorMessage(error));
                 }
               }}
             />
           </TabsContent>
-          <TabsContent value="cloudzero-cost-tracking">
+          <TabsContent value="cloudzero-cost-tracking" keepMounted>
             <div className="p-8">
               <CloudZeroCostTracking />
             </div>
           </TabsContent>
-          <TabsContent value="alerting-types">
+          <TabsContent value="alerting-types" keepMounted>
             <Card className="p-6">
               <p className="my-2">
                 Alerts are only supported for Slack Webhook URLs. Get your webhook urls from{" "}
@@ -601,11 +588,11 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
                 onClick={async () => {
                   try {
                     await serviceHealthCheck(accessToken, "slack");
-                    NotificationsManager.success(
+                    toast.success(
                       "Alert test triggered. Test request to slack made - check logs/alerts on slack to verify",
                     );
                   } catch (error) {
-                    NotificationsManager.fromBackend(parseErrorMessage(error));
+                    toast.fromError(parseErrorMessage(error));
                   }
                 }}
                 className="mx-2"
@@ -614,10 +601,10 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
               </Button>
             </Card>
           </TabsContent>
-          <TabsContent value="alerting-settings">
+          <TabsContent value="alerting-settings" keepMounted>
             <AlertingSettings accessToken={accessToken} premiumUser={premiumUser} />
           </TabsContent>
-          <TabsContent value="email-alerts">
+          <TabsContent value="email-alerts" keepMounted>
             <EmailSettings accessToken={accessToken} premiumUser={premiumUser} alerts={alerts} />
           </TabsContent>
         </Tabs>
@@ -652,12 +639,12 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
                 selectedCallback={selectedCallback}
               />
 
-              <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-200">
+              <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-border">
                 <Button type="button" variant="outline" onClick={cancelAddCallback} disabled={isAddingCallback}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isAddingCallback}>
-                  {isAddingCallback ? t("settings.shared.adding") : t("settings.shared.addCallback")}
+                  {isAddingCallback ? "Adding..." : "Add Callback"}
                 </Button>
               </div>
             </form>
@@ -693,12 +680,12 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
                 </>
               )}
 
-              <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-200">
+              <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-border">
                 <Button type="button" variant="outline" onClick={closeEditCallbackModal} disabled={isUpdatingCallback}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isUpdatingCallback}>
-                  {isUpdatingCallback ? t("settings.shared.saving") : t("settings.cache.saveChanges")}
+                  {isUpdatingCallback ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </form>
@@ -708,12 +695,12 @@ const Settings: React.FC<SettingsPageProps> = ({ accessToken, userRole, userID, 
 
       <DeleteResourceModal
         isOpen={showDeleteConfirmModal}
-        title={t("settings.shared.deleteCallbackTitle")}
-        message={t("settings.shared.deleteCallbackMessage")}
-        resourceInformationTitle={t("settings.shared.callbackInformation")}
+        title="Delete Callback"
+        message="Are you sure you want to delete this callback? This action cannot be undone."
+        resourceInformationTitle="Callback Information"
         resourceInformation={[
-          { label: t("settings.shared.callbackName"), value: callbackToDelete?.name },
-          { label: t("settings.shared.mode"), value: callbackToDelete?.mode || "success" },
+          { label: "Callback Name", value: callbackToDelete?.name },
+          { label: "Mode", value: callbackToDelete?.mode || "success" },
         ]}
         onCancel={() => {
           setShowDeleteConfirmModal(false);

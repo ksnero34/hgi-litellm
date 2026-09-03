@@ -17,10 +17,6 @@ describe("formatCellDate", () => {
   it("formats date precision as 'MMM D, YYYY' with no time", () => {
     expect(formatCellDate(new Date(2026, 11, 31, 23, 59, 59), "date")).toBe("Dec 31, 2026");
   });
-
-  it("formats date precision using the Korean locale", () => {
-    expect(formatCellDate(new Date(2026, 6, 7, 9, 50, 13), "date", "ko")).toBe("2026년 7월 7일");
-  });
 });
 
 describe("formatFullTimestamp", () => {

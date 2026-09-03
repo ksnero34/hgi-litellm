@@ -1,6 +1,4 @@
 import json
-import os
-import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,10 +26,6 @@ from litellm.types.utils import (
     StandardBuiltInToolsParams,
 )
 
-sys.path.insert(
-    0, os.path.abspath("../../..")
-)  # Adds the parent directory to the system path
-
 from litellm.litellm_core_utils.llm_cost_calc.utils import (
     PromptTokensDetailsResult,
     TokenTypeCostBreakdown,
@@ -44,13 +38,17 @@ from litellm.litellm_core_utils.llm_cost_calc.utils import (
 from litellm.types.utils import CacheCreationTokenDetails, Usage
 
 
-def test_reasoning_tokens_no_price_set():
+@pytest.fixture
+def _local_model_cost_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    monkeypatch.setattr(litellm, "model_cost", litellm.get_model_cost_map(url=""))
+
+
+def test_reasoning_tokens_no_price_set(_local_model_cost_map):
     # Use o1 - o1-mini was deprecated/renamed; o1 has same reasoning-token semantics
     # (no separate output_cost_per_reasoning_token, so all completion tokens use output_cost_per_token)
     model = "o1"
     custom_llm_provider = "openai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
     model_cost_map = litellm.model_cost[model]
     usage = Usage(
         completion_tokens=1578,
@@ -77,9 +75,7 @@ def test_reasoning_tokens_no_price_set():
         10,
     )
     print(f"completion_cost: {completion_cost}")
-    expected_completion_cost = (
-        model_cost_map["output_cost_per_token"] * usage.completion_tokens
-    )
+    expected_completion_cost = model_cost_map["output_cost_per_token"] * usage.completion_tokens
     print(f"expected_completion_cost: {expected_completion_cost}")
     assert round(completion_cost, 10) == round(
         expected_completion_cost,
@@ -87,11 +83,9 @@ def test_reasoning_tokens_no_price_set():
     )
 
 
-def test_reasoning_tokens_gemini():
+def test_reasoning_tokens_gemini(_local_model_cost_map):
     model = "gemini-2.5-flash"
     custom_llm_provider = "gemini"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     usage = Usage(
         completion_tokens=1578,
@@ -120,24 +114,16 @@ def test_reasoning_tokens_gemini():
         10,
     )
     assert round(completion_cost, 10) == round(
-        (
-            model_cost_map["output_cost_per_token"]
-            * usage.completion_tokens_details.text_tokens
-        )
-        + (
-            model_cost_map["output_cost_per_reasoning_token"]
-            * usage.completion_tokens_details.reasoning_tokens
-        ),
+        (model_cost_map["output_cost_per_token"] * usage.completion_tokens_details.text_tokens)
+        + (model_cost_map["output_cost_per_reasoning_token"] * usage.completion_tokens_details.reasoning_tokens),
         10,
     )
 
 
-def test_reasoning_tokens_gemini_3_1_flash_lite():
+def test_reasoning_tokens_gemini_3_1_flash_lite(_local_model_cost_map):
     """Test cost calculation for gemini-3.1-flash-lite-preview with reasoning tokens"""
     model = "gemini-3.1-flash-lite-preview"
     custom_llm_provider = "gemini"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     usage = Usage(
         completion_tokens=1000,
@@ -166,14 +152,8 @@ def test_reasoning_tokens_gemini_3_1_flash_lite():
         10,
     )
     assert round(completion_cost, 10) == round(
-        (
-            model_cost_map["output_cost_per_token"]
-            * usage.completion_tokens_details.text_tokens
-        )
-        + (
-            model_cost_map["output_cost_per_reasoning_token"]
-            * usage.completion_tokens_details.reasoning_tokens
-        ),
+        (model_cost_map["output_cost_per_token"] * usage.completion_tokens_details.text_tokens)
+        + (model_cost_map["output_cost_per_reasoning_token"] * usage.completion_tokens_details.reasoning_tokens),
         10,
     )
 
@@ -270,11 +250,9 @@ def test_image_tokens_fallback_to_base_cost():
     assert round(completion_cost, 12) == round(expected_completion_cost, 12)
 
 
-def test_video_output_tokens_gemini_omni_flash_preview():
+def test_video_output_tokens_gemini_omni_flash_preview(_local_model_cost_map):
     """Video output tokens are billed at output_cost_per_video_token, not the text rate and not zero."""
     model = "gemini-omni-flash-preview"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     text_tokens = 100
     video_tokens = 46336
@@ -310,11 +288,9 @@ def test_video_output_tokens_gemini_omni_flash_preview():
     )
 
 
-def test_video_input_tokens_gemini_omni_flash_preview():
+def test_video_input_tokens_gemini_omni_flash_preview(_local_model_cost_map):
     """Video input tokens are billed at the standard input rate instead of being dropped."""
     model = "gemini-omni-flash-preview"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     usage = Usage(
         completion_tokens=10,
@@ -369,12 +345,10 @@ def test_video_tokens_fallback_to_base_cost():
     assert round(completion_cost, 12) == round((600 + 1120) * 2e-6, 12)
 
 
-def test_generic_cost_per_token_above_200k_tokens():
+def test_generic_cost_per_token_above_200k_tokens(_local_model_cost_map):
     # gemini-2.5-pro-exp-03-25 was removed; gemini-2.5-pro has same above-200k pricing
     model = "gemini-2.5-pro"
     custom_llm_provider = "vertex_ai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
     prompt_tokens = 220 * 1e6
@@ -394,8 +368,7 @@ def test_generic_cost_per_token_above_200k_tokens():
         10,
     )
     assert round(completion_cost, 10) == round(
-        model_cost_map["output_cost_per_token_above_200k_tokens"]
-        * usage.completion_tokens,
+        model_cost_map["output_cost_per_token_above_200k_tokens"] * usage.completion_tokens,
         10,
     )
 
@@ -420,12 +393,10 @@ def test_get_token_base_cost_picks_highest_crossed_tier():
     assert prompt_base_cost == 9e-6
 
 
-def test_generic_cost_per_token_gpt54_above_272k_tokens():
+def test_generic_cost_per_token_gpt54_above_272k_tokens(_local_model_cost_map):
     """GPT-5.4/5.4-pro: prompts >272K input tokens priced at 2x input, 1.5x output."""
     model = "gpt-5.4"
     custom_llm_provider = "openai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
     prompt_tokens = 273000  # Above 272K threshold
@@ -440,22 +411,16 @@ def test_generic_cost_per_token_gpt54_above_272k_tokens():
         usage=usage,
         custom_llm_provider=custom_llm_provider,
     )
-    expected_prompt = (
-        model_cost_map["input_cost_per_token_above_272k_tokens"] * prompt_tokens
-    )
-    expected_completion = (
-        model_cost_map["output_cost_per_token_above_272k_tokens"] * completion_tokens
-    )
+    expected_prompt = model_cost_map["input_cost_per_token_above_272k_tokens"] * prompt_tokens
+    expected_completion = model_cost_map["output_cost_per_token_above_272k_tokens"] * completion_tokens
     assert round(prompt_cost, 10) == round(expected_prompt, 10)
     assert round(completion_cost, 10) == round(expected_completion, 10)
 
 
-def test_generic_cost_per_token_minimax_m3_above_512k_tokens():
+def test_generic_cost_per_token_minimax_m3_above_512k_tokens(_local_model_cost_map):
     """MiniMax-M3: prompts >512K input tokens priced at 2x input, output, and cache read."""
     model = "minimax/MiniMax-M3"
     custom_llm_provider = "minimax"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
     prompt_tokens = 600000
@@ -473,14 +438,10 @@ def test_generic_cost_per_token_minimax_m3_above_512k_tokens():
         custom_llm_provider=custom_llm_provider,
     )
     expected_prompt = (
-        model_cost_map["input_cost_per_token_above_512k_tokens"]
-        * (prompt_tokens - cached_tokens)
-        + model_cost_map["cache_read_input_token_cost_above_512k_tokens"]
-        * cached_tokens
+        model_cost_map["input_cost_per_token_above_512k_tokens"] * (prompt_tokens - cached_tokens)
+        + model_cost_map["cache_read_input_token_cost_above_512k_tokens"] * cached_tokens
     )
-    expected_completion = (
-        model_cost_map["output_cost_per_token_above_512k_tokens"] * completion_tokens
-    )
+    expected_completion = model_cost_map["output_cost_per_token_above_512k_tokens"] * completion_tokens
     assert round(prompt_cost, 10) == round(expected_prompt, 10)
     assert round(completion_cost, 10) == round(expected_completion, 10)
 
@@ -493,10 +454,8 @@ def test_generic_cost_per_token_minimax_m3_above_512k_tokens():
         "bedrock_mantle/openai.gpt-5.6-luna",
     ],
 )
-def test_generic_cost_per_token_bedrock_mantle_gpt56_long_context(model):
+def test_generic_cost_per_token_bedrock_mantle_gpt56_long_context(_local_model_cost_map, model):
     """Bedrock GPT-5.6 supports a 1M context window, billed at the long-context rates above 272K."""
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
     assert model_cost_map["max_input_tokens"] == 1000000
@@ -521,9 +480,7 @@ def test_generic_cost_per_token_bedrock_mantle_gpt56_long_context(model):
         + model_cost_map["cache_read_input_token_cost"] * cached_tokens,
         10,
     )
-    assert round(short_completion_cost, 10) == round(
-        model_cost_map["output_cost_per_token"] * completion_tokens, 10
-    )
+    assert round(short_completion_cost, 10) == round(model_cost_map["output_cost_per_token"] * completion_tokens, 10)
 
     long_prompt_tokens = 900000
     long_usage = Usage(
@@ -538,10 +495,8 @@ def test_generic_cost_per_token_bedrock_mantle_gpt56_long_context(model):
         custom_llm_provider="bedrock_mantle",
     )
     assert round(long_prompt_cost, 10) == round(
-        model_cost_map["input_cost_per_token_above_272k_tokens"]
-        * (long_prompt_tokens - cached_tokens)
-        + model_cost_map["cache_read_input_token_cost_above_272k_tokens"]
-        * cached_tokens,
+        model_cost_map["input_cost_per_token_above_272k_tokens"] * (long_prompt_tokens - cached_tokens)
+        + model_cost_map["cache_read_input_token_cost_above_272k_tokens"] * cached_tokens,
         10,
     )
     assert round(long_completion_cost, 10) == round(
@@ -622,9 +577,7 @@ def test_generic_cost_per_token_tiered_pricing_charges_cache_creation_at_tier_ra
             prompt_tokens=300000,  # 200k new + 60k cache creation + 40k cache read
             completion_tokens=1000,
             total_tokens=301000,
-            prompt_tokens_details=PromptTokensDetailsWrapper(
-                cached_tokens=40000, cache_creation_tokens=60000
-            ),
+            prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=40000, cache_creation_tokens=60000),
         )
         prompt_cost, completion_cost = generic_cost_per_token(
             model=model,
@@ -632,9 +585,7 @@ def test_generic_cost_per_token_tiered_pricing_charges_cache_creation_at_tier_ra
             custom_llm_provider=custom_llm_provider,
         )
 
-        expected_prompt = (
-            (200000 * 6.5e-07) + (60000 * 8.125e-07) + (40000 * 6.5e-08)
-        )
+        expected_prompt = (200000 * 6.5e-07) + (60000 * 8.125e-07) + (40000 * 6.5e-08)
         assert round(prompt_cost, 10) == round(expected_prompt, 10)
         assert round(completion_cost, 10) == round(1000 * 3.9e-06, 10)
     finally:
@@ -827,12 +778,10 @@ def test_generic_cost_per_token_tiered_pricing_bills_reasoning_at_tier_rate():
         litellm.model_cost.pop(model, None)
 
 
-def test_generic_cost_per_token_gpt55():
+def test_generic_cost_per_token_gpt55(_local_model_cost_map):
     """gpt-5.5: base pricing — $5/1M input, $30/1M output, $0.50/1M cached input."""
     model = "gpt-5.5"
     custom_llm_provider = "openai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
 
@@ -859,20 +808,14 @@ def test_generic_cost_per_token_gpt55():
         usage=usage,
         custom_llm_provider=custom_llm_provider,
     )
-    assert round(prompt_cost, 10) == round(
-        model_cost_map["input_cost_per_token"] * prompt_tokens, 10
-    )
-    assert round(completion_cost, 10) == round(
-        model_cost_map["output_cost_per_token"] * completion_tokens, 10
-    )
+    assert round(prompt_cost, 10) == round(model_cost_map["input_cost_per_token"] * prompt_tokens, 10)
+    assert round(completion_cost, 10) == round(model_cost_map["output_cost_per_token"] * completion_tokens, 10)
 
 
-def test_generic_cost_per_token_gpt55_pro():
+def test_generic_cost_per_token_gpt55_pro(_local_model_cost_map):
     """gpt-5.5-pro: responses-only model — $30/1M input, $180/1M output, $3/1M cached input."""
     model = "gpt-5.5-pro"
     custom_llm_provider = "openai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
 
@@ -902,33 +845,27 @@ def test_generic_cost_per_token_gpt55_pro():
         usage=usage,
         custom_llm_provider=custom_llm_provider,
     )
-    assert round(prompt_cost, 10) == round(
-        model_cost_map["input_cost_per_token"] * prompt_tokens, 10
-    )
-    assert round(completion_cost, 10) == round(
-        model_cost_map["output_cost_per_token"] * completion_tokens, 10
-    )
+    assert round(prompt_cost, 10) == round(model_cost_map["input_cost_per_token"] * prompt_tokens, 10)
+    assert round(completion_cost, 10) == round(model_cost_map["output_cost_per_token"] * completion_tokens, 10)
 
 
 @pytest.mark.parametrize(
     "model,input_cost,output_cost,cache_read_cost,cache_write_cost",
     [
-        ("gpt-5.6", 5e-6, 3e-5, 5e-7, 6.25e-6),
-        ("gpt-5.6-sol", 5e-6, 3e-5, 5e-7, 6.25e-6),
+        ("gpt-5.6", 4e-6, 2e-5, 4e-7, 5e-6),
+        ("gpt-5.6-sol", 4e-6, 2e-5, 4e-7, 5e-6),
         ("gpt-5.6-terra", 2e-6, 1.2e-5, 2e-7, 2.5e-6),
         ("gpt-5.6-luna", 2e-7, 1.2e-6, 2e-8, 2.5e-7),
     ],
 )
 def test_generic_cost_per_token_gpt56(
-    model, input_cost, output_cost, cache_read_cost, cache_write_cost
+    _local_model_cost_map, model, input_cost, output_cost, cache_read_cost, cache_write_cost
 ):
     """gpt-5.6 (sol/terra/luna): base pricing + new cache-write cost.
 
     Cache writes are billed at 1.25x the uncached input rate for this family.
     """
     custom_llm_provider = "openai"
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
 
@@ -938,16 +875,10 @@ def test_generic_cost_per_token_gpt56(
     assert model_cost_map["cache_creation_input_token_cost"] == cache_write_cost
     assert model_cost_map["litellm_provider"] == "openai"
     assert model_cost_map["mode"] == "chat"
-    assert model_cost_map["cache_creation_input_token_cost"] == pytest.approx(
-        input_cost * 1.25
-    )
-    assert model_cost_map["max_input_tokens"] == 1050000
-    assert model_cost_map["input_cost_per_token_above_272k_tokens"] == pytest.approx(
-        input_cost * 2
-    )
-    assert model_cost_map["output_cost_per_token_above_272k_tokens"] == pytest.approx(
-        output_cost * 1.5
-    )
+    assert model_cost_map["cache_creation_input_token_cost"] == pytest.approx(input_cost * 1.25)
+    assert model_cost_map["max_input_tokens"] == 922000
+    assert model_cost_map["input_cost_per_token_above_272k_tokens"] == pytest.approx(input_cost * 2)
+    assert model_cost_map["output_cost_per_token_above_272k_tokens"] == pytest.approx(output_cost * 1.5)
 
     prompt_tokens = 1000
     completion_tokens = 500
@@ -965,17 +896,32 @@ def test_generic_cost_per_token_gpt56(
     assert round(completion_cost, 10) == round(output_cost * completion_tokens, 10)
 
 
+def test_gpt_5_6_alias_prices_match_sol(local_model_cost_map):
+    """Regression: the bare gpt-5.6 alias routes to GPT-5.6 Sol, so every cost field on
+    the two entries has to hold the same value. They drifted once before, when Sol took
+    its promotional cut and gpt-5.6 was left on the pre-cut rates, overbilling callers
+    who used the alias."""
+    alias = litellm.model_cost["gpt-5.6"]
+    sol = litellm.model_cost["gpt-5.6-sol"]
+
+    cost_fields = sorted(field for field in sol if "cost" in field)
+    assert len(cost_fields) == 23
+
+    for field in cost_fields:
+        assert alias.get(field) == sol.get(field), field
+
+
 @pytest.mark.parametrize(
     "model,flex_long_input_cost,flex_long_output_cost",
     [
-        ("gpt-5.6", 5e-6, 2.25e-5),
-        ("gpt-5.6-sol", 5e-6, 2.25e-5),
+        ("gpt-5.6", 4e-6, 1.5e-5),
+        ("gpt-5.6-sol", 4e-6, 1.5e-5),
         ("gpt-5.6-terra", 2e-6, 9e-6),
         ("gpt-5.6-luna", 2e-7, 9e-7),
     ],
 )
 def test_generic_cost_per_token_gpt56_flex_above_272k(
-    model, flex_long_input_cost, flex_long_output_cost
+    _local_model_cost_map, model, flex_long_input_cost, flex_long_output_cost
 ):
     """A >272K flex request bills the flex long-context rate, not the standard one.
 
@@ -983,8 +929,6 @@ def test_generic_cost_per_token_gpt56_flex_above_272k(
     ``*_above_272k_tokens_flex`` keys these requests silently fell back to the
     standard long-context price, billing 2x what OpenAI charges.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     prompt_tokens = 300000
     completion_tokens = 1000
@@ -1024,10 +968,8 @@ def test_generic_cost_per_token_gpt56_flex_above_272k(
     ],
 )
 def test_generic_cost_per_token_gpt56_terra_cache_costs_by_tier_and_context(
-    service_tier, prompt_tokens, input_rate, cache_write_rate, cache_read_rate
+    _local_model_cost_map, service_tier, prompt_tokens, input_rate, cache_write_rate, cache_read_rate
 ):
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     cached_tokens = 50000
     cache_write_tokens = 40000
@@ -1049,11 +991,54 @@ def test_generic_cost_per_token_gpt56_terra_cache_costs_by_tier_and_context(
     )
 
     expected_prompt_cost = (
-        text_tokens * input_rate
-        + cached_tokens * cache_read_rate
-        + cache_write_tokens * cache_write_rate
+        text_tokens * input_rate + cached_tokens * cache_read_rate + cache_write_tokens * cache_write_rate
     )
     assert prompt_cost == pytest.approx(expected_prompt_cost)
+
+
+@pytest.mark.parametrize("model", ["gpt-5.6-cyber", "daybreak-red-latest"])
+@pytest.mark.parametrize(
+    "prompt_tokens,input_rate,cache_write_rate,cache_read_rate,output_rate",
+    [
+        (100000, 1.25e-5, 1.5625e-5, 1.25e-6, 7.5e-5),
+        (300000, 2.5e-5, 3.125e-5, 2.5e-6, 1.125e-4),
+    ],
+)
+def test_generic_cost_per_token_gpt56_cyber(
+    model,
+    prompt_tokens,
+    input_rate,
+    cache_write_rate,
+    cache_read_rate,
+    output_rate,
+    monkeypatch,
+):
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    monkeypatch.setattr(litellm, "model_cost", litellm.get_model_cost_map(url=""))
+
+    cached_tokens = 50000
+    cache_write_tokens = 40000
+    text_tokens = prompt_tokens - cached_tokens - cache_write_tokens
+    completion_tokens = 1000
+    usage = Usage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+        prompt_tokens_details=PromptTokensDetailsWrapper(
+            cached_tokens=cached_tokens, cache_write_tokens=cache_write_tokens
+        ),
+    )
+
+    prompt_cost, completion_cost = generic_cost_per_token(
+        model=model,
+        usage=usage,
+        custom_llm_provider="openai",
+    )
+
+    assert prompt_cost == pytest.approx(
+        text_tokens * input_rate + cached_tokens * cache_read_rate + cache_write_tokens * cache_write_rate
+    )
+    assert completion_cost == pytest.approx(completion_tokens * output_rate)
 
 
 @pytest.mark.parametrize(
@@ -1068,20 +1053,19 @@ def test_generic_cost_per_token_gpt56_terra_cache_costs_by_tier_and_context(
         ("azure/eu/gpt-5.6-luna", 2.2e-7, 1.32e-6, 2.2e-8),
     ],
 )
-def test_generic_cost_per_token_azure_gpt56(
-    model, input_cost, output_cost, cache_read_cost
-):
-    """Azure gpt-5.6 (global + us/eu regional): pricing mirrors the openai
-    family for global deployments and carries the standard 10% regional uplift.
+def test_generic_cost_per_token_azure_gpt56(_local_model_cost_map, model, input_cost, output_cost, cache_read_cost):
+    """Azure gpt-5.6 (global + us/eu regional): Azure prices this family on its own
+    schedule and carries the standard 10% regional uplift on top. It did not take the
+    promotional cut OpenAI applied to gpt-5.6-sol, so these rates deliberately sit
+    above the openai ones and must not be lowered to match them.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model_cost_map = litellm.model_cost[model]
     assert model_cost_map["litellm_provider"] == "azure"
     assert model_cost_map["input_cost_per_token"] == input_cost
     assert model_cost_map["output_cost_per_token"] == output_cost
     assert model_cost_map["cache_read_input_token_cost"] == cache_read_cost
+    assert model_cost_map["max_input_tokens"] == 922000
 
     prompt_tokens = 1000
     completion_tokens = 500
@@ -1116,7 +1100,7 @@ def test_generic_cost_per_token_azure_gpt56(
     ],
 )
 def test_gpt55_reasoning_effort_flags_match_live_openai_api(
-    model, expected_none, expected_xhigh, expected_minimal
+    _local_model_cost_map, model, expected_none, expected_xhigh, expected_minimal
 ):
     """Pin reasoning_effort capability flags to OpenAI's actual API contract.
 
@@ -1124,19 +1108,17 @@ def test_gpt55_reasoning_effort_flags_match_live_openai_api(
     ``Unsupported value: 'reasoning_effort' does not support 'minimal' with
     this model``. gpt-5.5-pro additionally rejects 'none' and 'low'.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     m = litellm.model_cost[model]
-    assert (
-        m.get("supports_none_reasoning_effort") is expected_none
-    ), f"{model}: supports_none_reasoning_effort expected {expected_none}"
-    assert (
-        m.get("supports_xhigh_reasoning_effort") is expected_xhigh
-    ), f"{model}: supports_xhigh_reasoning_effort expected {expected_xhigh}"
-    assert (
-        m.get("supports_minimal_reasoning_effort") is expected_minimal
-    ), f"{model}: supports_minimal_reasoning_effort expected {expected_minimal}"
+    assert m.get("supports_none_reasoning_effort") is expected_none, (
+        f"{model}: supports_none_reasoning_effort expected {expected_none}"
+    )
+    assert m.get("supports_xhigh_reasoning_effort") is expected_xhigh, (
+        f"{model}: supports_xhigh_reasoning_effort expected {expected_xhigh}"
+    )
+    assert m.get("supports_minimal_reasoning_effort") is expected_minimal, (
+        f"{model}: supports_minimal_reasoning_effort expected {expected_minimal}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1146,9 +1128,7 @@ def test_gpt55_reasoning_effort_flags_match_live_openai_api(
         ("gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"),
     ],
 )
-def test_gpt55_dated_variants_match_base_reasoning_effort_capabilities(
-    base_model, dated_model
-):
+def test_gpt55_dated_variants_match_base_reasoning_effort_capabilities(_local_model_cost_map, base_model, dated_model):
     """Dated snapshots must carry the same reasoning_effort capability flags as
     their non-dated counterparts.
 
@@ -1158,8 +1138,6 @@ def test_gpt55_dated_variants_match_base_reasoning_effort_capabilities(
     behavior between ``gpt-5.5`` and ``gpt-5.5-2026-04-23``. Pinning to a
     dated variant must never lose capabilities relative to the base alias.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     base = litellm.model_cost[base_model]
     dated = litellm.model_cost[dated_model]
@@ -1187,7 +1165,7 @@ def test_gpt55_dated_variants_match_base_reasoning_effort_capabilities(
     ],
 )
 def test_azure_gpt55_entries_present_with_correct_pricing(
-    model, expected_mode, expected_input, expected_output, expected_cache_read
+    _local_model_cost_map, model, expected_mode, expected_input, expected_output, expected_cache_read
 ):
     """Day-0 Azure entries for GPT-5.5 mirror the OpenAI pricing structure.
 
@@ -1195,8 +1173,6 @@ def test_azure_gpt55_entries_present_with_correct_pricing(
     on 2026-04-24): $5/$30 input/output per 1M for chat, $30/$180 for pro.
     Cache discount is 10% of input.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     m = litellm.model_cost[model]
     assert m["litellm_provider"] == "azure"
@@ -1222,11 +1198,9 @@ def test_azure_gpt55_entries_present_with_correct_pricing(
     ],
 )
 def test_azure_gpt55_reasoning_effort_flags_match_live_openai_api(
-    model, expected_none, expected_minimal, expected_xhigh
+    _local_model_cost_map, model, expected_none, expected_minimal, expected_xhigh
 ):
     """Azure entries pin reasoning_effort flags to OpenAI's actual API contract."""
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     m = litellm.model_cost[model]
     assert m.get("supports_none_reasoning_effort") is expected_none
@@ -1600,17 +1574,13 @@ def test_cache_writing_cost_with_zero_creation_tokens_and_ephemeral_details():
 
     # Expected: (100 * 3.75e-06) + (200 * 6e-06) = 0.000375 + 0.0012 = 0.001575
     expected = (100 * cache_creation_cost) + (200 * cache_creation_cost_above_1hr)
-    assert (
-        result > 0
-    ), "Cost should not be zero when ephemeral token details are present"
+    assert result > 0, "Cost should not be zero when ephemeral token details are present"
     assert round(result, 6) == round(expected, 6)
 
 
-def test_service_tier_flex_pricing():
+def test_service_tier_flex_pricing(_local_model_cost_map):
     """Test that flex service tier uses correct pricing (approximately 50% of standard)."""
     # Set up environment for local model cost map
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     # Test with gpt-5-nano which has flex pricing
     model = "gpt-5-nano"
@@ -1642,9 +1612,7 @@ def test_service_tier_flex_pricing():
     assert flex_total > 0, "Flex cost should be greater than 0"
 
     flex_ratio = flex_total / std_total
-    assert (
-        0.45 <= flex_ratio <= 0.55
-    ), f"Flex pricing should be ~50% of standard, got {flex_ratio:.2f}"
+    assert 0.45 <= flex_ratio <= 0.55, f"Flex pricing should be ~50% of standard, got {flex_ratio:.2f}"
 
     # Verify specific costs match expected values
     # gpt-5-nano flex: input=2.5e-08, output=2e-07
@@ -1652,22 +1620,20 @@ def test_service_tier_flex_pricing():
     expected_flex_completion = 500 * 2e-07  # 0.0001
     expected_flex_total = expected_flex_prompt + expected_flex_completion
 
-    assert (
-        abs(flex_cost[0] - expected_flex_prompt) < 1e-10
-    ), f"Flex prompt cost mismatch: {flex_cost[0]} vs {expected_flex_prompt}"
-    assert (
-        abs(flex_cost[1] - expected_flex_completion) < 1e-10
-    ), f"Flex completion cost mismatch: {flex_cost[1]} vs {expected_flex_completion}"
-    assert (
-        abs(flex_total - expected_flex_total) < 1e-10
-    ), f"Flex total cost mismatch: {flex_total} vs {expected_flex_total}"
+    assert abs(flex_cost[0] - expected_flex_prompt) < 1e-10, (
+        f"Flex prompt cost mismatch: {flex_cost[0]} vs {expected_flex_prompt}"
+    )
+    assert abs(flex_cost[1] - expected_flex_completion) < 1e-10, (
+        f"Flex completion cost mismatch: {flex_cost[1]} vs {expected_flex_completion}"
+    )
+    assert abs(flex_total - expected_flex_total) < 1e-10, (
+        f"Flex total cost mismatch: {flex_total} vs {expected_flex_total}"
+    )
 
 
-def test_service_tier_default_pricing():
+def test_service_tier_default_pricing(_local_model_cost_map):
     """Test that when no service tier is provided, standard pricing is used."""
     # Set up environment for local model cost map
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     # Test with gpt-5-nano
     model = "gpt-5-nano"
@@ -1693,12 +1659,8 @@ def test_service_tier_default_pricing():
     )
 
     # Both should be identical
-    assert (
-        abs(default_cost[0] - standard_cost[0]) < 1e-10
-    ), "Default and standard prompt costs should be identical"
-    assert (
-        abs(default_cost[1] - standard_cost[1]) < 1e-10
-    ), "Default and standard completion costs should be identical"
+    assert abs(default_cost[0] - standard_cost[0]) < 1e-10, "Default and standard prompt costs should be identical"
+    assert abs(default_cost[1] - standard_cost[1]) < 1e-10, "Default and standard completion costs should be identical"
 
     # Verify specific costs match expected standard values
     # gpt-5-nano standard: input=5e-08, output=4e-07
@@ -1706,19 +1668,17 @@ def test_service_tier_default_pricing():
     expected_standard_completion = 500 * 4e-07  # 0.0002
     expected_standard_total = expected_standard_prompt + expected_standard_completion
 
-    assert (
-        abs(default_cost[0] - expected_standard_prompt) < 1e-10
-    ), f"Standard prompt cost mismatch: {default_cost[0]} vs {expected_standard_prompt}"
-    assert (
-        abs(default_cost[1] - expected_standard_completion) < 1e-10
-    ), f"Standard completion cost mismatch: {default_cost[1]} vs {expected_standard_completion}"
+    assert abs(default_cost[0] - expected_standard_prompt) < 1e-10, (
+        f"Standard prompt cost mismatch: {default_cost[0]} vs {expected_standard_prompt}"
+    )
+    assert abs(default_cost[1] - expected_standard_completion) < 1e-10, (
+        f"Standard completion cost mismatch: {default_cost[1]} vs {expected_standard_completion}"
+    )
 
 
-def test_service_tier_fallback_pricing():
+def test_service_tier_fallback_pricing(_local_model_cost_map):
     """Test that when service tier is provided but model doesn't have those keys, it falls back to standard pricing."""
     # Set up environment for local model cost map
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     # Test with gpt-4 which doesn't have flex pricing keys
     model = "gpt-4"
@@ -1755,12 +1715,12 @@ def test_service_tier_fallback_pricing():
     priority_total = priority_cost[0] + priority_cost[1]
 
     # All should be identical (fallback to standard)
-    assert (
-        abs(std_total - flex_total) < 1e-10
-    ), f"Standard and flex costs should be identical (fallback): {std_total} vs {flex_total}"
-    assert (
-        abs(std_total - priority_total) < 1e-10
-    ), f"Standard and priority costs should be identical (fallback): {std_total} vs {priority_total}"
+    assert abs(std_total - flex_total) < 1e-10, (
+        f"Standard and flex costs should be identical (fallback): {std_total} vs {flex_total}"
+    )
+    assert abs(std_total - priority_total) < 1e-10, (
+        f"Standard and priority costs should be identical (fallback): {std_total} vs {priority_total}"
+    )
 
     # Verify costs are reasonable (not zero)
     assert std_total > 0, "Standard cost should be greater than 0"
@@ -1773,12 +1733,83 @@ def test_service_tier_fallback_pricing():
     expected_standard_completion = 500 * 6e-05  # 0.03
     expected_standard_total = expected_standard_prompt + expected_standard_completion
 
-    assert (
-        abs(std_cost[0] - expected_standard_prompt) < 1e-10
-    ), f"Standard prompt cost mismatch: {std_cost[0]} vs {expected_standard_prompt}"
-    assert (
-        abs(std_cost[1] - expected_standard_completion) < 1e-10
-    ), f"Standard completion cost mismatch: {std_cost[1]} vs {expected_standard_completion}"
+    assert abs(std_cost[0] - expected_standard_prompt) < 1e-10, (
+        f"Standard prompt cost mismatch: {std_cost[0]} vs {expected_standard_prompt}"
+    )
+    assert abs(std_cost[1] - expected_standard_completion) < 1e-10, (
+        f"Standard completion cost mismatch: {std_cost[1]} vs {expected_standard_completion}"
+    )
+
+
+def test_service_tier_ultrafast_pricing():
+    """An ultrafast request bills the *_ultrafast rates for all token types.
+
+    Regression for the ultrafast service tier being absent from ServiceTier:
+    the cost-key lookup silently returned the standard keys, undercounting
+    every ultrafast request.
+    """
+    cached_tokens = 200
+    cache_write_tokens = 300
+    text_tokens = 500
+    usage = Usage(
+        prompt_tokens=text_tokens + cached_tokens + cache_write_tokens,
+        completion_tokens=400,
+        total_tokens=text_tokens + cached_tokens + cache_write_tokens + 400,
+        prompt_tokens_details=PromptTokensDetailsWrapper(
+            cached_tokens=cached_tokens, cache_write_tokens=cache_write_tokens
+        ),
+    )
+    model_info: ModelInfo = {
+        "key": "gpt-5.6-sol",
+        "input_cost_per_token": 5e-06,
+        "output_cost_per_token": 3e-05,
+        "cache_creation_input_token_cost": 6.25e-06,
+        "cache_read_input_token_cost": 5e-07,
+        "input_cost_per_token_ultrafast": 5e-05,
+        "output_cost_per_token_ultrafast": 3e-04,
+        "cache_creation_input_token_cost_ultrafast": 6.25e-05,
+        "cache_read_input_token_cost_ultrafast": 5e-06,
+    }
+
+    prompt_cost, completion_cost = generic_cost_per_token(
+        model="gpt-5.6-sol",
+        usage=usage,
+        custom_llm_provider="openai",
+        service_tier="ultrafast",
+        model_info=model_info,
+    )
+
+    expected_prompt_cost = text_tokens * 5e-05 + cached_tokens * 5e-06 + cache_write_tokens * 6.25e-05
+    assert prompt_cost == pytest.approx(expected_prompt_cost)
+    assert completion_cost == pytest.approx(400 * 3e-04)
+
+
+def test_service_tier_ultrafast_fallback_pricing(_local_model_cost_map):
+    """Without *_ultrafast keys an ultrafast request bills the standard rate, not zero.
+
+    Guards the suffix fallback in _get_cost_per_unit: "_fast" is a substring of
+    "_ultrafast", so a shortest-first suffix match would strip the wrong suffix
+    and price the request at 0.
+    """
+
+    usage = Usage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+
+    std_prompt_cost, std_completion_cost = generic_cost_per_token(
+        model="gpt-5.6-sol",
+        usage=usage,
+        custom_llm_provider="openai",
+        service_tier=None,
+    )
+    ultrafast_prompt_cost, ultrafast_completion_cost = generic_cost_per_token(
+        model="gpt-5.6-sol",
+        usage=usage,
+        custom_llm_provider="openai",
+        service_tier="ultrafast",
+    )
+
+    assert std_prompt_cost + std_completion_cost > 0
+    assert ultrafast_prompt_cost == pytest.approx(std_prompt_cost)
+    assert ultrafast_completion_cost == pytest.approx(std_completion_cost)
 
 
 @pytest.mark.parametrize(
@@ -1786,9 +1817,10 @@ def test_service_tier_fallback_pricing():
     [
         "gemini-3-pro-image-preview",
         "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-lite-image",
     ],
 )
-def test_gemini_image_generation_cost_with_zero_text_tokens(model: str):
+def test_gemini_image_generation_cost_with_zero_text_tokens(_local_model_cost_map, model: str):
     """
     Test that image_tokens are correctly costed when text_tokens=0.
 
@@ -1798,8 +1830,6 @@ def test_gemini_image_generation_cost_with_zero_text_tokens(model: str):
 
     https://github.com/BerriAI/litellm/issues/17410
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     custom_llm_provider = "vertex_ai"
 
@@ -1838,9 +1868,7 @@ def test_gemini_image_generation_cost_with_zero_text_tokens(model: str):
     output_cost_per_token = model_cost_map.get("output_cost_per_token", 0)
 
     expected_image_cost = 1120 * output_cost_per_image_token
-    expected_reasoning_cost = (
-        225 * output_cost_per_token
-    )  # reasoning uses base token cost
+    expected_reasoning_cost = 225 * output_cost_per_token  # reasoning uses base token cost
     expected_completion_cost = expected_image_cost + expected_reasoning_cost
 
     # The bug was: all completion tokens were treated as text tokens only.
@@ -1849,18 +1877,16 @@ def test_gemini_image_generation_cost_with_zero_text_tokens(model: str):
         f"Completion cost should be significantly larger than text-only bugged path. "
         f"Expected > {bugged_text_only_cost * 2:.6f}, got {completion_cost:.6f}"
     )
-    assert round(completion_cost, 4) == round(
-        expected_completion_cost, 4
-    ), f"Expected completion cost ${expected_completion_cost:.6f}, got ${completion_cost:.6f}"
+    assert round(completion_cost, 4) == round(expected_completion_cost, 4), (
+        f"Expected completion cost ${expected_completion_cost:.6f}, got ${completion_cost:.6f}"
+    )
 
 
-def test_vertex_image_generation_cost_prefers_token_usage_metadata():
+def test_vertex_image_generation_cost_prefers_token_usage_metadata(_local_model_cost_map):
     """
     When usage metadata exists on image responses, Vertex image generation cost
     should be calculated from token pricing, not flat output_cost_per_image.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gemini-3.1-flash-image-preview"
     model_info = litellm.get_model_info(model=model, custom_llm_provider="vertex_ai")
@@ -1889,9 +1915,7 @@ def test_vertex_image_generation_cost_prefers_token_usage_metadata():
     )
 
     expected_prompt_cost = prompt_tokens * model_info["input_cost_per_token"]
-    expected_completion_cost = (
-        output_image_tokens * model_info["output_cost_per_image_token"]
-    )
+    expected_completion_cost = output_image_tokens * model_info["output_cost_per_image_token"]
     expected_total_cost = expected_prompt_cost + expected_completion_cost
 
     assert round(cost, 10) == round(expected_total_cost, 10)
@@ -1899,20 +1923,16 @@ def test_vertex_image_generation_cost_prefers_token_usage_metadata():
     assert cost != len(image_response.data) * model_info["output_cost_per_image"]
 
 
-def test_vertex_image_generation_cost_falls_back_to_flat_image_pricing():
+def test_vertex_image_generation_cost_falls_back_to_flat_image_pricing(_local_model_cost_map):
     """
     Without usage metadata, Vertex image generation cost should fall back to
     output_cost_per_image * number_of_images.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gemini-3.1-flash-image-preview"
     model_info = litellm.get_model_info(model=model, custom_llm_provider="vertex_ai")
 
-    image_response = ImageResponse(
-        data=[ImageObject(b64_json="img1"), ImageObject(b64_json="img2")]
-    )
+    image_response = ImageResponse(data=[ImageObject(b64_json="img1"), ImageObject(b64_json="img2")])
 
     cost = vertex_image_generation_cost_calculator(
         model=model,
@@ -1923,13 +1943,11 @@ def test_vertex_image_generation_cost_falls_back_to_flat_image_pricing():
     assert round(cost, 10) == round(expected_cost, 10)
 
 
-def test_gemini_image_generation_cost_prefers_token_usage_metadata():
+def test_gemini_image_generation_cost_prefers_token_usage_metadata(_local_model_cost_map):
     """
     When usage metadata exists on image responses, Gemini image generation cost
     should be calculated from token pricing, not flat output_cost_per_image.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gemini/gemini-3-pro-image-preview"
     model_info = litellm.get_model_info(model=model, custom_llm_provider="gemini")
@@ -1958,9 +1976,7 @@ def test_gemini_image_generation_cost_prefers_token_usage_metadata():
     )
 
     expected_prompt_cost = prompt_tokens * model_info["input_cost_per_token"]
-    expected_completion_cost = (
-        output_image_tokens * model_info["output_cost_per_image_token"]
-    )
+    expected_completion_cost = output_image_tokens * model_info["output_cost_per_image_token"]
     expected_total_cost = expected_prompt_cost + expected_completion_cost
 
     assert round(cost, 10) == round(expected_total_cost, 10)
@@ -1968,20 +1984,16 @@ def test_gemini_image_generation_cost_prefers_token_usage_metadata():
     assert cost != len(image_response.data) * model_info["output_cost_per_image"]
 
 
-def test_gemini_image_generation_cost_falls_back_to_flat_image_pricing():
+def test_gemini_image_generation_cost_falls_back_to_flat_image_pricing(_local_model_cost_map):
     """
     Without usage metadata, Gemini image generation cost should fall back to
     output_cost_per_image * number_of_images.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gemini/gemini-3-pro-image-preview"
     model_info = litellm.get_model_info(model=model, custom_llm_provider="gemini")
 
-    image_response = ImageResponse(
-        data=[ImageObject(b64_json="img1"), ImageObject(b64_json="img2")]
-    )
+    image_response = ImageResponse(data=[ImageObject(b64_json="img1"), ImageObject(b64_json="img2")])
 
     cost = gemini_image_generation_cost_calculator(
         model=model,
@@ -2056,22 +2068,22 @@ def test_reasoning_tokens_without_text_tokens_gpt5_nano():
     expected_prompt_cost = 17 * 0.05 / 1_000_000
     expected_completion_cost = 977 * 0.40 / 1_000_000  # ALL tokens, not just reasoning
 
-    assert (
-        abs(prompt_cost - expected_prompt_cost) < 1e-10
-    ), f"Prompt cost incorrect: {prompt_cost} vs {expected_prompt_cost}"
+    assert abs(prompt_cost - expected_prompt_cost) < 1e-10, (
+        f"Prompt cost incorrect: {prompt_cost} vs {expected_prompt_cost}"
+    )
 
-    assert (
-        abs(completion_cost - expected_completion_cost) < 1e-10
-    ), f"Completion cost incorrect: {completion_cost} vs {expected_completion_cost}"
+    assert abs(completion_cost - expected_completion_cost) < 1e-10, (
+        f"Completion cost incorrect: {completion_cost} vs {expected_completion_cost}"
+    )
 
     # Verify it's NOT using only reasoning_tokens (the bug)
     wrong_cost = 768 * 0.40 / 1_000_000  # Only reasoning tokens
-    assert (
-        abs(completion_cost - wrong_cost) > 1e-6
-    ), "Bug detected: Cost calculation is using only reasoning_tokens instead of all completion_tokens!"
+    assert abs(completion_cost - wrong_cost) > 1e-6, (
+        "Bug detected: Cost calculation is using only reasoning_tokens instead of all completion_tokens!"
+    )
 
 
-def test_image_count_prevents_text_tokens_fallback():
+def test_image_count_prevents_text_tokens_fallback(_local_model_cost_map):
     """
     Test that the text_tokens fallback in generic_cost_per_token does not
     override text_tokens=0 when image_count > 0.
@@ -2080,8 +2092,6 @@ def test_image_count_prevents_text_tokens_fallback():
     When image_count > 0, text_tokens=0 is intentional (image-only request),
     not "text_tokens not set by provider."
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     # Simulate Nova image-only embedding: prompt_tokens estimated from
     # embedding dimensions (768 for 3072-dim), image_count=1
@@ -2113,22 +2123,6 @@ def test_image_count_prevents_text_tokens_fallback():
 # ---------------------------------------------------------------------------
 # Data-residency (OpenAI regional processing) tests
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def _local_model_cost_map():
-    prev_env = os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP")
-    prev_model_cost = litellm.model_cost
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
-    try:
-        yield
-    finally:
-        litellm.model_cost = prev_model_cost
-        if prev_env is None:
-            os.environ.pop("LITELLM_LOCAL_MODEL_COST_MAP", None)
-        else:
-            os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = prev_env
 
 
 @pytest.mark.parametrize("model", ["gpt-5.4", "gpt-realtime-2.1", "gpt-realtime-2.1-mini"])
@@ -2170,13 +2164,9 @@ def test_data_residency_no_uplift_for_pre_march_2026_models(model, _local_model_
     usage = Usage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
 
     base = generic_cost_per_token(model=model, usage=usage, custom_llm_provider="openai")
-    regional = generic_cost_per_token(
-        model=model, usage=usage, custom_llm_provider="openai", data_residency="eu"
-    )
+    regional = generic_cost_per_token(model=model, usage=usage, custom_llm_provider="openai", data_residency="eu")
 
-    assert base == regional, (
-        f"{model} should not have a regional uplift, but cost changed with data_residency"
-    )
+    assert base == regional, f"{model} should not have a regional uplift, but cost changed with data_residency"
 
 
 def test_data_residency_no_uplift_for_unmarked_model(_local_model_cost_map):
@@ -2249,6 +2239,82 @@ def test_data_residency_composes_with_service_tier(_local_model_cost_map):
     assert priority_eu_total == pytest.approx(priority_base_total * 1.10, rel=1e-9)
 
 
+@pytest.mark.parametrize("model", ["gemini-3.5-flash", "claude-haiku-4-5@20251001"])
+@pytest.mark.parametrize("vertex_location", ["us-central1", "us-east5", "europe-west1", "asia-southeast1"])
+def test_vertex_regional_location_applies_uplift(vertex_location, model, _local_model_cost_map):
+    """Google bills every non-global Vertex endpoint at 1.1x the global rate for GA
+    Gemini 3+ and regional-pricing Claude models, so a request served from a regional
+    location must cost 1.1x what the same usage costs on the global endpoint."""
+    from litellm.types.utils import Usage
+
+    usage = Usage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+
+    base = generic_cost_per_token(model=model, usage=usage, custom_llm_provider="vertex_ai")
+    regional = generic_cost_per_token(
+        model=model,
+        usage=usage,
+        custom_llm_provider="vertex_ai",
+        vertex_location=vertex_location,
+    )
+
+    base_total = base[0] + base[1]
+    regional_total = regional[0] + regional[1]
+
+    assert base_total > 0
+    assert regional_total == pytest.approx(base_total * 1.10, rel=1e-9)
+    assert regional[0] == pytest.approx(base[0] * 1.10, rel=1e-9)
+    assert regional[1] == pytest.approx(base[1] * 1.10, rel=1e-9)
+
+
+@pytest.mark.parametrize("vertex_location", [None, "global", "GLOBAL"])
+def test_vertex_global_or_absent_location_no_uplift(vertex_location, _local_model_cost_map):
+    """The global endpoint prices at the base rate, whatever the casing, and an
+    unresolved location must never uplift."""
+    from litellm.types.utils import Usage
+
+    usage = Usage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+
+    base = generic_cost_per_token(model="claude-haiku-4-5@20251001", usage=usage, custom_llm_provider="vertex_ai")
+    located = generic_cost_per_token(
+        model="claude-haiku-4-5@20251001",
+        usage=usage,
+        custom_llm_provider="vertex_ai",
+        vertex_location=vertex_location,
+    )
+
+    assert base == located
+
+
+@pytest.mark.parametrize("model", ["claude-opus-4-1", "gemini-2.0-flash-001"])
+def test_vertex_location_no_uplift_for_uniformly_priced_model(model, _local_model_cost_map):
+    """Models Google prices uniformly across endpoints (Gemini 2.x, Claude Opus 4.1
+    and older) carry no multiplier and must not move with the location."""
+    from litellm.types.utils import Usage
+
+    usage = Usage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+
+    base = generic_cost_per_token(model=model, usage=usage, custom_llm_provider="vertex_ai")
+    regional = generic_cost_per_token(
+        model=model,
+        usage=usage,
+        custom_llm_provider="vertex_ai",
+        vertex_location="us-east5",
+    )
+
+    assert base == regional, f"{model} should not have a regional-endpoint uplift"
+
+
+def test_vertex_uplift_invalid_multiplier_defaults_to_one():
+    """A malformed multiplier in the cost map degrades to base pricing, never raises."""
+    from litellm.litellm_core_utils.llm_cost_calc.utils import (
+        get_vertex_regional_endpoint_uplift,
+    )
+
+    assert (
+        get_vertex_regional_endpoint_uplift({"regional_endpoint_uplift_multiplier": "not-a-number"}, "us-east5") == 1.0
+    )
+
+
 def test_priority_service_tier_above_threshold_uses_priority_tier_rates_for_cached_tokens(
     _local_model_cost_map,
 ):
@@ -2260,9 +2326,7 @@ def test_priority_service_tier_above_threshold_uses_priority_tier_rates_for_cach
         prompt_tokens=250_000,
         completion_tokens=1_000,
         total_tokens=251_000,
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=200_000, text_tokens=50_000
-        ),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=200_000, text_tokens=50_000),
         completion_tokens_details=CompletionTokensDetailsWrapper(text_tokens=1_000),
     )
 
@@ -2322,7 +2386,9 @@ def test_service_tier_suffixes_constant_in_sync_with_enum():
     from litellm.litellm_core_utils.llm_cost_calc.utils import _SERVICE_TIER_SUFFIXES
     from litellm.types.utils import ServiceTier
 
-    assert _SERVICE_TIER_SUFFIXES == tuple(f"_{st.value}" for st in ServiceTier)
+    assert set(_SERVICE_TIER_SUFFIXES) == {f"_{st.value}" for st in ServiceTier}
+    # longest-first so a substring match resolves "_ultrafast" before "_fast"
+    assert list(_SERVICE_TIER_SUFFIXES) == sorted(_SERVICE_TIER_SUFFIXES, key=len, reverse=True)
 
 
 def test_get_cost_per_unit_falls_back_from_service_tier_key_to_base():
@@ -2336,9 +2402,7 @@ def test_get_cost_per_unit_falls_back_from_service_tier_key_to_base():
         "input_cost_per_token_priority": 5e-6,
         "input_cost_per_token": 2e-6,
     }
-    assert (
-        _get_cost_per_unit(model_info_direct, "input_cost_per_token_priority") == 5e-6
-    )
+    assert _get_cost_per_unit(model_info_direct, "input_cost_per_token_priority") == 5e-6
 
 
 def test_threshold_keys_exclude_service_tier_variants():
@@ -2378,7 +2442,7 @@ def test_threshold_keys_exclude_service_tier_variants():
     ],
 )
 def test_token_type_cost_breakdown_is_provider_agnostic(
-    model, custom_llm_provider, reasoning_tokens, cached_tokens
+    _local_model_cost_map, model, custom_llm_provider, reasoning_tokens, cached_tokens
 ):
     """
     Reasoning and cache-read costs must be surfaced for every provider that reports
@@ -2389,8 +2453,6 @@ def test_token_type_cost_breakdown_is_provider_agnostic(
     there - not the top-level cache_read_input_tokens attribute the old breakdown code
     relied on - is what makes Vertex/OpenAI/Azure cache costs show up at all.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     usage = Usage(
         prompt_tokens=1000,
@@ -2399,110 +2461,75 @@ def test_token_type_cost_breakdown_is_provider_agnostic(
         completion_tokens_details=CompletionTokensDetailsWrapper(
             reasoning_tokens=reasoning_tokens, text_tokens=2000 - reasoning_tokens
         ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=cached_tokens, text_tokens=1000 - cached_tokens
-        ),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=cached_tokens, text_tokens=1000 - cached_tokens),
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider=custom_llm_provider, usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model=model, custom_llm_provider=custom_llm_provider, usage=usage)
 
-    model_info = litellm.get_model_info(
-        model=model, custom_llm_provider=custom_llm_provider
-    )
-    reasoning_rate = (
-        model_info.get("output_cost_per_reasoning_token")
-        or model_info["output_cost_per_token"]
-    )
+    model_info = litellm.get_model_info(model=model, custom_llm_provider=custom_llm_provider)
+    reasoning_rate = model_info.get("output_cost_per_reasoning_token") or model_info["output_cost_per_token"]
     cache_read_rate = model_info.get("cache_read_input_token_cost") or 0.0
 
     assert breakdown.reasoning_cost == pytest.approx(reasoning_tokens * reasoning_rate)
     assert breakdown.cache_read_cost == pytest.approx(cached_tokens * cache_read_rate)
 
 
-def test_token_type_cost_breakdown_matches_real_gemini_numbers():
+def test_token_type_cost_breakdown_matches_real_gemini_numbers(_local_model_cost_map):
     """Hard-coded against the exact gemini-2.5-flash response that exposed the gap."""
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     usage = Usage(
         prompt_tokens=209,
         completion_tokens=3996,
         total_tokens=4205,
-        completion_tokens_details=CompletionTokensDetailsWrapper(
-            reasoning_tokens=3114, text_tokens=882
-        ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=100, text_tokens=109
-        ),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=3114, text_tokens=882),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=100, text_tokens=109),
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model="gemini-2.5-flash", custom_llm_provider="vertex_ai", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model="gemini-2.5-flash", custom_llm_provider="vertex_ai", usage=usage)
 
     assert breakdown.reasoning_cost == pytest.approx(3114 * 2.5e-06)
     assert breakdown.cache_read_cost == pytest.approx(100 * 3e-08)
     assert breakdown.cache_creation_cost == 0.0
 
 
-def test_token_type_cost_breakdown_xai_at_exactly_200k_uses_higher_tier_rates():
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+def test_token_type_cost_breakdown_xai_at_exactly_200k_uses_higher_tier_rates(_local_model_cost_map):
 
     usage = Usage(
         prompt_tokens=200_000,
         completion_tokens=2_000,
         total_tokens=202_000,
-        completion_tokens_details=CompletionTokensDetailsWrapper(
-            reasoning_tokens=1_500, text_tokens=500
-        ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=50_000, text_tokens=150_000
-        ),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=1_500, text_tokens=500),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=50_000, text_tokens=150_000),
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model="grok-4.20-0309-reasoning", custom_llm_provider="xai", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model="grok-4.20-0309-reasoning", custom_llm_provider="xai", usage=usage)
 
     assert breakdown.reasoning_cost == pytest.approx(1_500 * 5e-06)
     assert breakdown.cache_read_cost == pytest.approx(50_000 * 4e-07)
 
 
-def test_token_type_cost_breakdown_xai_just_below_200k_uses_base_tier_rates():
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+def test_token_type_cost_breakdown_xai_just_below_200k_uses_base_tier_rates(_local_model_cost_map):
 
     usage = Usage(
         prompt_tokens=199_999,
         completion_tokens=2_000,
         total_tokens=201_999,
-        completion_tokens_details=CompletionTokensDetailsWrapper(
-            reasoning_tokens=1_500, text_tokens=500
-        ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=50_000, text_tokens=149_999
-        ),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=1_500, text_tokens=500),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=50_000, text_tokens=149_999),
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model="grok-4.20-0309-reasoning", custom_llm_provider="xai", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model="grok-4.20-0309-reasoning", custom_llm_provider="xai", usage=usage)
 
     assert breakdown.reasoning_cost == pytest.approx(1_500 * 2.5e-06)
     assert breakdown.cache_read_cost == pytest.approx(50_000 * 2e-07)
 
 
-def test_token_type_cost_breakdown_includes_cache_creation_from_top_level_usage():
+def test_token_type_cost_breakdown_includes_cache_creation_from_top_level_usage(_local_model_cost_map):
     """
     Bedrock/Anthropic report cache tokens as top-level usage fields; the Usage
     constructor maps them onto prompt_tokens_details, so the breakdown must still
     pick up both cache-read and cache-creation costs.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "anthropic.claude-3-5-haiku-20241022-v1:0"
     usage = Usage(
@@ -2513,48 +2540,34 @@ def test_token_type_cost_breakdown_includes_cache_creation_from_top_level_usage(
         cache_read_input_tokens=120,
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider="bedrock", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model=model, custom_llm_provider="bedrock", usage=usage)
 
     model_info = litellm.get_model_info(model=model, custom_llm_provider="bedrock")
-    assert breakdown.cache_creation_cost == pytest.approx(
-        300 * model_info["cache_creation_input_token_cost"]
-    )
-    assert breakdown.cache_read_cost == pytest.approx(
-        120 * model_info["cache_read_input_token_cost"]
-    )
+    assert breakdown.cache_creation_cost == pytest.approx(300 * model_info["cache_creation_input_token_cost"])
+    assert breakdown.cache_read_cost == pytest.approx(120 * model_info["cache_read_input_token_cost"])
 
 
-def test_token_type_cost_breakdown_reads_cache_write_tokens():
+def test_token_type_cost_breakdown_reads_cache_write_tokens(_local_model_cost_map):
     """
     Some OpenAI-compatible providers (e.g. kimi-k2) report cache-write tokens under
     `cache_write_tokens` rather than `cache_creation_tokens`. The breakdown must read
     it the same way the total-cost normalization does, so the two agree.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "anthropic.claude-3-5-haiku-20241022-v1:0"
     usage = Usage(
         prompt_tokens=500,
         completion_tokens=50,
         total_tokens=550,
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=0, cache_write_tokens=300
-        ),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=0, cache_write_tokens=300),
     )
 
-    breakdown = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider="bedrock", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model=model, custom_llm_provider="bedrock", usage=usage)
     model_info = litellm.get_model_info(model=model, custom_llm_provider="bedrock")
-    assert breakdown.cache_creation_cost == pytest.approx(
-        300 * model_info["cache_creation_input_token_cost"]
-    )
+    assert breakdown.cache_creation_cost == pytest.approx(300 * model_info["cache_creation_input_token_cost"])
 
 
-def test_generic_cost_per_token_openai_cache_write_tokens_gpt_5_6():
+def test_generic_cost_per_token_openai_cache_write_tokens_gpt_5_6(_local_model_cost_map):
     """
     Regression: OpenAI gpt-5.6 reports cache-write tokens under
     prompt_tokens_details.cache_write_tokens (not the Anthropic cache_creation_tokens
@@ -2562,8 +2575,6 @@ def test_generic_cost_per_token_openai_cache_write_tokens_gpt_5_6():
     input rate. Customer report: cache creation tokens were never counted for the
     GPT-5.6 series, so cost was undercounted on cache-write requests.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gpt-5.6"
     usage = Usage(
@@ -2585,23 +2596,19 @@ def test_generic_cost_per_token_openai_cache_write_tokens_gpt_5_6():
     assert prompt_cost > 1000 * info["input_cost_per_token"]
 
 
-def test_generic_cost_per_token_backs_out_cache_write_tokens_from_text_tokens():
+def test_generic_cost_per_token_backs_out_cache_write_tokens_from_text_tokens(_local_model_cost_map):
     """
     Regression for #34801: when a provider reports text_tokens covering the whole
     prompt alongside cache-write tokens (and no cache reads), the cache-write tokens
     must be backed out of the text total instead of being billed twice.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gpt-5.6"
     usage = Usage(
         prompt_tokens=1000,
         completion_tokens=10,
         total_tokens=1010,
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=0, cache_write_tokens=800, text_tokens=1000
-        ),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=0, cache_write_tokens=800, text_tokens=1000),
     )
 
     prompt_cost, _ = generic_cost_per_token(model=model, usage=usage, custom_llm_provider="openai")
@@ -2611,15 +2618,13 @@ def test_generic_cost_per_token_backs_out_cache_write_tokens_from_text_tokens():
     assert prompt_cost == pytest.approx(expected_prompt)
 
 
-def test_token_type_cost_breakdown_reconciles_with_generic_total():
+def test_token_type_cost_breakdown_reconciles_with_generic_total(_local_model_cost_map):
     """
     Both-ways check: the reasoning subset must sum with the remaining (text) output
     cost to exactly the completion total, and the cache-read subset with the remaining
     input cost to exactly the prompt total, as computed by generic_cost_per_token.
     A mismatch here would mean the breakdown misrepresents what was actually billed.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gemini-2.5-flash"
     custom_llm_provider = "vertex_ai"
@@ -2627,24 +2632,16 @@ def test_token_type_cost_breakdown_reconciles_with_generic_total():
         prompt_tokens=1000,
         completion_tokens=2000,
         total_tokens=3000,
-        completion_tokens_details=CompletionTokensDetailsWrapper(
-            reasoning_tokens=1200, text_tokens=800
-        ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=300, text_tokens=700
-        ),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=1200, text_tokens=800),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=300, text_tokens=700),
     )
 
     prompt_cost, completion_cost = generic_cost_per_token(
         model=model, usage=usage, custom_llm_provider=custom_llm_provider
     )
-    breakdown = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider=custom_llm_provider, usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model=model, custom_llm_provider=custom_llm_provider, usage=usage)
 
-    model_info = litellm.get_model_info(
-        model=model, custom_llm_provider=custom_llm_provider
-    )
+    model_info = litellm.get_model_info(model=model, custom_llm_provider=custom_llm_provider)
     text_output_cost = 800 * model_info["output_cost_per_token"]
     text_input_cost = 700 * model_info["input_cost_per_token"]
 
@@ -2652,18 +2649,12 @@ def test_token_type_cost_breakdown_reconciles_with_generic_total():
     assert text_input_cost + breakdown.cache_read_cost == pytest.approx(prompt_cost)
 
 
-def test_token_type_cost_breakdown_zero_without_special_tokens():
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+def test_token_type_cost_breakdown_zero_without_special_tokens(_local_model_cost_map):
 
     usage = Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
-    breakdown = get_token_type_cost_breakdown(
-        model="gpt-4o", custom_llm_provider="openai", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model="gpt-4o", custom_llm_provider="openai", usage=usage)
 
-    assert breakdown == TokenTypeCostBreakdown(
-        reasoning_cost=0.0, cache_read_cost=0.0, cache_creation_cost=0.0
-    )
+    assert breakdown == TokenTypeCostBreakdown(reasoning_cost=0.0, cache_read_cost=0.0, cache_creation_cost=0.0)
 
 
 @pytest.mark.parametrize(
@@ -2692,7 +2683,7 @@ def test_token_type_cost_breakdown_zero_without_special_tokens():
     ],
 )
 def test_token_type_cost_breakdown_openai_responses_api_cache_write_read(
-    raw_usage, expect_read, expect_write
+    _local_model_cost_map, raw_usage, expect_read, expect_write
 ):
     """Regression for #34309: OpenAI Responses API reports cache tokens under
     input_tokens_details.{cached_tokens, cache_write_tokens}, not the Anthropic-style
@@ -2700,27 +2691,18 @@ def test_token_type_cost_breakdown_openai_responses_api_cache_write_read(
     cache_read_cost / cache_creation_cost from the transformed usage."""
     from litellm.responses.utils import ResponseAPILoggingUtils
 
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
-
     model = "gpt-5.6"
     usage = ResponseAPILoggingUtils._transform_response_api_usage_to_chat_usage(raw_usage)
 
-    breakdown = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider="openai", usage=usage
-    )
+    breakdown = get_token_type_cost_breakdown(model=model, custom_llm_provider="openai", usage=usage)
 
     info = litellm.get_model_info(model=model, custom_llm_provider="openai")
     if expect_write:
-        assert breakdown.cache_creation_cost == pytest.approx(
-            4012 * info["cache_creation_input_token_cost"]
-        )
+        assert breakdown.cache_creation_cost == pytest.approx(4012 * info["cache_creation_input_token_cost"])
         assert breakdown.cache_creation_cost > 0
         assert breakdown.cache_read_cost == 0.0
     if expect_read:
-        assert breakdown.cache_read_cost == pytest.approx(
-            4012 * info["cache_read_input_token_cost"]
-        )
+        assert breakdown.cache_read_cost == pytest.approx(4012 * info["cache_read_input_token_cost"])
         assert breakdown.cache_read_cost > 0
         assert breakdown.cache_creation_cost == 0.0
 
@@ -2737,20 +2719,16 @@ def test_token_type_cost_breakdown_handles_unknown_model_gracefully():
             completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=5),
         ),
     )
-    assert breakdown == TokenTypeCostBreakdown(
-        reasoning_cost=0.0, cache_read_cost=0.0, cache_creation_cost=0.0
-    )
+    assert breakdown == TokenTypeCostBreakdown(reasoning_cost=0.0, cache_read_cost=0.0, cache_creation_cost=0.0)
 
 
-def test_token_type_cost_breakdown_applies_regional_uplift():
+def test_token_type_cost_breakdown_applies_regional_uplift(_local_model_cost_map):
     """
     Regional OpenAI hosts (eu./us.) apply a flat uplift to every token cost. The
     per-type breakdown must apply the same uplift via data_residency so it stays
     reconciled with the uplifted input_cost/output_cost totals, instead of being
     logged at the base rate.
     """
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "gpt-5.4"
     custom_llm_provider = "openai"
@@ -2758,23 +2736,15 @@ def test_token_type_cost_breakdown_applies_regional_uplift():
         prompt_tokens=1000,
         completion_tokens=500,
         total_tokens=1500,
-        completion_tokens_details=CompletionTokensDetailsWrapper(
-            reasoning_tokens=200, text_tokens=300
-        ),
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=400, text_tokens=600
-        ),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=200, text_tokens=300),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=400, text_tokens=600),
     )
 
-    model_info = litellm.get_model_info(
-        model=model, custom_llm_provider=custom_llm_provider
-    )
+    model_info = litellm.get_model_info(model=model, custom_llm_provider=custom_llm_provider)
     uplift = model_info["regional_processing_uplift_multiplier_eu"]
     assert uplift > 1.0
 
-    base = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider=custom_llm_provider, usage=usage
-    )
+    base = get_token_type_cost_breakdown(model=model, custom_llm_provider=custom_llm_provider, usage=usage)
     eu = get_token_type_cost_breakdown(
         model=model,
         custom_llm_provider=custom_llm_provider,
@@ -2798,7 +2768,50 @@ def test_token_type_cost_breakdown_applies_regional_uplift():
     assert text_input_cost + eu.cache_read_cost == pytest.approx(prompt_cost)
 
 
-def test_token_type_cost_breakdown_applies_anthropic_geo_multiplier(monkeypatch):
+def test_token_type_cost_breakdown_applies_vertex_regional_uplift(_local_model_cost_map):
+    """
+    Non-global Vertex endpoints apply a flat 1.1x uplift to every token cost. The
+    per-type breakdown must apply the same uplift via vertex_location so it stays
+    reconciled with the uplifted input_cost/output_cost totals, instead of being
+    logged at the global rate.
+    """
+
+    model = "claude-haiku-4-5@20251001"
+    custom_llm_provider = "vertex_ai"
+    usage = Usage(
+        prompt_tokens=1000,
+        completion_tokens=500,
+        total_tokens=1500,
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=400, text_tokens=600),
+    )
+
+    model_info = litellm.get_model_info(model=model, custom_llm_provider=custom_llm_provider)
+    uplift = model_info["regional_endpoint_uplift_multiplier"]
+    assert uplift > 1.0
+
+    base = get_token_type_cost_breakdown(model=model, custom_llm_provider=custom_llm_provider, usage=usage)
+    regional = get_token_type_cost_breakdown(
+        model=model,
+        custom_llm_provider=custom_llm_provider,
+        usage=usage,
+        vertex_location="us-east5",
+    )
+
+    assert base.cache_read_cost > 0
+    assert regional.cache_read_cost == pytest.approx(base.cache_read_cost * uplift)
+
+    # The uplifted breakdown must still reconcile with the uplifted totals.
+    prompt_cost, _completion_cost = generic_cost_per_token(
+        model=model,
+        usage=usage,
+        custom_llm_provider=custom_llm_provider,
+        vertex_location="us-east5",
+    )
+    text_input_cost = 600 * model_info["input_cost_per_token"] * uplift
+    assert text_input_cost + regional.cache_read_cost == pytest.approx(prompt_cost)
+
+
+def test_token_type_cost_breakdown_applies_anthropic_geo_multiplier(_local_model_cost_map, monkeypatch):
     """
     Anthropic's regional (geo) uplift lives in provider_specific_entry and is
     applied to every token type in the totals, so the per-type breakdown must
@@ -2811,7 +2824,6 @@ def test_token_type_cost_breakdown_applies_anthropic_geo_multiplier(monkeypatch)
     )
 
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
-    litellm.model_cost = litellm.get_model_cost_map(url="")
 
     model = "claude-test-geo-breakdown-model"
     litellm.register_model(
@@ -2837,21 +2849,15 @@ def test_token_type_cost_breakdown_applies_anthropic_geo_multiplier(monkeypatch)
                 cached_tokens=2_000,
                 cache_creation_tokens=6_000,
             ),
-            completion_tokens_details=CompletionTokensDetailsWrapper(
-                reasoning_tokens=200, text_tokens=300
-            ),
+            completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=200, text_tokens=300),
         )
 
     base_usage = make_usage()
     geo_usage = make_usage()
     geo_usage.inference_geo = "us"
 
-    base = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider="anthropic", usage=base_usage
-    )
-    geo = get_token_type_cost_breakdown(
-        model=model, custom_llm_provider="anthropic", usage=geo_usage
-    )
+    base = get_token_type_cost_breakdown(model=model, custom_llm_provider="anthropic", usage=base_usage)
+    geo = get_token_type_cost_breakdown(model=model, custom_llm_provider="anthropic", usage=geo_usage)
 
     assert base.cache_read_cost == pytest.approx(2_000 * 0.5e-6)
     assert base.cache_creation_cost == pytest.approx(6_000 * 6.25e-6)
@@ -2899,11 +2905,7 @@ def test_image_response_input_image_tokens_priced_at_image_rate(details_as_dict)
         completion_tokens=0,
         total_tokens=689,
         input_tokens=531,
-        input_tokens_details=(
-            input_details
-            if details_as_dict
-            else ImageUsageInputTokensDetails(**input_details)
-        ),
+        input_tokens_details=(input_details if details_as_dict else ImageUsageInputTokensDetails(**input_details)),
         output_tokens=158,
         output_tokens_details={"image_tokens": 158, "text_tokens": 0},
     )
@@ -2921,10 +2923,12 @@ def test_image_response_input_image_tokens_priced_at_image_rate(details_as_dict)
     expected = 19 * 5e-6 + 512 * 8e-6 + 158 * 3e-5
     assert cost is not None
     assert round(cost, 12) == round(expected, 12)
+
+
 GEMINI_DAY0_LAUNCH_PRICING = [
-    ("gemini-3.6-flash", 1.5e-06, 7.5e-06, 1.5e-07),
-    ("gemini/gemini-3.6-flash", 1.5e-06, 7.5e-06, 1.5e-07),
-    ("vertex_ai/gemini-3.6-flash", 1.5e-06, 7.5e-06, 1.5e-07),
+    ("gemini-3.6-flash", 7.5e-07, 3.75e-06, 7.5e-08),
+    ("gemini/gemini-3.6-flash", 7.5e-07, 3.75e-06, 7.5e-08),
+    ("vertex_ai/gemini-3.6-flash", 7.5e-07, 3.75e-06, 7.5e-08),
     ("gemini-3.5-flash-lite", 3e-07, 2.5e-06, 3e-08),
     ("gemini/gemini-3.5-flash-lite", 3e-07, 2.5e-06, 3e-08),
     ("vertex_ai/gemini-3.5-flash-lite", 3e-07, 2.5e-06, 3e-08),
@@ -2932,9 +2936,9 @@ GEMINI_DAY0_LAUNCH_PRICING = [
 
 
 @pytest.mark.parametrize("model,input_cost,output_cost,cache_read_cost", GEMINI_DAY0_LAUNCH_PRICING)
-def test_gemini_36_flash_and_35_flash_lite_launch_pricing(model, input_cost, output_cost, cache_read_cost):
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+def test_gemini_36_flash_and_35_flash_lite_launch_pricing(
+    _local_model_cost_map, model, input_cost, output_cost, cache_read_cost
+):
 
     model_cost_map = litellm.model_cost[model]
     assert model_cost_map["input_cost_per_token"] == input_cost
@@ -2947,9 +2951,7 @@ def test_gemini_36_flash_and_35_flash_lite_launch_pricing(model, input_cost, out
     assert model_cost_map["max_input_tokens"] == 1048576
 
 
-def test_generic_cost_per_token_gemini_36_flash():
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+def test_generic_cost_per_token_gemini_36_flash(_local_model_cost_map):
 
     usage = Usage(
         prompt_tokens=1000,
@@ -2966,13 +2968,50 @@ def test_generic_cost_per_token_gemini_36_flash():
         usage=usage,
         custom_llm_provider="gemini",
     )
-    assert prompt_cost == pytest.approx(0.0015)
-    assert completion_cost == pytest.approx(0.00375)
+    assert prompt_cost == pytest.approx(0.00075)
+    assert completion_cost == pytest.approx(0.001875)
 
 
-def test_generic_cost_per_token_gemini_35_flash_lite():
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    litellm.model_cost = litellm.get_model_cost_map(url="")
+GEMINI_36_FLASH_SERVICE_TIER_PRICING = [
+    (None, 7.5e-07, 3.75e-06, 7.5e-08),
+    ("flex", 3.75e-07, 1.875e-06, 3.75e-08),
+    ("priority", 1.35e-06, 6.75e-06, 1.35e-07),
+]
+
+
+@pytest.mark.parametrize("service_tier,input_rate,output_rate,cache_read_rate", GEMINI_36_FLASH_SERVICE_TIER_PRICING)
+@pytest.mark.parametrize("model", ["gemini-3.6-flash", "gemini/gemini-3.6-flash", "vertex_ai/gemini-3.6-flash"])
+def test_gemini_36_flash_service_tier_introductory_pricing(
+    model, service_tier, input_rate, output_rate, cache_read_rate, _local_model_cost_map
+):
+    """Regression: every 3.6 Flash tier is on Google's introductory rates through 2026-12-31,
+    so flex and priority requests must not be billed at the post-introductory rates."""
+    usage = Usage(
+        prompt_tokens=1_000,
+        completion_tokens=500,
+        total_tokens=1_500,
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=200, text_tokens=800),
+    )
+
+    prompt_cost, completion_cost = generic_cost_per_token(
+        model=model.split("/")[-1],
+        usage=usage,
+        custom_llm_provider=model.split("/")[0] if "/" in model else "gemini",
+        service_tier=service_tier,
+    )
+
+    assert prompt_cost == pytest.approx(800 * input_rate + 200 * cache_read_rate, rel=1e-9)
+    assert completion_cost == pytest.approx(500 * output_rate, rel=1e-9)
+
+
+@pytest.mark.parametrize("model", ["gemini-3.6-flash", "gemini/gemini-3.6-flash", "vertex_ai/gemini-3.6-flash"])
+def test_gemini_36_flash_batch_introductory_pricing(model, _local_model_cost_map):
+    model_cost_map = litellm.model_cost[model]
+    assert model_cost_map["input_cost_per_token_batches"] == 3.75e-07
+    assert model_cost_map["output_cost_per_token_batches"] == 1.875e-06
+
+
+def test_generic_cost_per_token_gemini_35_flash_lite(_local_model_cost_map):
 
     usage = Usage(
         prompt_tokens=1000,
@@ -2996,8 +3035,8 @@ def test_generic_cost_per_token_gemini_35_flash_lite():
 @pytest.mark.parametrize(
     "service_tier,input_rate,cache_read_rate,cache_write_rate,output_rate",
     [
-        ("flex", 2.5e-6, 2.5e-7, 3.125e-6, 1.5e-5),
-        ("priority", 1e-5, 1e-6, 1.25e-5, 6e-5),
+        ("flex", 2e-6, 2e-7, 2.5e-6, 1e-5),
+        ("priority", 8e-6, 8e-7, 1e-5, 4e-5),
     ],
 )
 def test_service_tier_cache_creation_rates_for_gpt_5_6(
@@ -3010,7 +3049,7 @@ def test_service_tier_cache_creation_rates_for_gpt_5_6(
 ):
     """Regression: gpt-5.6 publishes cache_creation_input_token_cost_flex/_priority, so a
     flex or priority request must bill cache writes at that tier's rate instead of falling
-    back to the standard 6.25e-6 rate."""
+    back to the standard cache-write rate."""
     usage = Usage(
         prompt_tokens=10_000,
         completion_tokens=500,
@@ -3047,18 +3086,14 @@ def test_fast_service_tier_bills_at_the_priority_rate(_local_model_cost_map):
         prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=200),
     )
 
-    standard = generic_cost_per_token(
-        model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier=None
-    )
+    standard = generic_cost_per_token(model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier=None)
     priority = generic_cost_per_token(
         model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="priority"
     )
-    fast = generic_cost_per_token(
-        model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast"
-    )
+    fast = generic_cost_per_token(model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast")
 
-    expected_prompt = 800 * 1e-05 + 200 * 1e-06
-    expected_completion = 500 * 6e-05
+    expected_prompt = 800 * 8e-06 + 200 * 8e-07
+    expected_completion = 500 * 4e-05
 
     assert fast == priority
     assert fast[0] == pytest.approx(expected_prompt, rel=1e-9)
@@ -3074,9 +3109,7 @@ def test_fast_service_tier_is_case_insensitive(_local_model_cost_map):
 
     assert generic_cost_per_token(
         model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="FAST"
-    ) == generic_cost_per_token(
-        model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast"
-    )
+    ) == generic_cost_per_token(model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast")
 
 
 def test_fast_service_tier_matches_priority_above_the_context_threshold(_local_model_cost_map):
@@ -3085,16 +3118,14 @@ def test_fast_service_tier_matches_priority_above_the_context_threshold(_local_m
 
     usage = Usage(prompt_tokens=300_000, completion_tokens=1_000)
 
-    fast = generic_cost_per_token(
-        model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast"
-    )
+    fast = generic_cost_per_token(model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="fast")
     priority = generic_cost_per_token(
         model="gpt-5.6-sol", usage=usage, custom_llm_provider="openai", service_tier="priority"
     )
 
     assert fast == priority
-    assert fast[0] == pytest.approx(300_000 * 1e-05, rel=1e-9)
-    assert fast[1] == pytest.approx(1_000 * 4.5e-05, rel=1e-9)
+    assert fast[0] == pytest.approx(300_000 * 8e-06, rel=1e-9)
+    assert fast[1] == pytest.approx(1_000 * 3e-05, rel=1e-9)
 
 
 def test_priority_reasoning_tokens_bill_at_the_priority_output_rate(_local_model_cost_map):
@@ -3289,9 +3320,7 @@ def test_generic_cost_per_token_grok_46_long_context(_local_model_cost_map):
         prompt_tokens=250_000,
         completion_tokens=1_000,
         total_tokens=251_000,
-        prompt_tokens_details=PromptTokensDetailsWrapper(
-            cached_tokens=50_000, text_tokens=200_000
-        ),
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=50_000, text_tokens=200_000),
     )
     prompt_cost, completion_cost = generic_cost_per_token(
         model="grok-4.6",

@@ -5,12 +5,17 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
-import { QueryClient } from "@tanstack/react-query";
 import { keyDeleteCall, keyUpdateCall, personalKeyDeleteCall, personalKeyRotateCall } from "../networking";
 import KeyInfoView from "./key_info_view";
 
 const editViewMocks = vi.hoisted(() => ({
   onSubmit: undefined as ((v: Record<string, any>) => Promise<void>) | undefined,
+}));
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
+vi.mock("@/app/(dashboard)/hooks/organizations/useOrganizations", () => ({
+  useOrganizations: () => ({ data: [] }),
 }));
 
 vi.mock("./key_edit_view", () => ({
@@ -53,6 +58,7 @@ import { useMCPServers } from "@/app/(dashboard)/hooks/mcpServers/useMCPServers"
 import { useMCPToolsets } from "@/app/(dashboard)/hooks/mcpServers/useMCPToolsets";
 
 vi.mock("../networking", () => ({
+  serverRootPath: "",
   keyDeleteCall: vi.fn().mockResolvedValue({}),
   personalKeyDeleteCall: vi.fn().mockResolvedValue({}),
   personalKeyRotateCall: vi.fn().mockResolvedValue({ key: "sk-personal-rotated", token: "rotated-token" }),
@@ -264,6 +270,7 @@ describe("KeyInfoView", () => {
 
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["keys", "list"] });
       expect(onClose).toHaveBeenCalledOnce();
+      invalidateQueries.mockRestore();
     });
 
     it("hides managed key lifecycle actions from the key owner", async () => {
@@ -666,6 +673,89 @@ describe("KeyInfoView", () => {
     await waitFor(() => {
       expect(screen.queryByText("Regenerate Key")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /more key actions/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("entity links in the header", () => {
+    const mockTeam: Team = {
+      team_id: "linked-team-id",
+      team_alias: "Linked Team",
+      models: [],
+      max_budget: null,
+      budget_duration: null,
+      tpm_limit: null,
+      rpm_limit: null,
+      organization_id: "org-1",
+      created_at: "2025-01-01T00:00:00Z",
+      keys: [],
+      members_with_roles: [],
+      spend: 0,
+    };
+
+    beforeEach(() => {
+      vi.mocked(useTeams).mockReturnValue({ teams: [mockTeam], setTeams: vi.fn() });
+      vi.mocked(useAuthorized).mockReturnValue(baseUseAuthorizedMock);
+    });
+
+    it("links the key's team by alias, resolved from the teams list, to the team page", async () => {
+      const keyData = { ...MOCK_KEY_DATA, team_id: "linked-team-id" };
+      renderWithProviders(
+        <KeyInfoView keyData={keyData} onClose={() => {}} keyId="test-key-id" onKeyDataUpdate={() => {}} teams={[]} />,
+      );
+
+      expect(await screen.findByRole("link", { name: "Linked Team" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/teams?team=linked-team-id"),
+      );
+    });
+
+    it("links the key's user and creator to their user pages by id", async () => {
+      const keyData = {
+        ...MOCK_KEY_DATA,
+        user_id: "owner-user-id",
+        user_email: "owner@example.com",
+        created_by: "creator-user-id",
+        created_by_user: { user_id: "creator-user-id", user_email: "creator@example.com", user_alias: null },
+      };
+      renderWithProviders(
+        <KeyInfoView keyData={keyData} onClose={() => {}} keyId="test-key-id" onKeyDataUpdate={() => {}} teams={[]} />,
+      );
+
+      expect(await screen.findByRole("link", { name: "owner@example.com" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/users?user=owner-user-id"),
+      );
+      expect(screen.getByRole("link", { name: "creator@example.com" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/users?user=creator-user-id"),
+      );
+    });
+
+    it("links the key's organization by id, falling back to the team's organization", async () => {
+      const keyData = { ...MOCK_KEY_DATA, team_id: "linked-team-id", organization_id: null };
+      renderWithProviders(
+        <KeyInfoView keyData={keyData} onClose={() => {}} keyId="test-key-id" onKeyDataUpdate={() => {}} teams={[]} />,
+      );
+
+      expect(await screen.findByRole("link", { name: "org-1" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/organizations?org=org-1"),
+      );
+    });
+
+    it("renders no team link when the key has no team", async () => {
+      renderWithProviders(
+        <KeyInfoView
+          keyData={{ ...MOCK_KEY_DATA, team_id: null }}
+          onClose={() => {}}
+          keyId="test-key-id"
+          onKeyDataUpdate={() => {}}
+          teams={[]}
+        />,
+      );
+
+      await screen.findByText("Team");
+      expect(screen.queryByRole("link", { name: /team/i })).not.toBeInTheDocument();
     });
   });
 
@@ -1261,7 +1351,7 @@ describe("KeyInfoView", () => {
 
   describe("delete flow", () => {
     it("invalidates the keys list query after a successful delete so active filters survive (LIT-4080)", async () => {
-      const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+      const invalidateSpy = vi.spyOn(testQueryClient, "invalidateQueries").mockResolvedValue();
       vi.mocked(useAuthorized).mockReturnValue({
         ...baseUseAuthorizedMock,
         userId: "proxy-admin-user",

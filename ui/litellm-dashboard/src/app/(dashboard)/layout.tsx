@@ -71,7 +71,7 @@ export function AgentControlPlaneView() {
 
   if (!agentPlatformUrl) {
     return (
-      <div className="flex flex-1 items-center justify-center text-gray-500">
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
         <div className="text-center">
           <p className="text-lg font-medium mb-2">{t("plugin.fallbackTitle")}</p>
           <p className="text-sm">{t("plugin.fallbackDescription")}</p>

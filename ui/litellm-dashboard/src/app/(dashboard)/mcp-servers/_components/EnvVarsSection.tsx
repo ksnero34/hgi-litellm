@@ -1,9 +1,27 @@
+import { CircleMinus, Info, Plus } from "lucide-react";
 import React from "react";
-import { useTranslation } from "react-i18next";
-import { Form, Input, Select, Button, Tooltip, Typography } from "antd";
-import { InfoCircleOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SimpleTooltip } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-const { Text } = Typography;
+import {
+  MountedFormField,
+  useMountedName,
+  type MountedFormValues,
+} from "@/components/common_components/MountedFormField";
+import { requiredRule } from "@/components/common_components/formRules";
+import { matchesPattern, selectControl, selectTriggerControl, textControl } from "./mcpFieldRules";
+import { listControl } from "./mcpFormStore";
+
+const SCOPE_OPTIONS = [
+  { value: "global", label: "Instance" },
+  { value: "user", label: "Per-user" },
+];
+
+const VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * Form section for admin-configured MCP environment variables.
@@ -16,92 +34,96 @@ const { Text } = Typography;
  * The parent form reads the ``env_vars`` field from the form values.
  */
 const EnvVarsSection: React.FC = () => {
-  const { t } = useTranslation();
+  const { control } = useFormContext<MountedFormValues>();
+  const { fields, append, remove } = useFieldArray({ control: listControl(control), name: "env_vars" });
+  useMountedName("env_vars");
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <div className="rounded-lg border border-border bg-muted p-4">
       <div className="flex items-center gap-2 mb-1">
-        <Text strong className="text-sm">
-          {t("toolsModels.mcp.variables")}
-        </Text>
-        <Tooltip
-          title={
+        <strong className="text-sm font-semibold">Variables</strong>
+        <SimpleTooltip
+          content={
             <>
-              {t("toolsModels.mcp.envVarsTooltipPrefix")} <code>{"${VAR_NAME}"}</code>. <br />
-              <b>{t("toolsModels.mcp.instance")}</b>: {t("toolsModels.mcp.envVarsInstanceDescription")}
+              Define variables you can interpolate in Static Headers or Authentication using{" "}
+              <code>{"${VAR_NAME}"}</code>. <br />
+              <b>Instance</b>: admin-defined value used for every user.
               <br />
-              <b>{t("toolsModels.mcp.perUser")}</b>: {t("toolsModels.mcp.envVarsPerUserDescription")}
+              <b>Per-user</b>: each user supplies their own value (e.g. personal credentials) via the MCP Gateway
+              dashboard.
             </>
           }
         >
-          <InfoCircleOutlined className="text-blue-400 hover:text-blue-600 cursor-help" />
-        </Tooltip>
+          <Info className="size-4 text-info hover:text-info/80 cursor-help" />
+        </SimpleTooltip>
       </div>
-      <Text className="text-xs text-gray-600 block mb-3">
-        {t("toolsModels.mcp.envVarsReferencePrefix")} <code>{"${VAR_NAME}"}</code>. {t("toolsModels.mcp.forExample")}{" "}
-        <code className="bg-white px-1 rounded-sm border border-gray-200">
+      <span className="mb-3 block text-xs text-muted-foreground">
+        Reference these in Static Headers or Authentication as <code>{"${VAR_NAME}"}</code>. For example:{" "}
+        <code className="bg-card px-1 rounded-sm border border-border">
           {"${DB_PROTOCOL}://${CORP_USERNAME}:${CORP_PASSWORD}@${DB_HOSTNAME}"}
         </code>
-      </Text>
+      </span>
 
-      <Form.List name="env_vars">
-        {(fields, { add, remove }) => (
-          <div className="space-y-2">
-            {fields.length > 0 && (
-              <div className="flex gap-3 px-1 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                <div style={{ flex: 1 }}>{t("toolsModels.mcp.variableName")}</div>
-                <div style={{ flex: 1 }}>{t("toolsModels.mcp.valueOrDescription")}</div>
-                <div style={{ width: 160 }}>{t("toolsModels.mcp.scope")}</div>
-                <div style={{ width: 24 }} />
-              </div>
-            )}
-            {fields.map(({ key, name, ...restField }) => (
-              <div key={key} className="flex gap-3 items-start">
-                <Form.Item
-                  {...restField}
-                  name={[name, "name"]}
-                  className="mb-0"
-                  style={{ flex: 1 }}
-                  rules={[
-                    { required: true, message: t("toolsModels.mcp.variableNameRequired") },
-                    {
-                      pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
-                      message: t("toolsModels.mcp.variableNamePattern"),
-                    },
-                  ]}
-                >
-                  <Input placeholder={t("toolsModels.mcp.variableNamePlaceholder")} className="rounded-md font-mono" />
-                </Form.Item>
-                <div style={{ flex: 1 }}>
-                  <ScopedValueOrDescription name={name} restField={restField} />
-                </div>
-                <Form.Item
-                  {...restField}
-                  name={[name, "scope"]}
-                  className="mb-0"
-                  initialValue="global"
-                  style={{ width: 160 }}
-                >
-                  <Select
-                    options={[
-                      { value: "global", label: t("toolsModels.mcp.instance") },
-                      { value: "user", label: t("toolsModels.mcp.perUser") },
-                    ]}
-                  />
-                </Form.Item>
-                <div style={{ width: 24, height: 32 }} className="flex items-center justify-center">
-                  <MinusCircleOutlined
-                    onClick={() => remove(name)}
-                    className="text-gray-500 hover:text-red-500 cursor-pointer"
-                  />
-                </div>
-              </div>
-            ))}
-            <Button type="dashed" onClick={() => add({ scope: "global" })} icon={<PlusOutlined />} block>
-              {t("toolsModels.mcp.addVariable")}
-            </Button>
+      <div className="space-y-2">
+        {fields.length > 0 && (
+          <div className="flex gap-3 px-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <div style={{ flex: 1 }}>Variable Name</div>
+            <div style={{ flex: 1 }}>Value / Description</div>
+            <div style={{ width: 160 }}>Scope</div>
+            <div style={{ width: 24 }} />
           </div>
         )}
-      </Form.List>
+        {fields.map((item, index) => (
+          <div key={item.id} className="flex gap-3 items-start">
+            <MountedFormField
+              name={["env_vars", String(index), "name"]}
+              className="mb-0 flex-1"
+              rules={{
+                validate: {
+                  required: requiredRule("Variable name is required"),
+                  pattern: matchesPattern(
+                    VARIABLE_NAME_PATTERN,
+                    "Use letters, digits, underscores; cannot start with a digit.",
+                  ),
+                },
+              }}
+            >
+              {(control) => (
+                <Input {...textControl(control)} placeholder="e.g. DB_PROTOCOL" className="rounded-md font-mono" />
+              )}
+            </MountedFormField>
+            <div style={{ flex: 1 }}>
+              <ScopedValueOrDescription index={index} />
+            </div>
+            <MountedFormField name={["env_vars", String(index), "scope"]} className="mb-0 w-40" defaultValue="global">
+              {(control) => (
+                <Select {...selectControl<string>(control)} items={SCOPE_OPTIONS}>
+                  <SelectTrigger {...selectTriggerControl(control)} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCOPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </MountedFormField>
+            <div style={{ width: 24, height: 32 }} className="flex items-center justify-center">
+              <CircleMinus
+                onClick={() => remove(index)}
+                className="size-4 text-muted-foreground hover:text-destructive cursor-pointer"
+              />
+            </div>
+          </div>
+        ))}
+        <Button variant="outline" className="w-full border-dashed" onClick={() => append({ scope: "global" })}>
+          <Plus />
+          Add Variable
+        </Button>
+      </div>
     </div>
   );
 };
@@ -109,34 +131,35 @@ const EnvVarsSection: React.FC = () => {
 // For instance-scoped vars this column holds the admin value. For per-user
 // vars the value comes from each user later, so the column instead captures an
 // optional description that the per-user fill-in modal shows as a hint.
-const ScopedValueOrDescription: React.FC<{
-  name: number;
-  restField: object;
-}> = ({ name, restField }) => {
-  const { t } = useTranslation();
-  const isPerUser = Form.useWatch(["env_vars", name, "scope"]) === "user";
+const ScopedValueOrDescription: React.FC<{ index: number }> = ({ index }) => {
+  const isPerUser = useWatch({ name: `env_vars.${index}.scope` }) === "user";
   if (isPerUser) {
     return (
-      <Form.Item {...restField} name={[name, "description"]} className="mb-0">
-        <Input
-          addonBefore={
-            <Tooltip title={t("toolsModels.mcp.perUserHintTooltip")}>
-              <span className="text-xs text-gray-500 cursor-help whitespace-nowrap">
-                <InfoCircleOutlined className="mr-1" />
-                {t("toolsModels.mcp.hint")}
-              </span>
-            </Tooltip>
-          }
-          placeholder={t("toolsModels.mcp.perUserHintPlaceholder")}
-          styles={{ input: { color: "#9ca3af" } }}
-        />
-      </Form.Item>
+      <MountedFormField name={["env_vars", String(index), "description"]} className="mb-0">
+        {(control) => (
+          <InputGroup>
+            <InputGroupAddon>
+              <SimpleTooltip content="Per-user variables have no shared value. This text is only a hint shown to each user when they fill in their own value.">
+                <span className="text-xs text-muted-foreground cursor-help whitespace-nowrap">
+                  <Info className="mr-1 inline size-3 align-text-bottom" />
+                  Hint
+                </span>
+              </SimpleTooltip>
+            </InputGroupAddon>
+            <InputGroupInput
+              {...textControl(control)}
+              placeholder="e.g. Your DB username"
+              className="text-muted-foreground"
+            />
+          </InputGroup>
+        )}
+      </MountedFormField>
     );
   }
   return (
-    <Form.Item {...restField} name={[name, "value"]} className="mb-0">
-      <Input placeholder={t("toolsModels.mcp.instanceValuePlaceholder")} className="rounded-md font-mono" />
-    </Form.Item>
+    <MountedFormField name={["env_vars", String(index), "value"]} className="mb-0">
+      {(control) => <Input {...textControl(control)} placeholder="e.g. postgresql" className="rounded-md font-mono" />}
+    </MountedFormField>
   );
 };
 

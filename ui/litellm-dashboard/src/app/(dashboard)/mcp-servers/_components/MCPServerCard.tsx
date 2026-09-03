@@ -32,9 +32,9 @@ interface MCPServerCardProps {
 }
 
 const HEALTH_TONE: Record<string, { dot: string }> = {
-  healthy: { dot: "bg-green-500" },
-  unhealthy: { dot: "bg-red-500" },
-  unknown: { dot: "bg-gray-300" },
+  healthy: { dot: "bg-success" },
+  unhealthy: { dot: "bg-destructive" },
+  unknown: { dot: "bg-border" },
 };
 
 // Stop card-level click handler from firing when an interactive child is used.

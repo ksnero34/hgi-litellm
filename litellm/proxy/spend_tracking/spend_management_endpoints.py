@@ -124,15 +124,6 @@ class _DailyTagSpendRow(TypedDict):
     total_spend: float
 
 
-class _SessionCountAggregate(TypedDict):
-    session_id: int
-
-
-class _SessionCountRow(TypedDict):
-    session_id: str
-    _count: _SessionCountAggregate
-
-
 class _SessionSpendRow(TypedDict):
     session_id: str
     session_total_spend: float
@@ -163,17 +154,9 @@ class _SpendLogsTable(Protocol):
 
     async def count(self, *, where: Mapping[str, object]) -> int: ...
 
-    async def group_by(
-        self, *, by: Sequence[str], where: Mapping[str, object], count: Mapping[str, bool]
-    ) -> Sequence[_SessionCountRow]: ...
-
 
 class _TeamTable(Protocol):
     """The subset of the Prisma team table API this module uses."""
-
-    async def find_unique(self, *, where: Mapping[str, object]) -> _SupportsModelDump | None: ...
-
-    async def find_many(self, *, where: Mapping[str, object]) -> Sequence[_SupportsModelDump]: ...
 
     async def update_many(self, *, data: Mapping[str, float], where: Mapping[str, object]) -> int: ...
 
@@ -216,27 +199,6 @@ async def _find_spend_log_row(prisma_client: PrismaClient, request_id: str) -> _
 async def _count_spend_logs(prisma_client: PrismaClient, where: Mapping[str, object]) -> int:
     """Count the spend log rows matching ``where``."""
     return await _spend_logs_table(prisma_client).count(where=where)
-
-
-async def _count_logs_per_session(
-    prisma_client: PrismaClient, session_ids: Sequence[str | None]
-) -> Sequence[_SessionCountRow]:
-    """Count spend log rows per session for the given session ids."""
-    return await _spend_logs_table(prisma_client).group_by(
-        by=["session_id"],
-        where={"session_id": {"in": session_ids}},
-        count={"session_id": True},
-    )
-
-
-async def _find_team_row(prisma_client: PrismaClient, team_id: str) -> _SupportsModelDump | None:
-    """Read a single team row as a Prisma model instance."""
-    return await _team_table(prisma_client).find_unique(where={"team_id": team_id})
-
-
-async def _find_team_rows(prisma_client: PrismaClient, team_ids: Sequence[str]) -> Sequence[_SupportsModelDump]:
-    """Read team rows as Prisma model instances."""
-    return await _team_table(prisma_client).find_many(where={"team_id": {"in": team_ids}})
 
 
 @router.get(

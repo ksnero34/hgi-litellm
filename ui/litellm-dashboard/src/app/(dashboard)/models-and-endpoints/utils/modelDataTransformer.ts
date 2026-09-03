@@ -9,10 +9,10 @@ export const transformModelData = (rawModelData: any, getProviderFromModel: (mod
   const transformedData = JSON.parse(JSON.stringify(rawModelData.data));
 
   for (let i = 0; i < transformedData.length; i++) {
-    let curr_model = transformedData[i];
-    let litellm_model_name = curr_model?.litellm_params?.model;
-    let custom_llm_provider = curr_model?.litellm_params?.custom_llm_provider;
-    let model_info = curr_model?.model_info;
+    const curr_model = transformedData[i];
+    const litellm_model_name = curr_model?.litellm_params?.model;
+    const custom_llm_provider = curr_model?.litellm_params?.custom_llm_provider;
+    const model_info = curr_model?.model_info;
 
     let provider = "";
     let input_cost: any = null;
@@ -24,10 +24,10 @@ export const transformModelData = (rawModelData: any, getProviderFromModel: (mod
     // Check if litellm_model_name is null or undefined
     if (litellm_model_name) {
       // Split litellm_model_name based on "/"
-      let splitModel = litellm_model_name.split("/");
+      const splitModel = litellm_model_name.split("/");
 
       // Get the first element in the split
-      let firstElement = splitModel[0];
+      const firstElement = splitModel[0];
 
       // If there is only one element, default provider to openai
       provider = custom_llm_provider;

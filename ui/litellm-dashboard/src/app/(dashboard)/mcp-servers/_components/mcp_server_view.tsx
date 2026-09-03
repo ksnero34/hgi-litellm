@@ -57,7 +57,8 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
   availableAccessGroups,
   initialTabIndex = 0,
 }) => {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const isEnglish = (i18n.resolvedLanguage ?? i18n.language ?? "en").startsWith("en");
   // Open the editing Settings tab on first render when returning from the edit OAuth
   // redirect, so the "token fetched" feedback shows where the user left off (Settings=2).
   const returningFromEditOAuth = isReturningFromEditOAuth(isProxyAdmin, mcpServer.server_id);
@@ -149,7 +150,7 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
         </TabsList>
 
         {/* Overview Panel */}
-        <TabsContent value="0">
+        <TabsContent value="0" keepMounted>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card className="p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -204,7 +205,7 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
         </TabsContent>
 
         {/* Tool Panel */}
-        <TabsContent value="1">
+        <TabsContent value="1" keepMounted>
           <MCPToolsViewer
             serverId={mcpServer.server_id}
             accessToken={accessToken}
@@ -221,7 +222,7 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
         </TabsContent>
 
         {/* Settings Panel */}
-        <TabsContent value="2">
+        <TabsContent value="2" keepMounted>
           <Card className="p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-medium">{t("toolsModels.mcp.serverSettings")}</h2>
@@ -320,7 +321,7 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
                     ) : (
                       <Badge variant="outline">
                         <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                        {t("toolsModels.mcp.internalOnly")}
+                        {isEnglish ? "Internal only" : t("toolsModels.mcp.internalOnly")}
                       </Badge>
                     )}
                   </div>

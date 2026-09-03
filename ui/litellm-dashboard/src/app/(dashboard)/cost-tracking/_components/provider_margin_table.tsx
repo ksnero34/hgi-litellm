@@ -140,9 +140,9 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
                         className="w-20"
                         autoFocus
                       />
-                      <span className="text-gray-600">%</span>
-                      <span className="text-gray-400">+</span>
-                      <span className="text-gray-600">$</span>
+                      <span className="text-muted-foreground">%</span>
+                      <span className="text-muted-foreground">+</span>
+                      <span className="text-muted-foreground">$</span>
                       <Input
                         value={editFixedAmount}
                         onChange={(e) => setEditFixedAmount(e.target.value)}
@@ -155,7 +155,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
                       size="icon-sm"
                       aria-label={t("operations.cost.saveMarginFor", { provider: displayName })}
                       onClick={() => handleSaveEdit(row.provider)}
-                      className="cursor-pointer text-green-600 hover:text-green-700"
+                      className="cursor-pointer text-success hover:text-success/80"
                     >
                       <Check className="size-5" />
                     </Button>
@@ -164,7 +164,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
                       size="icon-sm"
                       aria-label={t("operations.cost.cancelEditMarginFor", { provider: displayName })}
                       onClick={handleCancelEdit}
-                      className="cursor-pointer text-gray-600 hover:text-gray-700"
+                      className="cursor-pointer text-muted-foreground hover:text-foreground"
                     >
                       <X className="size-5" />
                     </Button>
@@ -177,7 +177,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
                       size="icon-sm"
                       aria-label={t("operations.cost.editMarginFor", { provider: displayName })}
                       onClick={() => handleStartEdit(row.provider, row.margin)}
-                      className="cursor-pointer text-blue-600 hover:text-blue-700"
+                      className="cursor-pointer text-info hover:text-info/80"
                     >
                       <SquarePen className="size-5" />
                     </Button>
@@ -199,7 +199,7 @@ const ProviderMarginTable: React.FC<ProviderMarginTableProps> = ({
                 size="icon-sm"
                 aria-label={t("operations.cost.removeMarginFor", { provider: displayName })}
                 onClick={() => onRemoveProvider(row.provider, displayName)}
-                className="cursor-pointer hover:text-red-600"
+                className="cursor-pointer hover:text-destructive"
               >
                 <Trash2 className="size-5" />
               </Button>

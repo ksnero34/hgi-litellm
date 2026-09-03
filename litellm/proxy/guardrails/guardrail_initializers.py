@@ -99,7 +99,7 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
         not has_composite_audit_mode or GuardrailEventHooks.post_call.value in modes
     )
     explicit_fallback = "unreachable_fallback" in litellm_params.model_fields_set
-    unreachable_fallback = litellm_params.unreachable_fallback if explicit_fallback else "fail_open"
+    unreachable_fallback = litellm_params.unreachable_fallback if explicit_fallback else "fail_closed"
 
     def _make_presidio_callback(**overrides):
         params: Final = dict(

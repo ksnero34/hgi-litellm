@@ -1,8 +1,18 @@
+import { CircleHelp } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { Button as Button2, Form, Select } from "antd";
-import { Text, TextInput } from "@tremor/react";
-import { useTranslation } from "react-i18next";
-import NotificationManager from "./molecules/notifications_manager";
+import { useWatch } from "react-hook-form";
+import { z } from "zod/v4";
+
+import { FieldGroup } from "@/components/shared/form/field";
+import { FormField } from "@/components/shared/form/FormField";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
+import { useZodForm } from "@/lib/forms/useZodForm";
+
+import { toast } from "@/lib/toast";
 import { getSSOSettings, updateSSOSettings } from "./networking";
 
 interface UIAccessControlFormProps {
@@ -10,35 +20,86 @@ interface UIAccessControlFormProps {
   onSuccess: () => void;
 }
 
+const uiAccessControlSchema = z
+  .object({
+    ui_access_mode_type: z.string().optional(),
+    restricted_sso_group: z.string().optional(),
+    sso_group_jwt_field: z.string().optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.ui_access_mode_type !== "restricted_sso_group" || values.restricted_sso_group) {
+      return;
+    }
+    ctx.addIssue({
+      code: "custom",
+      path: ["restricted_sso_group"],
+      message: "Please enter the restricted SSO group",
+    });
+  });
+
+type UIAccessControlFormValues = z.output<typeof uiAccessControlSchema>;
+
+const UI_ACCESS_MODE_OPTIONS = [
+  { value: "all_authenticated_users", label: "All Authenticated Users" },
+  { value: "restricted_sso_group", label: "Restricted SSO Group" },
+] as const;
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+
+const asString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+const toFormValues = (ssoData: unknown): UIAccessControlFormValues | null => {
+  const values = asRecord(asRecord(ssoData)?.values);
+  if (!values) {
+    return null;
+  }
+
+  const nestedAccessMode = asRecord(values.ui_access_mode);
+  if (nestedAccessMode) {
+    return {
+      ui_access_mode_type: asString(nestedAccessMode.type),
+      restricted_sso_group: asString(nestedAccessMode.restricted_sso_group),
+      sso_group_jwt_field: asString(nestedAccessMode.sso_group_jwt_field),
+    };
+  }
+
+  const legacyAccessMode = asString(values.ui_access_mode);
+  if (legacyAccessMode !== undefined) {
+    return {
+      ui_access_mode_type: legacyAccessMode,
+      restricted_sso_group: asString(values.restricted_sso_group),
+      sso_group_jwt_field: asString(values.team_ids_jwt_field) || asString(values.sso_group_jwt_field),
+    };
+  }
+
+  return null;
+};
+
+const labelWithHint = (label: string, hint: string): React.ReactNode => (
+  <>
+    {label}
+    <Tooltip>
+      <TooltipTrigger render={<CircleHelp className="size-3.5 shrink-0 cursor-help text-muted-foreground" />} />
+      <TooltipContent>{hint}</TooltipContent>
+    </Tooltip>
+  </>
+);
+
 const UIAccessControlForm: React.FC<UIAccessControlFormProps> = ({ accessToken, onSuccess }) => {
-  const { t } = useTranslation();
-  const [form] = Form.useForm();
+  const form = useZodForm(uiAccessControlSchema, { defaultValues: {} });
   const [loading, setLoading] = useState(false);
+  const uiAccessModeType = useWatch({ control: form.control, name: "ui_access_mode_type" });
 
   useEffect(() => {
     const loadUIAccessSettings = async () => {
       if (accessToken) {
         try {
-          const ssoData = await getSSOSettings(accessToken);
-          if (ssoData && ssoData.values) {
-            const uiAccessMode = ssoData.values.ui_access_mode;
-            let formValues = {};
-
-            if (uiAccessMode && typeof uiAccessMode === "object") {
-              formValues = {
-                ui_access_mode_type: uiAccessMode.type,
-                restricted_sso_group: uiAccessMode.restricted_sso_group,
-                sso_group_jwt_field: uiAccessMode.sso_group_jwt_field,
-              };
-            } else if (typeof uiAccessMode === "string") {
-              formValues = {
-                ui_access_mode_type: uiAccessMode,
-                restricted_sso_group: ssoData.values.restricted_sso_group,
-                sso_group_jwt_field: ssoData.values.team_ids_jwt_field || ssoData.values.sso_group_jwt_field,
-              };
-            }
-
-            form.setFieldsValue(formValues);
+          const formValues = toFormValues(await getSSOSettings(accessToken));
+          if (formValues) {
+            form.setValue("ui_access_mode_type", formValues.ui_access_mode_type);
+            form.setValue("restricted_sso_group", formValues.restricted_sso_group);
+            form.setValue("sso_group_jwt_field", formValues.sso_group_jwt_field);
           }
         } catch (error) {
           console.error("Failed to load UI access settings:", error);
@@ -49,123 +110,112 @@ const UIAccessControlForm: React.FC<UIAccessControlFormProps> = ({ accessToken, 
     loadUIAccessSettings();
   }, [accessToken, form]);
 
-  const handleUIAccessSubmit = async (formValues: Record<string, any>) => {
+  const handleUIAccessSubmit = async (formValues: UIAccessControlFormValues) => {
     if (!accessToken) {
-      NotificationManager.fromBackend(
-        t("auth.uiAccess.errors.noAccessToken", { defaultValue: "No access token available" }),
-      );
+      toast.fromError("No access token available");
       return;
     }
 
     setLoading(true);
     try {
-      let apiPayload;
-
-      if (formValues.ui_access_mode_type === "all_authenticated_users") {
-        apiPayload = {
-          ui_access_mode: "none",
-        };
-      } else {
-        apiPayload = {
-          ui_access_mode: {
-            type: formValues.ui_access_mode_type,
-            restricted_sso_group: formValues.restricted_sso_group,
-            sso_group_jwt_field: formValues.sso_group_jwt_field,
-          },
-        };
-      }
+      const apiPayload =
+        formValues.ui_access_mode_type === "all_authenticated_users"
+          ? { ui_access_mode: "none" }
+          : {
+              ui_access_mode: {
+                type: formValues.ui_access_mode_type,
+                restricted_sso_group: formValues.restricted_sso_group,
+                sso_group_jwt_field: formValues.sso_group_jwt_field,
+              },
+            };
 
       await updateSSOSettings(accessToken, apiPayload);
       onSuccess();
     } catch (error) {
       console.error("Failed to save UI access settings:", error);
-      NotificationManager.fromBackend(
-        t("auth.uiAccess.errors.save", { defaultValue: "Failed to save UI access settings" }),
-      );
+      toast.fromError("Failed to save UI access settings");
     } finally {
       setLoading(false);
     }
   };
 
+  const submitMountedValues = (formValues: UIAccessControlFormValues) =>
+    handleUIAccessSubmit(
+      formValues.ui_access_mode_type === "restricted_sso_group"
+        ? formValues
+        : { ...formValues, restricted_sso_group: undefined },
+    );
+
   return (
-    <div style={{ padding: "16px" }}>
-      <div style={{ marginBottom: "16px" }}>
-        <Text style={{ fontSize: "14px", color: "#6b7280" }}>
-          {t("auth.uiAccess.description", {
-            defaultValue:
-              "Configure who can access the UI interface and how group information is extracted from JWT tokens.",
-          })}
-        </Text>
-      </div>
-
-      <Form form={form} onFinish={handleUIAccessSubmit} layout="vertical">
-        <Form.Item
-          label={t("auth.uiAccess.modeLabel", { defaultValue: "UI Access Mode" })}
-          name="ui_access_mode_type"
-          tooltip={t("auth.uiAccess.modeTooltip", { defaultValue: "Controls who can access the UI interface" })}
-        >
-          <Select placeholder={t("auth.uiAccess.modePlaceholder", { defaultValue: "Select access mode" })}>
-            <Select.Option value="all_authenticated_users">
-              {t("auth.uiAccess.modes.allAuthenticatedUsers", { defaultValue: "All Authenticated Users" })}
-            </Select.Option>
-            <Select.Option value="restricted_sso_group">
-              {t("auth.uiAccess.modes.restrictedSsoGroup", { defaultValue: "Restricted SSO Group" })}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-
-        <Form.Item
-          noStyle
-          shouldUpdate={(prevValues, currentValues) =>
-            prevValues.ui_access_mode_type !== currentValues.ui_access_mode_type
-          }
-        >
-          {({ getFieldValue }) => {
-            const uiAccessModeType = getFieldValue("ui_access_mode_type");
-            return uiAccessModeType === "restricted_sso_group" ? (
-              <Form.Item
-                label={t("auth.uiAccess.restrictedGroupLabel", { defaultValue: "Restricted SSO Group" })}
-                name="restricted_sso_group"
-                rules={[
-                  {
-                    required: true,
-                    message: t("auth.uiAccess.validation.enterRestrictedGroup", {
-                      defaultValue: "Please enter the restricted SSO group",
-                    }),
-                  },
-                ]}
-              >
-                <TextInput
-                  placeholder={t("auth.uiAccess.restrictedGroupPlaceholder", { defaultValue: "ui-access-group" })}
-                />
-              </Form.Item>
-            ) : null;
-          }}
-        </Form.Item>
-
-        <Form.Item
-          label={t("auth.uiAccess.jwtFieldLabel", { defaultValue: "SSO Group JWT Field" })}
-          name="sso_group_jwt_field"
-          tooltip={t("auth.uiAccess.jwtFieldTooltip", {
-            defaultValue:
-              "JWT field name that contains team/group information. Use dot notation to access nested fields.",
-          })}
-        >
-          <TextInput placeholder={t("auth.uiAccess.jwtFieldPlaceholder", { defaultValue: "groups" })} />
-        </Form.Item>
-
-        <div style={{ textAlign: "right", marginTop: "16px" }}>
-          <Button2
-            type="primary"
-            htmlType="submit"
-            loading={loading}
-            style={{ backgroundColor: "#6366f1", borderColor: "#6366f1" }}
-          >
-            {t("auth.uiAccess.actions.update", { defaultValue: "Update UI Access Control" })}
-          </Button2>
+    <TooltipProvider>
+      <div className="p-4">
+        <div className="mb-4">
+          <p className="text-sm text-muted-foreground">
+            Configure who can access the UI interface and how group information is extracted from JWT tokens.
+          </p>
         </div>
-      </Form>
-    </div>
+
+        <form onSubmit={form.handleSubmit(submitMountedValues)} noValidate>
+          <FieldGroup>
+            <FormField
+              control={form.control}
+              name="ui_access_mode_type"
+              label={labelWithHint("UI Access Mode", "Controls who can access the UI interface")}
+            >
+              {({ id, value, onChange, "aria-invalid": ariaInvalid, "aria-describedby": ariaDescribedBy }) => (
+                <Select
+                  items={UI_ACCESS_MODE_OPTIONS}
+                  value={value ?? null}
+                  onValueChange={(selected) => onChange(selected ?? undefined)}
+                >
+                  <SelectTrigger
+                    id={id}
+                    className="w-full"
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedBy}
+                  >
+                    <SelectValue placeholder="Select access mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UI_ACCESS_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+
+            {uiAccessModeType === "restricted_sso_group" && (
+              <FormField control={form.control} name="restricted_sso_group" label="Restricted SSO Group">
+                {({ ref, value, ...field }) => (
+                  <Input {...field} ref={ref} value={value ?? ""} placeholder="ui-access-group" />
+                )}
+              </FormField>
+            )}
+
+            <FormField
+              control={form.control}
+              name="sso_group_jwt_field"
+              label={labelWithHint(
+                "SSO Group JWT Field",
+                "JWT field name that contains team/group information. Use dot notation to access nested fields.",
+              )}
+            >
+              {({ ref, value, ...field }) => <Input {...field} ref={ref} value={value ?? ""} placeholder="groups" />}
+            </FormField>
+          </FieldGroup>
+
+          <div className="mt-4 text-right">
+            <Button type="submit" disabled={loading}>
+              {loading && <UiLoadingSpinner className="size-4" />}
+              Update UI Access Control
+            </Button>
+          </div>
+        </form>
+      </div>
+    </TooltipProvider>
   );
 };
 

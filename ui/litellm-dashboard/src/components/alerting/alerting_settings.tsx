@@ -5,8 +5,7 @@ import React, { useState, useEffect } from "react";
 
 import { alertingSettingsCall, updateConfigFieldSetting } from "../networking";
 import DynamicForm from "./dynamic_form";
-import NotificationsManager from "../molecules/notifications_manager";
-import { useTranslation } from "react-i18next";
+import { toast } from "@/lib/toast";
 interface alertingSettingsItem {
   field_name: string;
   field_type: string;
@@ -23,7 +22,6 @@ interface AlertingSettingsProps {
 }
 
 const AlertingSettings: React.FC<AlertingSettingsProps> = ({ accessToken, premiumUser }) => {
-  const { t } = useTranslation();
   const [alertingSettings, setAlertingSettings] = useState<alertingSettingsItem[]>([]);
 
   useEffect(() => {
@@ -75,7 +73,7 @@ const AlertingSettings: React.FC<AlertingSettingsProps> = ({ accessToken, premiu
         }
       }
       // update value in state
-      NotificationsManager.success(t("settings.alerting.waitForUpdate"));
+      toast.success("Wait 10s for proxy to update.");
     } catch (error) {
       // do something
     }
@@ -112,11 +110,6 @@ const AlertingSettings: React.FC<AlertingSettingsProps> = ({ accessToken, premiu
       handleResetField={handleResetField}
       handleSubmit={handleSubmit}
       premiumUser={premiumUser}
-      updateLabel={t("settings.alerting.updateSettings")}
-      inDbLabel={t("settings.router.status.inDb")}
-      inConfigLabel={t("settings.router.status.inConfig")}
-      notSetLabel={t("settings.router.status.notSet")}
-      resetLabel={t("settings.router.reset")}
     />
   );
 };

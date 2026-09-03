@@ -25,7 +25,7 @@ export function PrettyMessagesView({ request, response, metrics }: PrettyMessage
     return <RealtimePrettyView response={response} metrics={metrics} />;
   }
 
-  const { requestMessages, responseMessage, responseItems, responseState } = parseMessages(request, response);
+  const { requestMessages, responseMessage } = parseMessages(request, response);
 
   return (
     <div>
@@ -35,8 +35,6 @@ export function PrettyMessagesView({ request, response, metrics }: PrettyMessage
       {/* Output Card */}
       <OutputCard
         message={responseMessage}
-        responseItems={responseItems}
-        responseState={responseState}
         completionTokens={metrics?.completion_tokens}
         outputCost={metrics?.output_cost}
       />

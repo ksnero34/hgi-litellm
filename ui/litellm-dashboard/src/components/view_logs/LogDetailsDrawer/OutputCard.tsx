@@ -4,39 +4,26 @@
  */
 
 import { useState } from "react";
-import MessageManager from "@/components/molecules/message_manager";
+import { toast } from "@/lib/toast";
 import { COLOR_BORDER } from "./constants";
-import { ParsedMessage, ParsedResponseItem, ParsedResponseState } from "./prettyMessagesTypes";
+import { ParsedMessage } from "./prettyMessagesTypes";
 import { SectionHeader } from "./SectionHeader";
-import { ResponseItemsView } from "./ResponseItemsView";
+import { SimpleMessageBlock } from "./SimpleMessageBlock";
 
 interface OutputCardProps {
   message: ParsedMessage | null;
-  responseItems?: ParsedResponseItem[];
-  responseState?: ParsedResponseState | null;
   completionTokens?: number;
   outputCost?: number;
 }
 
-export function OutputCard({
-  message,
-  responseItems,
-  responseState = null,
-  completionTokens,
-  outputCost,
-}: OutputCardProps) {
+export function OutputCard({ message, completionTokens, outputCost }: OutputCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const normalizedItems = responseItems ?? (message ? [{ kind: "message" as const, content: message.content }] : []);
 
   const handleCopy = () => {
-    if (normalizedItems.length === 0 && !responseState) return;
+    if (!message) return;
 
-    const content =
-      normalizedItems.length === 1 && normalizedItems[0].kind === "message" && !responseState
-        ? normalizedItems[0].content
-        : JSON.stringify({ items: normalizedItems, state: responseState }, null, 2);
-    navigator.clipboard.writeText(content);
-    MessageManager.success("Output copied");
+    navigator.clipboard.writeText(message.content || "");
+    toast.success("Output copied");
   };
 
   return (
@@ -55,8 +42,8 @@ export function OutputCard({
         style={{ maxHeight: isCollapsed ? "0px" : "10000px", opacity: isCollapsed ? 0 : 1 }}
       >
         <div className="px-4 py-3">
-          {normalizedItems.length > 0 || responseState ? (
-            <ResponseItemsView items={normalizedItems} state={responseState} />
+          {message ? (
+            <SimpleMessageBlock label="ASSISTANT" content={message.content} toolCalls={message.toolCalls} />
           ) : (
             <span className="text-[13px] text-muted-foreground italic">No response data available</span>
           )}

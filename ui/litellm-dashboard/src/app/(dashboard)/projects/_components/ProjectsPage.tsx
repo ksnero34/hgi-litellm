@@ -3,8 +3,7 @@ import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import { Plus, SearchIcon, X } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { PageHeader } from "@/components/shared/PageHeader";
+import { LegacyPageHeader } from "@/components/shared/LegacyPageHeader";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { CreateProjectModal } from "./ProjectModals/CreateProjectModal";
@@ -12,7 +11,6 @@ import { ProjectDetail } from "./ProjectDetailsPage";
 import { ProjectsTable } from "./ProjectsTable";
 
 export function ProjectsPage() {
-  const { t } = useTranslation();
   const { data: projects, isLoading } = useProjects();
   const { data: teams, isLoading: isTeamsLoading } = useTeams();
 
@@ -58,13 +56,13 @@ export function ProjectsPage() {
   return (
     <div className="p-6 px-12">
       <div className="mb-4">
-        <PageHeader
-          title={t("access.projects.title")}
-          subtitle={t("access.projects.subtitle")}
+        <LegacyPageHeader
+          title="Projects"
+          subtitle="Manage projects within your teams"
           actions={
             <Button onClick={() => setIsCreateModalVisible(true)}>
               <Plus className="size-4" />
-              {t("access.projects.create")}
+              Create Project
             </Button>
           }
         />
@@ -76,17 +74,13 @@ export function ProjectsPage() {
             <SearchIcon className="size-4 text-muted-foreground" />
           </InputGroupAddon>
           <InputGroupInput
-            placeholder={t("access.projects.search")}
+            placeholder="Search projects by name, ID, description, or team..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
           />
           {searchText && (
             <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                aria-label={t("access.projects.clearSearch")}
-                onClick={() => setSearchText("")}
-              >
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setSearchText("")}>
                 <X />
               </InputGroupButton>
             </InputGroupAddon>

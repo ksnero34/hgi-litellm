@@ -7,7 +7,7 @@ Tests the flow: create_audit_log_for_update -> _dispatch_audit_log_to_callbacks 
 import asyncio
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -19,17 +19,15 @@ from litellm.proxy.management_helpers.audit_logs import (
     _build_audit_log_payload,
     _dispatch_audit_log_to_callbacks,
     create_audit_log_for_update,
+    is_audit_logging_enabled,
 )
 from litellm.types.utils import StandardAuditLogPayload
 
 
 @pytest.fixture(autouse=True)
-def reset_audit_log_callbacks():
-    """Reset audit_log_callbacks before and after each test."""
-    original = litellm.audit_log_callbacks
-    litellm.audit_log_callbacks = []
-    yield
-    litellm.audit_log_callbacks = original
+def reset_audit_log_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test starts with no audit log callbacks registered."""
+    monkeypatch.setattr(litellm, "audit_log_callbacks", [])
 
 
 def _make_audit_log(
@@ -47,6 +45,101 @@ def _make_audit_log(
         updated_values=json.dumps({"name": "new-team"}),
         before_value=json.dumps({"name": "old-team"}),
     )
+
+
+class RecordingAuditLogger(CustomLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.payloads: list[StandardAuditLogPayload] = []
+
+    async def async_log_audit_log_event(self, audit_log: StandardAuditLogPayload):
+        self.payloads.append(audit_log)
+
+
+class FailingAuditLogger(RecordingAuditLogger):
+    async def async_log_audit_log_event(self, audit_log: StandardAuditLogPayload):
+        await super().async_log_audit_log_event(audit_log)
+        raise RuntimeError("boom")
+
+
+class RecordingProxyLogger:
+    def __init__(self) -> None:
+        self.debugs: list[str] = []
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+
+    def debug(self, message: str, *args, **kwargs) -> None:
+        self.debugs.append(message % args if args else message)
+
+    def error(self, message: str, *args, **kwargs) -> None:
+        self.errors.append(message % args if args else message)
+
+    def warning(self, message: str, *args, **kwargs) -> None:
+        self.warnings.append(message % args if args else message)
+
+
+class FakeTask:
+    def __init__(self, exception_value: BaseException | None = None, *, cancelled: bool = False) -> None:
+        self._exception_value = exception_value
+        self._cancelled = cancelled
+
+    def exception(self) -> BaseException | None:
+        if self._cancelled:
+            raise asyncio.CancelledError()
+        return self._exception_value
+
+
+def _install_recording_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    failure: BaseException | None = None,
+) -> list[dict[str, object]]:
+    persisted_rows: list[dict[str, object]] = []
+
+    class RecordingTable:
+        async def create(self, data: dict[str, object]) -> dict[str, object]:
+            if failure is not None:
+                raise failure
+            persisted_rows.append(data)
+            return data
+
+    class RecordingAuditLogRepository:
+        def __init__(self, prisma_client: object) -> None:
+            self.table = RecordingTable()
+
+    monkeypatch.setattr(
+        "litellm.proxy.management_helpers.audit_logs.AuditLogRepository",
+        RecordingAuditLogRepository,
+    )
+    return persisted_rows
+
+
+@pytest.mark.parametrize(
+    ("premium_user", "configured_value", "environment_value", "expected"),
+    (
+        (True, None, None, False),
+        (True, False, None, False),
+        (True, None, "false", False),
+        (False, None, None, False),
+        (False, True, None, True),
+        (True, True, "false", True),
+    ),
+)
+def test_is_audit_logging_enabled_is_not_licensed_by_premium_status(
+    monkeypatch: pytest.MonkeyPatch,
+    premium_user: bool,
+    configured_value: bool | None,
+    environment_value: str | None,
+    expected: bool,
+):
+    monkeypatch.setattr(litellm, "store_audit_logs", configured_value)
+    monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", premium_user)
+    if environment_value is None:
+        monkeypatch.delenv("LITELLM_STORE_AUDIT_LOGS", raising=False)
+    else:
+        monkeypatch.setenv("LITELLM_STORE_AUDIT_LOGS", environment_value)
+
+    assert is_audit_logging_enabled() is expected
 
 
 class TestBuildAuditLogPayload:
@@ -86,202 +179,191 @@ class TestBuildAuditLogPayload:
 
 class TestDispatchAuditLogToCallbacks:
     @pytest.mark.asyncio
-    async def test_dispatches_to_custom_logger_instance(self):
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
+    async def test_dispatches_to_custom_logger_instance(self, monkeypatch: pytest.MonkeyPatch):
+        logger = RecordingAuditLogger()
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [logger])
 
         audit_log = _make_audit_log()
         await _dispatch_audit_log_to_callbacks(audit_log)
+        await asyncio.sleep(0.01)
 
-        # Let asyncio.create_task run
-        await asyncio.sleep(0.1)
-
-        mock_logger.async_log_audit_log_event.assert_called_once()
-        payload = mock_logger.async_log_audit_log_event.call_args[0][0]
+        assert len(logger.payloads) == 1
+        payload = logger.payloads[0]
         assert payload["id"] == "test-audit-id"
         assert payload["action"] == "created"
 
     @pytest.mark.asyncio
-    async def test_no_dispatch_when_callbacks_empty(self):
-        litellm.audit_log_callbacks = []
+    async def test_no_dispatch_when_callbacks_empty(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [])
         audit_log = _make_audit_log()
-        # Should return immediately without error
-        await _dispatch_audit_log_to_callbacks(audit_log)
+        logger = RecordingProxyLogger()
+        monkeypatch.setattr("litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger", logger)
+
+        result = await _dispatch_audit_log_to_callbacks(audit_log)
+
+        assert result is None
+        assert logger.errors == []
+        assert logger.warnings == []
 
     @pytest.mark.asyncio
-    async def test_resolves_string_callback(self):
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-
-        litellm.audit_log_callbacks = ["s3_v2"]
-
-        with patch(
+    async def test_resolves_string_callback(self, monkeypatch: pytest.MonkeyPatch):
+        logger = RecordingAuditLogger()
+        monkeypatch.setattr(litellm, "audit_log_callbacks", ["s3_v2"])
+        monkeypatch.setattr(
             "litellm.proxy.management_helpers.audit_logs._resolve_audit_log_callback",
-            return_value=mock_logger,
-        ):
-            audit_log = _make_audit_log()
-            await _dispatch_audit_log_to_callbacks(audit_log)
-            await asyncio.sleep(0.1)
-
-            mock_logger.async_log_audit_log_event.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_nonblocking_on_callback_failure(self):
-        """Callback errors should not propagate."""
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock(
-            side_effect=RuntimeError("boom")
+            lambda name: logger,
         )
-        litellm.audit_log_callbacks = [mock_logger]
 
         audit_log = _make_audit_log()
-        # Should not raise
         await _dispatch_audit_log_to_callbacks(audit_log)
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.01)
+
+        assert len(logger.payloads) == 1
+        assert logger.payloads[0]["table_name"] == "LiteLLM_TeamTable"
 
     @pytest.mark.asyncio
-    async def test_skips_unresolvable_string_callback(self):
-        litellm.audit_log_callbacks = ["nonexistent_callback"]
+    async def test_nonblocking_on_callback_failure(self, monkeypatch: pytest.MonkeyPatch):
+        """Callback errors should not propagate."""
+        callback = FailingAuditLogger()
+        logger = RecordingProxyLogger()
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger", logger)
 
-        with patch(
+        audit_log = _make_audit_log()
+        await _dispatch_audit_log_to_callbacks(audit_log)
+        await asyncio.sleep(0.01)
+
+        assert len(callback.payloads) == 1
+        assert any("Audit log callback task failed: boom" in message for message in logger.errors)
+
+    @pytest.mark.asyncio
+    async def test_skips_unresolvable_string_callback(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(litellm, "audit_log_callbacks", ["nonexistent_callback"])
+        logger = RecordingProxyLogger()
+        monkeypatch.setattr("litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger", logger)
+        monkeypatch.setattr(
             "litellm.proxy.management_helpers.audit_logs._resolve_audit_log_callback",
-            return_value=None,
-        ):
-            audit_log = _make_audit_log()
-            # Should not raise
-            await _dispatch_audit_log_to_callbacks(audit_log)
+            lambda name: None,
+        )
+
+        audit_log = _make_audit_log()
+        await _dispatch_audit_log_to_callbacks(audit_log)
+
+        assert logger.warnings == ["Could not resolve audit log callback: nonexistent_callback"]
 
 
 class TestCreateAuditLogForUpdateWithCallbacks:
     @pytest.mark.asyncio
-    async def test_dispatches_to_callbacks_after_db_write(self):
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
+    async def test_dispatches_to_callbacks_after_db_write(self, monkeypatch: pytest.MonkeyPatch):
+        callback = RecordingAuditLogger()
+        persisted_rows = _install_recording_repository(monkeypatch)
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", object())
 
-        with (
-            patch("litellm.proxy.proxy_server.premium_user", True),
-            patch("litellm.store_audit_logs", True),
-            patch("litellm.proxy.proxy_server.prisma_client") as mock_prisma,
-        ):
-            mock_prisma.db.litellm_auditlog.create = AsyncMock()
+        audit_log = _make_audit_log()
+        result = await create_audit_log_for_update(audit_log)
+        await asyncio.sleep(0.01)
 
-            audit_log = _make_audit_log()
-            await create_audit_log_for_update(audit_log)
-            await asyncio.sleep(0.1)
-
-            # DB write should happen
-            mock_prisma.db.litellm_auditlog.create.assert_called_once()
-            # Callback should also be called
-            mock_logger.async_log_audit_log_event.assert_called_once()
+        assert result is True
+        assert len(persisted_rows) == 1
+        assert len(callback.payloads) == 1
+        assert persisted_rows[0]["object_id"] == "team-456"
+        assert callback.payloads[0]["action"] == "created"
 
     @pytest.mark.asyncio
-    async def test_dispatch_does_not_require_premium(self):
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
+    async def test_dispatch_does_not_require_premium(self, monkeypatch: pytest.MonkeyPatch):
+        callback = RecordingAuditLogger()
+        persisted_rows = _install_recording_repository(monkeypatch)
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.proxy.proxy_server.premium_user", False)
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", object())
 
-        with (
-            patch("litellm.proxy.proxy_server.premium_user", False),
-            patch("litellm.store_audit_logs", True),
-        ):
-            audit_log = _make_audit_log()
-            await create_audit_log_for_update(audit_log)
-            await asyncio.sleep(0.1)
+        audit_log = _make_audit_log()
+        result = await create_audit_log_for_update(audit_log)
+        await asyncio.sleep(0.01)
 
-            mock_logger.async_log_audit_log_event.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_hgi_audit_dispatch_cannot_be_disabled_at_runtime(self):
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
-
-        with patch("litellm.store_audit_logs", False):
-            audit_log = _make_audit_log()
-            await create_audit_log_for_update(audit_log)
-            await asyncio.sleep(0.1)
-
-            mock_logger.async_log_audit_log_event.assert_awaited_once()
+        assert result is True
+        assert len(callback.payloads) == 1
+        assert len(persisted_rows) == 1
 
     @pytest.mark.asyncio
-    async def test_dispatches_even_when_prisma_client_is_none(self):
+    async def test_hgi_audit_dispatch_cannot_be_disabled_at_runtime(self, monkeypatch: pytest.MonkeyPatch):
+        callback = RecordingAuditLogger()
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.store_audit_logs", False)
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", None)
+
+        audit_log = _make_audit_log()
+        result = await create_audit_log_for_update(audit_log)
+        await asyncio.sleep(0.01)
+
+        assert result is False
+        assert len(callback.payloads) == 1
+        assert callback.payloads[0]["id"] == "test-audit-id"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_even_when_prisma_client_is_none(self, monkeypatch: pytest.MonkeyPatch):
         """Callbacks should fire even if DB is unavailable."""
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
+        callback = RecordingAuditLogger()
+        logger = RecordingProxyLogger()
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", None)
+        monkeypatch.setattr("litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger", logger)
 
-        with (
-            patch("litellm.proxy.proxy_server.premium_user", True),
-            patch("litellm.store_audit_logs", True),
-            patch("litellm.proxy.proxy_server.prisma_client", None),
-        ):
-            audit_log = _make_audit_log()
-            await create_audit_log_for_update(audit_log)
-            await asyncio.sleep(0.1)
+        audit_log = _make_audit_log()
+        result = await create_audit_log_for_update(audit_log)
+        await asyncio.sleep(0.01)
 
-            # Callback should still be called despite no DB
-            mock_logger.async_log_audit_log_event.assert_called_once()
+        assert result is False
+        assert len(callback.payloads) == 1
+        assert any("database_not_connected" in message for message in logger.errors)
 
     @pytest.mark.asyncio
-    async def test_dispatches_even_when_db_write_fails(self):
+    async def test_dispatches_even_when_db_write_fails(self, monkeypatch: pytest.MonkeyPatch):
         """Callbacks should fire even if the DB write raises."""
-        mock_logger = MagicMock(spec=CustomLogger)
-        mock_logger.async_log_audit_log_event = AsyncMock()
-        litellm.audit_log_callbacks = [mock_logger]
+        callback = RecordingAuditLogger()
+        logger = RecordingProxyLogger()
+        _install_recording_repository(monkeypatch, failure=RuntimeError("DB connection lost"))
+        monkeypatch.setattr(litellm, "audit_log_callbacks", [callback])
+        monkeypatch.setattr("litellm.proxy.proxy_server.prisma_client", object())
+        monkeypatch.setattr("litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger", logger)
 
-        with (
-            patch("litellm.proxy.proxy_server.premium_user", True),
-            patch("litellm.store_audit_logs", True),
-            patch("litellm.proxy.proxy_server.prisma_client") as mock_prisma,
-        ):
-            mock_prisma.db.litellm_auditlog.create = AsyncMock(
-                side_effect=RuntimeError("DB connection lost")
-            )
+        audit_log = _make_audit_log()
+        result = await create_audit_log_for_update(audit_log)
+        await asyncio.sleep(0.01)
 
-            audit_log = _make_audit_log()
-            await create_audit_log_for_update(audit_log)
-            await asyncio.sleep(0.1)
-
-            # Callback should still be called despite DB failure
-            mock_logger.async_log_audit_log_event.assert_called_once()
+        assert result is False
+        assert len(callback.payloads) == 1
+        assert any("DB connection lost" in message for message in logger.errors)
 
 
 class TestAuditLogTaskDoneCallback:
     def test_logs_exception_from_failed_task(self):
         """Done callback should log task exceptions."""
-        mock_task = MagicMock(spec=asyncio.Task)
-        mock_task.exception.return_value = RuntimeError("callback failed")
-
         with patch(
-            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger"
-        ) as mock_logger:
-            _audit_log_task_done_callback(mock_task)
-            mock_logger.error.assert_called_once()
-            assert "callback failed" in str(mock_logger.error.call_args)
+            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger",
+            new=RecordingProxyLogger(),
+        ) as logger:
+            _audit_log_task_done_callback(FakeTask(RuntimeError("callback failed")))
+            assert logger.errors == ["Audit log callback task failed: callback failed"]
 
     def test_no_log_on_success(self):
         """Done callback should not log when task succeeds."""
-        mock_task = MagicMock(spec=asyncio.Task)
-        mock_task.exception.return_value = None
-
         with patch(
-            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger"
-        ) as mock_logger:
-            _audit_log_task_done_callback(mock_task)
-            mock_logger.error.assert_not_called()
+            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger",
+            new=RecordingProxyLogger(),
+        ) as logger:
+            _audit_log_task_done_callback(FakeTask())
+            assert logger.errors == []
 
     def test_handles_cancelled_task(self):
         """Done callback should handle cancelled tasks gracefully."""
-        mock_task = MagicMock(spec=asyncio.Task)
-        mock_task.exception.side_effect = asyncio.CancelledError()
-
         with patch(
-            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger"
-        ) as mock_logger:
-            _audit_log_task_done_callback(mock_task)
-            mock_logger.error.assert_not_called()
+            "litellm.proxy.management_helpers.audit_logs.verbose_proxy_logger",
+            new=RecordingProxyLogger(),
+        ) as logger:
+            _audit_log_task_done_callback(FakeTask(cancelled=True))
+            assert logger.errors == []
 
 
 class TestS3LoggerAuditLogEvent:
@@ -353,21 +435,21 @@ class TestS3AuditCallbackParamsDecoupling:
     S3Logger instance, distinct from the singleton serving normal logs."""
 
     @pytest.fixture(autouse=True)
-    def _isolate_caches_and_globals(self):
+    def _isolate_caches_and_globals(self, monkeypatch: pytest.MonkeyPatch):
         from litellm.litellm_core_utils import litellm_logging as ll_logging
         from litellm.proxy.management_helpers import audit_logs as ll_audit_logs
 
-        original_s3 = litellm.s3_callback_params
-        original_audit = getattr(litellm, "s3_audit_callback_params", None)
+        monkeypatch.setattr(litellm, "s3_callback_params", litellm.s3_callback_params)
+        monkeypatch.setattr(
+            litellm, "s3_audit_callback_params", getattr(litellm, "s3_audit_callback_params", None)
+        )
         ll_audit_logs._audit_log_callback_cache.clear()
         ll_logging._in_memory_loggers.clear()
         yield
-        litellm.s3_callback_params = original_s3
-        litellm.s3_audit_callback_params = original_audit
         ll_audit_logs._audit_log_callback_cache.clear()
         ll_logging._in_memory_loggers.clear()
 
-    def test_opt_in_constructs_separate_instance_with_audit_config(self):
+    def test_opt_in_constructs_separate_instance_with_audit_config(self, monkeypatch: pytest.MonkeyPatch):
         """Audit config set → audit resolver returns a fresh S3Logger pointing
         at the audit bucket, distinct from the normal-log singleton."""
         from litellm.integrations.s3_v2 import S3Logger
@@ -378,8 +460,8 @@ class TestS3AuditCallbackParamsDecoupling:
             _resolve_audit_log_callback,
         )
 
-        litellm.s3_callback_params = {"s3_bucket_name": "normal-bucket"}
-        litellm.s3_audit_callback_params = {"s3_bucket_name": "audit-bucket"}
+        monkeypatch.setattr(litellm, "s3_callback_params", {"s3_bucket_name": "normal-bucket"})
+        monkeypatch.setattr(litellm, "s3_audit_callback_params", {"s3_bucket_name": "audit-bucket"})
 
         with patch("asyncio.create_task"):
             audit_instance = _resolve_audit_log_callback("s3_v2")
@@ -395,7 +477,7 @@ class TestS3AuditCallbackParamsDecoupling:
         assert audit_instance.s3_bucket_name == "audit-bucket"
         assert normal_instance.s3_bucket_name == "normal-bucket"
 
-    def test_opt_out_preserves_singleton_behavior(self):
+    def test_opt_out_preserves_singleton_behavior(self, monkeypatch: pytest.MonkeyPatch):
         """No `s3_audit_callback_params` → audit and normal share the singleton
         (existing behavior, regression guard)."""
         from litellm.integrations.s3_v2 import S3Logger
@@ -406,8 +488,8 @@ class TestS3AuditCallbackParamsDecoupling:
             _resolve_audit_log_callback,
         )
 
-        litellm.s3_callback_params = {"s3_bucket_name": "shared-bucket"}
-        litellm.s3_audit_callback_params = None
+        monkeypatch.setattr(litellm, "s3_callback_params", {"s3_bucket_name": "shared-bucket"})
+        monkeypatch.setattr(litellm, "s3_audit_callback_params", None)
 
         with patch("asyncio.create_task"):
             normal_instance = _init_custom_logger_compatible_class(
@@ -421,10 +503,9 @@ class TestS3AuditCallbackParamsDecoupling:
         assert id(audit_instance) == id(normal_instance)
         assert audit_instance.s3_bucket_name == "shared-bucket"
 
-    def test_empty_dict_opts_in(self):
+    def test_empty_dict_opts_in(self, monkeypatch: pytest.MonkeyPatch):
         """`s3_audit_callback_params = {}` is opt-in (truthy-by-presence) and
         produces a separate instance with no bucket configured (env/IAM-only)."""
-        from litellm.integrations.s3_v2 import S3Logger
         from litellm.litellm_core_utils.litellm_logging import (
             _init_custom_logger_compatible_class,
         )
@@ -432,8 +513,8 @@ class TestS3AuditCallbackParamsDecoupling:
             _resolve_audit_log_callback,
         )
 
-        litellm.s3_callback_params = {"s3_bucket_name": "normal-bucket"}
-        litellm.s3_audit_callback_params = {}
+        monkeypatch.setattr(litellm, "s3_callback_params", {"s3_bucket_name": "normal-bucket"})
+        monkeypatch.setattr(litellm, "s3_audit_callback_params", {})
 
         with patch("asyncio.create_task"):
             audit_instance = _resolve_audit_log_callback("s3_v2")
@@ -447,7 +528,7 @@ class TestS3AuditCallbackParamsDecoupling:
         assert audit_instance.s3_bucket_name is None
         assert normal_instance.s3_bucket_name == "normal-bucket"
 
-    def test_reset_audit_log_callback_cache_clears_audit_instance(self):
+    def test_reset_audit_log_callback_cache_clears_audit_instance(self, monkeypatch: pytest.MonkeyPatch):
         """`reset_audit_log_callback_cache()` must drop the cached audit
         instance so a config reload picks up the new params."""
         from litellm.proxy.management_helpers.audit_logs import (
@@ -456,7 +537,7 @@ class TestS3AuditCallbackParamsDecoupling:
             reset_audit_log_callback_cache,
         )
 
-        litellm.s3_audit_callback_params = {"s3_bucket_name": "first"}
+        monkeypatch.setattr(litellm, "s3_audit_callback_params", {"s3_bucket_name": "first"})
         with patch("asyncio.create_task"):
             first = _resolve_audit_log_callback("s3_v2")
             assert first is not None and "s3_v2" in _audit_log_callback_cache
@@ -464,7 +545,7 @@ class TestS3AuditCallbackParamsDecoupling:
             reset_audit_log_callback_cache()
             assert "s3_v2" not in _audit_log_callback_cache
 
-            litellm.s3_audit_callback_params = {"s3_bucket_name": "second"}
+            monkeypatch.setattr(litellm, "s3_audit_callback_params", {"s3_bucket_name": "second"})
             second = _resolve_audit_log_callback("s3_v2")
             assert second is not None
             assert id(second) != id(first)

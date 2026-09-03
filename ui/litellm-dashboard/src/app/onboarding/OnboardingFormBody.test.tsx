@@ -1,7 +1,7 @@
 import React from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
 import { OnboardingFormBody } from "./OnboardingFormBody";
 
 const defaultProps = {
@@ -17,68 +17,69 @@ describe("OnboardingFormBody", () => {
     vi.clearAllMocks();
   });
 
-  it("should show signup heading for signup variant", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} />);
-    expect(screen.getByRole("heading", { name: "계정 등록" })).toBeInTheDocument();
+  it("should show 'Sign Up' heading for signup variant", () => {
+    render(<OnboardingFormBody {...defaultProps} />);
+    expect(screen.getByRole("heading", { name: "Sign Up" })).toBeInTheDocument();
   });
 
-  it("should show reset password heading for reset_password variant", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
-    expect(screen.getByRole("heading", { name: "비밀번호 재설정" })).toBeInTheDocument();
+  it("should show 'Reset Password' heading for reset_password variant", () => {
+    render(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
+    expect(screen.getByRole("heading", { name: "Reset Password" })).toBeInTheDocument();
   });
 
-  it("should show the signup helper copy", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} />);
-    expect(screen.getByText("관리자 화면에 로그인할 계정을 등록하세요.")).toBeInTheDocument();
+  it("should show SSO alert for signup variant", () => {
+    render(<OnboardingFormBody {...defaultProps} />);
+    expect(screen.getByText("SSO")).toBeInTheDocument();
   });
 
-  it("should show the reset password helper copy", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
-    expect(screen.getByText("관리자 화면에 접속할 새 비밀번호를 설정하세요.")).toBeInTheDocument();
+  it("should hide SSO alert for reset_password variant", () => {
+    render(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
+    expect(screen.queryByText("SSO")).not.toBeInTheDocument();
   });
 
   it("should pre-fill the email field with userEmail", async () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} userEmail="user@example.com" />);
+    render(<OnboardingFormBody {...defaultProps} userEmail="user@example.com" />);
     await waitFor(() => {
-      expect(screen.getByLabelText("이메일 주소")).toHaveValue("user@example.com");
+      expect(screen.getByLabelText("Email Address")).toHaveValue("user@example.com");
     });
   });
 
   it("should disable the email field", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} />);
-    expect(screen.getByLabelText("이메일 주소")).toBeDisabled();
+    render(<OnboardingFormBody {...defaultProps} />);
+    expect(screen.getByLabelText("Email Address")).toBeDisabled();
   });
 
   it("should show claimError message when claimError is set", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} claimError="Something went wrong" />);
+    render(<OnboardingFormBody {...defaultProps} claimError="Something went wrong" />);
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
   });
 
   it("should not show claimError message when claimError is null", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} claimError={null} />);
+    render(<OnboardingFormBody {...defaultProps} claimError={null} />);
     expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
   });
 
   it("should show a loading indicator on the submit button when isPending is true", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} isPending={true} />);
+    render(<OnboardingFormBody {...defaultProps} isPending={true} />);
+    // antd v5 renders a loading icon with aria-label="loading" inside the button
     expect(screen.getByRole("img", { name: "loading" })).toBeInTheDocument();
   });
 
   it("should call onSubmit with the typed password on form submit", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    renderWithProviders(<OnboardingFormBody {...defaultProps} onSubmit={onSubmit} />);
+    render(<OnboardingFormBody {...defaultProps} onSubmit={onSubmit} />);
 
-    await user.type(screen.getByLabelText("비밀번호"), "mypassword");
-    await user.click(screen.getByRole("button", { name: "계정 등록" }));
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "mypassword" } });
+    await user.click(screen.getByRole("button", { name: /sign up/i }));
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ password: "mypassword" }));
     });
   });
 
-  it("should show reset password on the submit button for reset_password variant", () => {
-    renderWithProviders(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
-    expect(screen.getByRole("button", { name: "비밀번호 재설정" })).toBeInTheDocument();
+  it("should show 'Reset Password' on the submit button for reset_password variant", () => {
+    render(<OnboardingFormBody {...defaultProps} variant="reset_password" />);
+    expect(screen.getByRole("button", { name: /reset password/i })).toBeInTheDocument();
   });
 });

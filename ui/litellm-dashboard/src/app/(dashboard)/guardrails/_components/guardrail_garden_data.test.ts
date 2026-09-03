@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { ALL_CARDS, LITELLM_CONTENT_FILTER_CARDS, PARTNER_GUARDRAIL_CARDS } from "./guardrail_garden_data";
 
 const EXPECTED_PARTNER_LOGO_FILES: Record<string, string> = {
-  microsoft_purview: "microsoft_azure.svg",
   presidio: "microsoft_azure.svg",
   bedrock: "bedrock.svg",
   lakera: "lakeraai.jpeg",

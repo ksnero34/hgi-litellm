@@ -242,16 +242,6 @@ export const LITELLM_CONTENT_FILTER_CARDS: GuardrailCardInfo[] = [
 
 export const PARTNER_GUARDRAIL_CARDS: GuardrailCardInfo[] = [
   {
-    id: "microsoft_purview",
-    name: "Microsoft Purview",
-    description:
-      "프롬프트와 응답을 Microsoft Purview DLP 정책으로 검사하고 Microsoft Graph에 감사 이벤트를 기록합니다.",
-    category: "partner",
-    logo: guardrailLogoMap["Microsoft Purview"],
-    tags: ["DLP", "Compliance", "Microsoft"],
-    providerKey: "MicrosoftPurview",
-  },
-  {
     id: "presidio",
     name: "Presidio PII",
     description:

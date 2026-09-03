@@ -1,24 +1,8 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
-import { Form } from "antd";
 import OAuthFormFields from "./OAuthFormFields";
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-/** Minimal Ant Form wrapper so Form.Item registers correctly. */
-const WithForm: React.FC<{ children: React.ReactNode; onFinish?: (values: any) => void }> = ({
-  children,
-  onFinish,
-}) => {
-  const [form] = Form.useForm();
-  return (
-    <Form form={form} onFinish={onFinish}>
-      {children}
-      <button type="submit">Submit</button>
-    </Form>
-  );
-};
+import { McpFormHarness as WithForm } from "./McpFormTestHarness";
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -177,8 +161,7 @@ describe("OAuthFormFields", () => {
           <OAuthFormFields isM2M={false} />
         </WithForm>,
       );
-      const authMethodLabel = screen.getByText("Token Endpoint Auth Method (optional)");
-      const selector = authMethodLabel.closest(".ant-form-item")!.querySelector(".ant-select-selector")!;
+      const selector = screen.getByLabelText("Token Endpoint Auth Method (optional)");
       await act(async () => {
         fireEvent.mouseDown(selector);
       });
@@ -207,7 +190,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
       });
     });
 
@@ -229,11 +212,11 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
       });
     });
 
-    it("shows 'Please enter valid JSON' error for malformed JSON", async () => {
+    it("shows 'Must be valid JSON' error for malformed JSON", async () => {
       render(
         <WithForm>
           <OAuthFormFields isM2M={false} />
@@ -251,7 +234,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Please enter valid JSON")).toBeInTheDocument();
+        expect(screen.getByText("Must be valid JSON")).toBeInTheDocument();
       });
     });
 
@@ -276,7 +259,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Please enter valid JSON")).toBeInTheDocument();
+        expect(screen.getByText("Must be valid JSON")).toBeInTheDocument();
       });
     });
 
@@ -299,7 +282,7 @@ describe("OAuthFormFields", () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText("Please enter valid JSON")).not.toBeInTheDocument();
+        expect(screen.queryByText("Must be valid JSON")).not.toBeInTheDocument();
       });
     });
   });

@@ -157,7 +157,8 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
               variant="outline"
               size="icon"
               onClick={() => setEvaluationModalOpen(true)}
-              title={t("observabilityExtra.guardrails.evaluationSettings")}
+              title={t("observability.guardrails.evaluation_settings")}
+              aria-label={t("observability.guardrails.evaluation_settings")}
             >
               <Settings className="size-4" />
             </Button>
@@ -184,9 +185,9 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
             <MetricCard
               label={t("observabilityExtra.guardrails.failRate")}
               value={`${data.failRate}%`}
-              valueColor={data.failRate > 15 ? "text-red-600" : data.failRate > 5 ? "text-amber-600" : "text-green-600"}
+              valueColor={data.failRate > 15 ? "text-destructive" : data.failRate > 5 ? "text-warning" : "text-success"}
               subtitle={`${Math.round((data.requestsEvaluated * data.failRate) / 100).toLocaleString()} blocked`}
-              icon={data.failRate > 15 ? <TriangleAlert className="size-4 text-red-400" /> : undefined}
+              icon={data.failRate > 15 ? <TriangleAlert className="size-4 text-destructive" /> : undefined}
             />
             <MetricCard
               label={t("observabilityExtra.guardrails.avgLatency")}
@@ -194,10 +195,10 @@ export function GuardrailDetail({ guardrailId, onBack, accessToken = null, start
               valueColor={
                 data.avgLatency != null
                   ? data.avgLatency > 150
-                    ? "text-red-600"
+                    ? "text-destructive"
                     : data.avgLatency > 50
-                      ? "text-amber-600"
-                      : "text-green-600"
+                      ? "text-warning"
+                      : "text-success"
                   : "text-muted-foreground"
               }
               subtitle={data.avgLatency != null ? "Per request (avg)" : t("observabilityExtra.guardrails.noData")}

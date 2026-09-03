@@ -4,7 +4,7 @@ import type { ColumnFiltersState, PaginationState, SortingState } from "@tanstac
 import { uiSpendLogsCall } from "../networking";
 import { Team } from "../key_team_helpers/key_list";
 import { fetchAllTeams } from "../../components/key_team_helpers/filter_helpers";
-import { teamListScopeUserId } from "../../utils/roles";
+import { spendScopeUserId, teamListScopeUserId } from "../../utils/roles";
 import { defaultPageSize } from "../constants";
 import { LOGS_SORT_FIELD_MAP, type LogEntry, type LogsSortField } from "./columns";
 
@@ -36,6 +36,7 @@ export const LOG_FILTER_LABELS: Record<string, string> = {
   [LOG_FILTER_IDS.TEAM_ID]: "Team ID",
   [LOG_FILTER_IDS.STATUS]: "Status",
   [LOG_FILTER_IDS.KEY_ALIAS]: "Key Alias",
+  [LOG_FILTER_IDS.USER_ID]: "User ID",
   [LOG_FILTER_IDS.END_USER]: "End User",
   [LOG_FILTER_IDS.ERROR_CODE]: "Error Code",
   [LOG_FILTER_IDS.ERROR_MESSAGE]: "Error Message",
@@ -97,10 +98,10 @@ export function useLogFilterLogic({
   token,
   userRole,
   userID,
-  columnFilters,
-  filterByCurrentUser,
-  selectedTeamId,
+  filterByCurrentUser = false,
+  selectedTeamId = null,
   scopeReady = true,
+  columnFilters,
   activeTab,
   isLiveTail,
   startTime,
@@ -113,10 +114,10 @@ export function useLogFilterLogic({
   token: string | null;
   userRole: string | null;
   userID: string | null;
-  columnFilters: ColumnFiltersState;
-  filterByCurrentUser: boolean | null;
+  filterByCurrentUser?: boolean;
   selectedTeamId?: string | null;
   scopeReady?: boolean;
+  columnFilters: ColumnFiltersState;
   activeTab: string;
   isLiveTail: boolean;
   startTime: string;
@@ -129,6 +130,8 @@ export function useLogFilterLogic({
   const activeSort = sorting[0] ?? DEFAULT_LOGS_SORTING[0];
   const sortBy: LogsSortField = isSortField(activeSort.id) ? activeSort.id : "startTime";
   const sortOrder: "asc" | "desc" = activeSort.desc ? "desc" : "asc";
+  const effectiveTeamId = selectedTeamId ?? getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID);
+  const implicitUserScope = filterByCurrentUser ? spendScopeUserId(userRole, userID) : null;
 
   const logsQueryOptions: UseQueryOptions<PaginatedResponse> = {
     queryKey: [
@@ -140,8 +143,9 @@ export function useLogFilterLogic({
       endTime,
       isCustomDate,
       columnFilters,
-      filterByCurrentUser ? userID : null,
-      selectedTeamId,
+      effectiveTeamId,
+      implicitUserScope,
+      scopeReady,
       sortBy,
       sortOrder,
     ],
@@ -159,7 +163,6 @@ export function useLogFilterLogic({
       const window = formatLogsWindow(startTime, endTime, isCustomDate);
 
       const userIdFilter = getFilterValue(columnFilters, LOG_FILTER_IDS.USER_ID);
-      const effectiveTeamId = selectedTeamId ?? getFilterValue(columnFilters, LOG_FILTER_IDS.TEAM_ID);
 
       return await uiSpendLogsCall({
         accessToken,
@@ -172,7 +175,7 @@ export function useLogFilterLogic({
           team_id: effectiveTeamId,
           request_id: getFilterValue(columnFilters, LOG_FILTER_IDS.REQUEST_ID),
           session_id: getFilterValue(columnFilters, LOG_FILTER_IDS.SESSION_ID),
-          user_id: userIdFilter ?? (!effectiveTeamId && filterByCurrentUser ? userID ?? undefined : undefined),
+          user_id: userIdFilter ?? (!effectiveTeamId ? implicitUserScope ?? undefined : undefined),
           end_user: getFilterValue(columnFilters, LOG_FILTER_IDS.END_USER),
           status_filter: getFilterValue(columnFilters, LOG_FILTER_IDS.STATUS),
           model_id: getFilterValue(columnFilters, LOG_FILTER_IDS.MODEL_ID),
@@ -185,7 +188,7 @@ export function useLogFilterLogic({
         },
       });
     },
-    enabled: !!accessToken && !!token && !!userRole && !!userID && activeTab === "request logs" && scopeReady,
+    enabled: !!accessToken && !!token && !!userRole && !!userID && scopeReady && activeTab === "request logs",
     refetchInterval: getLiveTailRefetchInterval(isLiveTail, pagination.pageIndex),
     placeholderData: keepPreviousData,
     refetchIntervalInBackground: false,
@@ -218,7 +221,7 @@ export function useLogFilterLogic({
     filterByCurrentUser && userID
       ? allTeams?.filter((team) =>
           team.members_with_roles?.some((member) => member.user_id === userID && member.role === "admin"),
-        )
+        ) ?? []
       : allTeams;
 
   return {

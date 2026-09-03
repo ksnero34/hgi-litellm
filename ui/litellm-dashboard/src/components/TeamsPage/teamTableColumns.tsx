@@ -3,18 +3,12 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Copy, KeyRound, Layers, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 import type { TFunction } from "i18next";
+import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DataTableSortHeader } from "@/components/shared/DataTable";
 import { DateCell, IdentityCell, SpendBudgetCell } from "@/components/shared/table_cells";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cva.config";
 import { copyToClipboard, formatNumberWithCommas } from "@/utils/dataUtils";
@@ -28,9 +22,13 @@ interface ResourceTone {
 }
 
 const RESOURCE_TONES: Record<"members" | "models" | "keys", ResourceTone> = {
-  members: { icon: Users, className: "bg-violet-50 text-violet-700 ring-violet-600/20" },
-  models: { icon: Layers, className: "bg-sky-50 text-sky-700 ring-sky-600/20" },
-  keys: { icon: KeyRound, className: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+  members: {
+    icon: Users,
+    className:
+      "bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-400/30",
+  },
+  models: { icon: Layers, className: "bg-info/10 text-info ring-sky-600/20" },
+  keys: { icon: KeyRound, className: "bg-success/10 text-success ring-emerald-600/20" },
 };
 
 const teamMemberCount = (team: Team): number => team.members_count ?? team.members_with_roles?.length ?? 0;
@@ -101,53 +99,124 @@ function RateLimitLine({ label, value }: { label: string; value: number | null }
 interface TeamRowActionsProps {
   team: Team;
   canManage: boolean;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  translator: TFunction;
   onEditTeam: (team: Team) => void;
   onDeleteTeam: (team: Team) => void;
 }
 
-function TeamRowActions({ team, canManage, onEditTeam, onDeleteTeam }: TeamRowActionsProps) {
-  const { t } = useTranslation();
+function TeamRowActions({
+  team,
+  canManage,
+  isOpen,
+  onOpenChange,
+  translator,
+  onEditTeam,
+  onDeleteTeam,
+}: TeamRowActionsProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      onOpenChange(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isOpen, onOpenChange]);
+
   const handleCopy = () => {
-    void copyToClipboard(team.team_id, t("access.teams.notifications.idCopied", { defaultValue: "Team ID copied" }));
+    void copyToClipboard(
+      team.team_id,
+      translator("access.teams.notifications.idCopied", { defaultValue: "Team ID copied" }),
+    );
+    onOpenChange(false);
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={t("access.teams.actions.open", { defaultValue: "Open team actions" })}
+    <div ref={containerRef} className="relative" data-row-click-exempt>
+      <button
+        type="button"
+        aria-label={translator("access.teams.actions.open", { defaultValue: "Open team actions" })}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
         data-testid={`team-actions-${team.team_id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenChange(!isOpen);
+        }}
       >
         <MoreHorizontal className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      </button>
+      <div
+        role="menu"
+        aria-hidden={!isOpen}
+        data-row-click-exempt
+        hidden={!isOpen}
+        className="mt-1 flex min-w-44 flex-col rounded-md bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      >
         {canManage && (
-          <DropdownMenuItem onClick={() => onEditTeam(team)} data-testid="team-action-edit">
-            <Pencil />
-            {t("access.teams.actions.edit", { defaultValue: "Edit team" })}
-          </DropdownMenuItem>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="team-action-edit"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            onClick={() => {
+              onOpenChange(false);
+              onEditTeam(team);
+            }}
+          >
+            <Pencil className="size-4" />
+            {translator("access.teams.actions.edit", { defaultValue: "Edit team" })}
+          </button>
         )}
-        <DropdownMenuItem onClick={handleCopy} data-testid="team-action-copy">
-          <Copy />
-          {t("access.teams.actions.copyId", { defaultValue: "Copy team ID" })}
-        </DropdownMenuItem>
+        <button
+          type="button"
+          role="menuitem"
+          data-testid="team-action-copy"
+          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+          onClick={handleCopy}
+        >
+          <Copy className="size-4" />
+          {translator("access.teams.actions.copyId", { defaultValue: "Copy team ID" })}
+        </button>
         {canManage && (
           <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => onDeleteTeam(team)} data-testid="team-action-delete">
-              <Trash2 />
-              {t("access.teams.actions.delete", { defaultValue: "Delete team" })}
-            </DropdownMenuItem>
+            <div className="-mx-1 my-1 h-px bg-border" />
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="team-action-delete"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+              onClick={() => {
+                onOpenChange(false);
+                onDeleteTeam(team);
+              }}
+            >
+              <Trash2 className="size-4" />
+              {translator("access.teams.actions.delete", { defaultValue: "Delete team" })}
+            </button>
           </>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </div>
+    </div>
   );
 }
 
 interface TeamTableColumnsDeps {
   organizations: Organization[];
   userRole: string | null;
+  openTeamId: string | null;
+  onOpenTeamIdChange: (teamId: string | null) => void;
   onSelectTeam: (team: Team) => void;
   onEditTeam: (team: Team) => void;
   onDeleteTeam: (team: Team) => void;
@@ -157,6 +226,8 @@ interface TeamTableColumnsDeps {
 export const getTeamTableColumns = ({
   organizations,
   userRole,
+  openTeamId,
+  onOpenTeamIdChange,
   onSelectTeam,
   onEditTeam,
   onDeleteTeam,
@@ -323,6 +394,9 @@ export const getTeamTableColumns = ({
           <TeamRowActions
             team={row.original}
             canManage={canManage}
+            isOpen={openTeamId === row.original.team_id}
+            onOpenChange={(open) => onOpenTeamIdChange(open ? row.original.team_id : null)}
+            translator={t}
             onEditTeam={onEditTeam}
             onDeleteTeam={onDeleteTeam}
           />

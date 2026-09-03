@@ -51,16 +51,16 @@ export const getAutoRouterClassifierDefaultPromptCall = async (
 /**
  * Helper file for calls being made to proxy
  */
-import MessageManager from "@/components/molecules/message_manager";
+import { toast } from "@/lib/toast";
 import { clearTokenCookies, getCookie, storeLoginToken } from "@/utils/cookieUtils";
 import { decodeToken } from "@/utils/jwtUtils";
 import { TagNewRequest, TagUpdateRequest, TagListResponse, TagInfoResponse } from "./tag_management/types";
 import { Team } from "./key_team_helpers/key_list";
 import { EmailEventSettingsResponse, EmailEventSettingsUpdateRequest } from "./email_events/types";
 import type { SkillRegisterRequest } from "./claude_code_plugins/types";
+import type { ModelBudgetUsage, ModelMaxBudget } from "./key_team_helpers/ModelMaxBudgetEditor";
 import type { ObjectPermission } from "./object_permission_types";
 import { jsonFields } from "./common_components/check_openapi_schema";
-import NotificationsManager from "./molecules/notifications_manager";
 import type { MCPUserEnvVarsStatus } from "./mcp_tools/types";
 import type {
   CoordinationRedisSettings,
@@ -340,7 +340,7 @@ export const handleError = async (errorData: string | any) => {
     // Convert errorData to string if it isn't already
     const errorString = typeof errorData === "string" ? errorData : JSON.stringify(errorData);
     if (errorString.includes("Authentication Error - Expired Key")) {
-      NotificationsManager.info("UI Session Expired. Logging out.");
+      toast.info("UI Session Expired. Logging out.");
       lastErrorTime = currentTime;
       clearTokenCookies();
       const browserLocation = getWindowLocation();
@@ -370,6 +370,21 @@ export const getProviderCreateMetadata = async (): Promise<ProviderCreateInfo[]>
 
   const jsonData: ProviderCreateInfo[] = await response.json();
   return jsonData;
+};
+
+export interface ComplexityScorerDefaults {
+  tier_boundaries: Record<string, number>;
+  token_thresholds: Record<string, number>;
+  dimension_weights: Record<string, number>;
+}
+
+export const getComplexityScorerDefaults = async (): Promise<ComplexityScorerDefaults> => {
+  /**
+   * Fetch the complexity router's shipped heuristic scorer defaults from the proxy's public endpoint.
+   * The Advanced scoring controls prefill from these rather than from a copy in the dashboard, so a
+   * recalibration of the defaults cannot leave the form reporting numbers the router no longer uses.
+   */
+  return await apiClient.get(`/public/complexity_router/scorer_defaults`);
 };
 
 export const getAgentCreateMetadata = async (): Promise<AgentCreateInfo[]> => {
@@ -594,10 +609,10 @@ export const modelCreateCall = async (accessToken: string, formValues: Model) =>
     });
 
     // Close any existing messages before showing new ones
-    MessageManager.destroy();
+    toast.dismiss();
 
     // Sequential success messages
-    NotificationsManager.success(`Model ${formValues.model_name} created successfully`);
+    toast.success(`Model ${formValues.model_name} created successfully`);
 
     return data;
   } catch (error) {
@@ -1075,6 +1090,8 @@ export interface UserInfoV2Response {
   sso_user_id: string | null;
   teams: string[];
   object_permission?: ObjectPermission | null;
+  model_max_budget?: ModelMaxBudget | null;
+  model_max_budget_usage?: Record<string, ModelBudgetUsage> | null;
 }
 
 /**
@@ -1314,7 +1331,7 @@ export const transformRequestCall = async (accessToken: string, request: object)
    */
 
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/utils/transform_request` : `/utils/transform_request`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/utils/transform_request` : `/utils/transform_request`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -1437,6 +1454,7 @@ export const userDailyActivityCall = async (
   page: number = 1,
   userId: string | null = null,
   includeCurrentUtcDay: boolean = false,
+  apiKey: string | null = null,
 ) => {
   /**
    * Get daily user activity on proxy
@@ -1450,6 +1468,7 @@ export const userDailyActivityCall = async (
     extraQueryParams: {
       user_id: userId,
       include_current_utc_day: includeCurrentUtcDay ? "true" : undefined,
+      api_key: apiKey,
     },
   });
 };
@@ -1497,6 +1516,32 @@ export const teamDailyActivityCall = async (
       exclude_team_ids: "litellm-dashboard",
     },
   });
+};
+
+export const teamDailyActivityAggregatedCall = async (
+  accessToken: string,
+  startTime: Date,
+  endTime: Date,
+  teamIds: string[] | null = null,
+) => {
+  /**
+   * Get aggregated daily team activity with per-team breakdown (no pagination)
+   */
+  try {
+    return await apiClient.get(`/team/daily/activity/aggregated`, {
+      accessToken,
+      query: {
+        start_date: formatDate(startTime),
+        end_date: formatDate(endTime),
+        timezone: new Date().getTimezoneOffset().toString(),
+        team_ids: teamIds && teamIds.length > 0 ? teamIds.join(",") : undefined,
+        exclude_team_ids: "litellm-dashboard",
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch aggregated team daily activity:", error);
+    throw error;
+  }
 };
 
 export const organizationDailyActivityCall = async (
@@ -1687,7 +1732,6 @@ export const modelInfoCall = async (
       url += `?${params.toString()}`;
     }
 
-    //NotificationsManager.info("Requesting model data");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -1703,7 +1747,7 @@ export const modelInfoCall = async (
         if (errorData.includes("No model list passed")) {
           errorData = "No Models Exist. Click Add Model to get started.";
         }
-        NotificationsManager.info(errorData);
+        toast.info(errorData);
         ModelListerrorShown = true;
 
         if (errorTimer) clearTimeout(errorTimer);
@@ -1716,7 +1760,6 @@ export const modelInfoCall = async (
     }
 
     const data = await response.json();
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -1819,9 +1862,7 @@ export const modelHubCall = async (accessToken: string) => {
    * Get all models on proxy
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.get(`/model_group/info`, { accessToken });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -2085,9 +2126,7 @@ export const uiSpendLogsCall = async ({
 
 export const adminSpendLogsCall = async (accessToken: string) => {
   try {
-    //NotificationsManager.info("Making spend logs request");
     const data = await apiClient.get(`/global/spend/logs`, { accessToken });
-    //NotificationsManager.success("Spend Logs received");
     return data;
   } catch (error) {
     console.error("Failed to create key:", error);
@@ -2097,9 +2136,8 @@ export const adminSpendLogsCall = async (accessToken: string) => {
 
 export const adminTopKeysCall = async (accessToken: string) => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/global/spend/keys?limit=5` : `/global/spend/keys?limit=5`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/global/spend/keys?limit=5` : `/global/spend/keys?limit=5`;
 
-    //NotificationsManager.info("Making spend keys request");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -2115,7 +2153,6 @@ export const adminTopKeysCall = async (accessToken: string) => {
     }
 
     const data = await response.json();
-    //NotificationsManager.success("Spend Logs received");
     return data;
   } catch (error) {
     console.error("Failed to create key:", error);
@@ -2134,9 +2171,7 @@ export const adminTopEndUsersCall = async (
       ? { api_key: keyToken, startTime: startTime, endTime: endTime }
       : { startTime: startTime, endTime: endTime };
 
-    //NotificationsManager.info("Making top end users request");
     const data = await apiClient.post(`/global/spend/end_users`, { accessToken, body });
-    //NotificationsManager.success("Top End users received");
     return data;
   } catch (error) {
     console.error("Failed to create key:", error);
@@ -2218,9 +2253,8 @@ export const adminGlobalActivityPerModel = async (
 
 export const adminTopModelsCall = async (accessToken: string) => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/global/spend/models?limit=5` : `/global/spend/models?limit=5`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/global/spend/models?limit=5` : `/global/spend/models?limit=5`;
 
-    //NotificationsManager.info("Making top models request");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -2236,7 +2270,6 @@ export const adminTopModelsCall = async (accessToken: string) => {
     }
 
     const data = await response.json();
-    //NotificationsManager.success("Top Models received");
     return data;
   } catch (error) {
     console.error("Failed to create key:", error);
@@ -2246,7 +2279,7 @@ export const adminTopModelsCall = async (accessToken: string) => {
 
 export const keyInfoCall = async (accessToken: string, keys: string[]) => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/v2/key/info` : `/v2/key/info`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/v2/key/info` : `/v2/key/info`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -2423,7 +2456,7 @@ export const keyInfoV1Call = async (accessToken: string, key: string) => {
     if (!response.ok) {
       const errorData = await response.text();
       handleError(errorData);
-      NotificationsManager.fromBackend("Failed to fetch key info - " + errorData);
+      toast.fromError("Failed to fetch key info - " + errorData);
     }
 
     const data = await response.json();
@@ -2518,11 +2551,12 @@ export const userDailyActivityAggregatedCall = async (
   accessToken: string,
   startTime: Date,
   endTime: Date,
-  userId: string | null = null,
+  ...options: [userId?: string | null, includeCurrentUtcDay?: boolean, apiKey?: string | null]
 ) => {
   /**
    * Get aggregated daily user activity (no pagination)
    */
+  const [userId = null, includeCurrentUtcDay = false, apiKey = null] = options;
   try {
     const formatDate = (date: Date) => {
       const year = date.getFullYear();
@@ -2536,7 +2570,12 @@ export const userDailyActivityAggregatedCall = async (
         start_date: formatDate(startTime),
         end_date: formatDate(endTime),
         timezone: new Date().getTimezoneOffset().toString(),
-        user_id: userId || undefined,
+        // Passed raw, matching the paginated caller: both serializers drop null and undefined,
+        // and both keep "". An empty filter must not vanish, or a request scoped to one user or
+        // key would silently widen into an unscoped, proxy-wide read.
+        user_id: userId,
+        include_current_utc_day: includeCurrentUtcDay ? "true" : undefined,
+        api_key: apiKey,
       },
     });
   } catch (error) {
@@ -2782,7 +2821,7 @@ export const teamUpdateCall = async (
       const errorData = await response.text();
       handleError(errorData);
       console.error("Error response from the server:", errorData);
-      NotificationsManager.fromBackend("Failed to update team settings: " + unwrapProxyErrorMessage(errorData));
+      toast.fromError("Failed to update team settings: " + unwrapProxyErrorMessage(errorData));
       throw new Error(errorData);
     }
     const data = (await response.json()) as { data: Team; team_id: string };
@@ -2898,7 +2937,7 @@ export const teamBulkMemberAddCall = async (
   try {
     const url = proxyBaseUrl ? `${proxyBaseUrl}/team/bulk_member_add` : `/team/bulk_member_add`;
 
-    let requestBody: any = {
+    const requestBody: any = {
       team_id: teamId,
     };
 
@@ -3124,7 +3163,6 @@ export const userUpdateUserCall = async (
       user_id: string;
       data: UserInfo;
     };
-    //NotificationsManager.success("User role updated");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3150,7 +3188,7 @@ export const userBulkUpdateUserCall = async (
       };
     } else if (userIds && userIds.length > 0) {
       // Update specific users mode
-      let users = [];
+      const users = [];
       for (const user_id of userIds) {
         users.push({
           user_id: user_id,
@@ -3176,7 +3214,6 @@ export const userBulkUpdateUserCall = async (
       successful_updates: number;
       failed_updates: number;
     };
-    //NotificationsManager.success("User role updated");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3187,7 +3224,7 @@ export const userBulkUpdateUserCall = async (
 
 export const serviceHealthCheck = async (accessToken: string, service: string) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/health/services?service=${service}`
       : `/health/services?service=${service}`;
 
@@ -3220,9 +3257,7 @@ export const getBudgetList = async (accessToken: string) => {
    * Get all configurable params for setting a budget
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.get(`/budget/list`, { accessToken });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3235,9 +3270,7 @@ export const getCallbacksCall = async (accessToken: string, userID: string, user
    * Get all the models user has access to
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.get(`/get/config/callbacks`, { accessToken });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3248,11 +3281,10 @@ export const getCallbacksCall = async (accessToken: string, userID: string, user
 
 export const getGeneralSettingsCall = async (accessToken: string) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/config/list?config_type=general_settings`
       : `/config/list?config_type=general_settings`;
 
-    //NotificationsManager.info("Requesting model data");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -3269,7 +3301,6 @@ export const getGeneralSettingsCall = async (accessToken: string) => {
     }
 
     const data = await response.json();
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3377,9 +3408,7 @@ export const getPassThroughEndpointsCall = async (accessToken: string, teamId?: 
       path += `/team/${teamId}`;
     }
 
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.get(path, { accessToken });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3390,11 +3419,10 @@ export const getPassThroughEndpointsCall = async (accessToken: string, teamId?: 
 
 export const getConfigFieldSetting = async (accessToken: string, fieldName: string) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/config/field/info?field_name=${fieldName}`
       : `/config/field/info?field_name=${fieldName}`;
 
-    //NotificationsManager.info("Requesting model data");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -3424,14 +3452,12 @@ export const createPassThroughEndpoint = async (accessToken: string, formValues:
    * Set callbacks on proxy
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.post(`/config/pass_through_endpoint`, {
       accessToken,
       body: {
         ...formValues, // Include formValues in the request body
       },
     });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3442,15 +3468,13 @@ export const createPassThroughEndpoint = async (accessToken: string, formValues:
 
 export const updateConfigFieldSetting = async (accessToken: string, fieldName: string, fieldValue: any) => {
   try {
-    let formData = {
+    const formData = {
       field_name: fieldName,
       field_value: fieldValue,
       config_type: "general_settings",
     };
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.post(`/config/field/update`, { accessToken, body: formData });
-    //NotificationsManager.info("Received model data");
-    NotificationsManager.success("Successfully updated value!");
+    toast.success("Successfully updated value!");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3461,13 +3485,12 @@ export const updateConfigFieldSetting = async (accessToken: string, fieldName: s
 
 export const deleteConfigFieldSetting = async (accessToken: string, fieldName: string) => {
   try {
-    let formData = {
+    const formData = {
       field_name: fieldName,
       config_type: "general_settings",
     };
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.post(`/config/field/delete`, { accessToken, body: formData });
-    NotificationsManager.success("Field reset on proxy");
+    toast.success("Field reset on proxy");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3478,11 +3501,10 @@ export const deleteConfigFieldSetting = async (accessToken: string, fieldName: s
 
 export const deletePassThroughEndpointsCall = async (accessToken: string, endpointId: string) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/config/pass_through_endpoint?endpoint_id=${endpointId}`
       : `/config/pass_through_endpoint?endpoint_id=${endpointId}`;
 
-    //NotificationsManager.info("Requesting model data");
     const response = await fetch(url, {
       method: "DELETE",
       headers: {
@@ -3499,7 +3521,6 @@ export const deletePassThroughEndpointsCall = async (accessToken: string, endpoi
     }
 
     const data = await response.json();
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3513,14 +3534,12 @@ export const setCallbacksCall = async (accessToken: string, formValues: Record<s
    * Set callbacks on proxy
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.post(`/config/update`, {
       accessToken,
       body: {
         ...formValues, // Include formValues in the request body
       },
     });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3534,7 +3553,7 @@ export const individualModelHealthCheckCall = async (accessToken: string, modelI
    * Run health check for a specific model using model ID (so each deployment is checked separately).
    */
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/health?model_id=${encodeURIComponent(modelId)}`
       : `/health?model_id=${encodeURIComponent(modelId)}`;
 
@@ -3566,9 +3585,8 @@ export const cachingHealthCheckCall = async (accessToken: string) => {
    * Get all the models user has access to
    */
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/cache/ping` : `/cache/ping`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/cache/ping` : `/cache/ping`;
 
-    //NotificationsManager.info("Requesting model data");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -3584,7 +3602,6 @@ export const cachingHealthCheckCall = async (accessToken: string) => {
     }
 
     const data = await response.json();
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -3598,7 +3615,7 @@ export const latestHealthChecksCall = async (accessToken: string) => {
    * Get the latest health check status for all models
    */
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/health/latest` : `/health/latest`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/health/latest` : `/health/latest`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -3627,9 +3644,7 @@ export const getProxyUISettings = async (accessToken: string) => {
    * Get all the models user has access to
    */
   try {
-    //NotificationsManager.info("Requesting model data");
     const data = await apiClient.get(`/sso/get/ui_settings`, { accessToken });
-    //NotificationsManager.info("Received model data");
     return data;
     // Handle success - you might want to update some state or UI based on the created key
   } catch (error) {
@@ -4830,7 +4845,7 @@ export const createGuardrailCall = async (accessToken: string, guardrailData: an
 export const uiSpendLogDetailsCall = async (accessToken: string, logId: string, start_date: string) => {
   try {
     // Construct base URL
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/spend/logs/ui/${logId}?start_date=${encodeURIComponent(start_date)}`
       : `/spend/logs/ui/${logId}?start_date=${encodeURIComponent(start_date)}`;
 
@@ -5203,7 +5218,7 @@ export const listMCPTools = async (
   // Construct base URL. include_disabled_tools returns the full server catalog
   // (admin-only, backend-enforced) so the settings UI can configure the allowlist.
   const query = `server_id=${serverId}${includeDisabledTools ? "&include_disabled_tools=true" : ""}`;
-  let url = proxyBaseUrl ? `${proxyBaseUrl}/mcp-rest/tools/list?${query}` : `/mcp-rest/tools/list?${query}`;
+  const url = proxyBaseUrl ? `${proxyBaseUrl}/mcp-rest/tools/list?${query}` : `/mcp-rest/tools/list?${query}`;
 
   const headers: Record<string, string> = {
     [globalLitellmHeaderName]: `Bearer ${accessToken}`,
@@ -5280,7 +5295,7 @@ export const callMCPTool = async (
 ) => {
   try {
     // Construct base URL
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/mcp-rest/tools/call` : `/mcp-rest/tools/call`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/mcp-rest/tools/call` : `/mcp-rest/tools/call`;
 
     const headers: Record<string, string> = {
       [globalLitellmHeaderName]: `Bearer ${accessToken}`,
@@ -5357,7 +5372,7 @@ export const callMCPTool = async (
 
 export const tagCreateCall = async (accessToken: string, formValues: TagNewRequest): Promise<void> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/tag/new` : `/tag/new`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/tag/new` : `/tag/new`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5383,7 +5398,7 @@ export const tagCreateCall = async (accessToken: string, formValues: TagNewReque
 
 export const tagUpdateCall = async (accessToken: string, formValues: TagUpdateRequest): Promise<void> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/tag/update` : `/tag/update`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/tag/update` : `/tag/update`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5409,7 +5424,7 @@ export const tagUpdateCall = async (accessToken: string, formValues: TagUpdateRe
 
 export const tagInfoCall = async (accessToken: string, tagNames: string[]): Promise<TagInfoResponse> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/tag/info` : `/tag/info`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/tag/info` : `/tag/info`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5480,7 +5495,7 @@ export const tagListCall = async (
 
 export const tagDeleteCall = async (accessToken: string, tagName: string): Promise<void> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/tag/delete` : `/tag/delete`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/tag/delete` : `/tag/delete`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5526,7 +5541,7 @@ export const updateDefaultTeamSettings = async (accessToken: string, settings: R
 
 export const getTeamPermissionsCall = async (accessToken: string, teamId: string) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/team/permissions_list?team_id=${teamId}`
       : `/team/permissions_list?team_id=${teamId}`;
 
@@ -5588,7 +5603,7 @@ export const sessionSpendLogsCall = async (
       page: String(page),
       page_size: String(page_size),
     });
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/spend/logs/session/ui?${params.toString()}`
       : `/spend/logs/session/ui?${params.toString()}`;
 
@@ -5617,7 +5632,7 @@ export const sessionSpendLogsCall = async (
 
 export const vectorStoreCreateCall = async (accessToken: string, formValues: Record<string, any>): Promise<void> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/new` : `/vector_store/new`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/new` : `/vector_store/new`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5646,7 +5661,7 @@ export const vectorStoreListCall = async (
   page_size: number = 100,
 ): Promise<any> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/list` : `/vector_store/list`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/list` : `/vector_store/list`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -5684,7 +5699,7 @@ export const indexesListCall = async (accessToken: string): Promise<IndexesListR
 
 export const vectorStoreDeleteCall = async (accessToken: string, vectorStoreId: string): Promise<void> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/delete` : `/vector_store/delete`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/delete` : `/vector_store/delete`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5709,7 +5724,7 @@ export const vectorStoreDeleteCall = async (accessToken: string, vectorStoreId: 
 
 export const vectorStoreInfoCall = async (accessToken: string, vectorStoreId: string): Promise<any> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/info` : `/vector_store/info`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/info` : `/vector_store/info`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5734,7 +5749,7 @@ export const vectorStoreInfoCall = async (accessToken: string, vectorStoreId: st
 
 export const vectorStoreUpdateCall = async (accessToken: string, formValues: Record<string, any>): Promise<any> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/update` : `/vector_store/update`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/update` : `/vector_store/update`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -5767,7 +5782,7 @@ export const ragIngestCall = async (
   providerSpecificParams?: Record<string, any>,
 ): Promise<any> => {
   try {
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/rag/ingest` : `/rag/ingest`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/rag/ingest` : `/rag/ingest`;
 
     const formData = new FormData();
     formData.append("file", file);
@@ -6462,7 +6477,7 @@ export const getSSOSettings = async (accessToken: string) => {
 export const updateSSOSettings = async (accessToken: string, settings: Record<string, any>) => {
   try {
     // Construct base URL
-    let url = proxyBaseUrl ? `${proxyBaseUrl}/update/sso_settings` : `/update/sso_settings`;
+    const url = proxyBaseUrl ? `${proxyBaseUrl}/update/sso_settings` : `/update/sso_settings`;
 
     const response = await fetch(url, {
       method: "PATCH",
@@ -6636,7 +6651,7 @@ export const updatePassThroughEndpoint = async (
   formValues: Record<string, any>,
 ) => {
   try {
-    let url = proxyBaseUrl
+    const url = proxyBaseUrl
       ? `${proxyBaseUrl}/config/pass_through_endpoint/${encodeURIComponent(endpointPath)}`
       : `/config/pass_through_endpoint/${encodeURIComponent(endpointPath)}`;
 
@@ -6657,7 +6672,7 @@ export const updatePassThroughEndpoint = async (
     }
 
     const data = await response.json();
-    NotificationsManager.success("Pass through endpoint updated successfully");
+    toast.success("Pass through endpoint updated successfully");
     return data;
   } catch (error) {
     console.error("Failed to update pass through endpoint:", error);

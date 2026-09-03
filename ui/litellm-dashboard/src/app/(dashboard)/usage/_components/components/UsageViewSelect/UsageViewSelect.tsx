@@ -19,6 +19,7 @@ export interface UsageViewSelectProps {
   onChange: (value: UsageOption) => void;
   userRole: string | null;
   canViewTagUsage?: boolean;
+  isOrgAdmin?: boolean;
   title?: string;
   description?: string;
   "data-id"?: string;
@@ -180,8 +181,8 @@ export const UsageViewSelect: React.FC<UsageViewSelectProps> = ({
                   <span className="flex items-center gap-2 py-1">
                     <span className="shrink-0 mt-0.5">{option.icon}</span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-gray-900">{option.label}</span>
-                      <span className="block text-xs text-gray-600 mt-0.5">{option.description}</span>
+                      <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                      <span className="block text-xs text-muted-foreground mt-0.5">{option.description}</span>
                     </span>
                     {option.badgeText && <Badge>{option.badgeText}</Badge>}
                   </span>

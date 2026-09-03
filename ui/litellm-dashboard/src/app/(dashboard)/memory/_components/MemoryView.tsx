@@ -5,11 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import React, { useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import { MemoryRow, createMemory, deleteMemory, fetchMemoryList, updateMemory } from "@/components/networking";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
-import MessageManager from "@/components/molecules/message_manager";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
 
@@ -26,7 +25,6 @@ interface MemoryViewProps {
 const DEFAULT_PAGE_SIZE = 50;
 
 export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
-  const { t } = useTranslation();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch] = useDebouncedValue(searchInput, { wait: DEBOUNCE_WAIT_MS });
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE });
@@ -36,12 +34,17 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const queryClient = useQueryClient();
+  // React Query key prefix for all memory-list variants (paged + filtered).
+  // Mutations invalidate the whole prefix so the next render refetches the
+  // currently-visible page without us needing a manual refetch().
   const MEMORY_LIST_KEY = "memoryList" as const;
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [MEMORY_LIST_KEY, debouncedSearch, pagination.pageIndex, pagination.pageSize],
     queryFn: () => {
       if (!accessToken) throw new Error("Access token required");
+      // Prefix search matches the Redis-style mental model (namespace scan):
+      // typing "user:" finds "user:profile", "user:prefs", etc.
       return fetchMemoryList(accessToken, {
         keyPrefix: debouncedSearch || undefined,
         page: pagination.pageIndex + 1,
@@ -54,6 +57,12 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
   const rows = useMemo(() => data?.memories ?? [], [data]);
   const total = data?.total ?? 0;
 
+  // -- Mutations --------------------------------------------------------
+  // All three write endpoints share the same success/error plumbing:
+  //   - on success: invalidate the list query so every cached page
+  //     refetches from scratch (pagination + filter-aware).
+  //   - on error: surface the message via `toast.error`.
+
   const invalidateList = useCallback(
     () => queryClient.invalidateQueries({ queryKey: [MEMORY_LIST_KEY] }),
     [queryClient],
@@ -65,11 +74,11 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       return createMemory(accessToken, args);
     },
     onSuccess: (row) => {
-      MessageManager.success(t("interactionExtra.memory.created", { key: row.key }));
+      toast.success(`Created ${row.key}`);
       invalidateList();
     },
     onError: (err: Error) => {
-      MessageManager.error(t("interactionExtra.memory.saveFailed", { message: err.message }));
+      toast.error(`Save failed: ${err.message}`);
     },
   });
 
@@ -80,11 +89,11 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       return updateMemory(accessToken, key, payload);
     },
     onSuccess: (row) => {
-      MessageManager.success(t("interactionExtra.memory.updated", { key: row.key }));
+      toast.success(`Updated ${row.key}`);
       invalidateList();
     },
     onError: (err: Error) => {
-      MessageManager.error(t("interactionExtra.memory.saveFailed", { message: err.message }));
+      toast.error(`Save failed: ${err.message}`);
     },
   });
 
@@ -94,11 +103,11 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       return deleteMemory(accessToken, key).then(() => key);
     },
     onSuccess: (key) => {
-      MessageManager.success(t("interactionExtra.memory.deleted", { key }));
+      toast.success(`Deleted ${key}`);
       invalidateList();
     },
     onError: (err: Error) => {
-      MessageManager.error(t("interactionExtra.memory.deleteFailed", { message: err.message }));
+      toast.error(`Delete failed: ${err.message}`);
     },
   });
 
@@ -117,13 +126,22 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       await deleteMutation.mutateAsync(deleteRow.key);
       setDeleteRow(null);
     } catch {
-      return;
+      // Error toast already surfaced by deleteMutation.onError;
+      // leave the modal open so the user can retry or cancel.
     }
   };
 
   const handleSave = async (key: string, value: string, metadataText: string, isCreate: boolean): Promise<boolean> => {
     if (!accessToken) return false;
 
+    // On edit, an empty textarea is a user's intent to CLEAR existing
+    // metadata — we must send explicit `null` (not `undefined`), or
+    // JSON.stringify drops the field and the backend's model_fields_set
+    // won't see it, leaving the stored value untouched.
+    //
+    // On create, an empty textarea just means "no metadata" — we omit the
+    // field so the DB default (NULL) applies and we avoid Prisma's
+    // `Json? = None` quirk on create.
     let metadataPayload: unknown;
     if (!metadataText.trim()) {
       metadataPayload = isCreate ? undefined : null;
@@ -131,7 +149,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       try {
         metadataPayload = JSON.parse(metadataText);
       } catch {
-        MessageManager.error(t("interactionExtra.memory.invalidMetadata"));
+        toast.error("Metadata must be valid JSON (or leave empty).");
         return false;
       }
     }
@@ -152,6 +170,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       }
       return true;
     } catch {
+      // error already surfaced by mutation's onError handler
       return false;
     }
   };
@@ -161,12 +180,18 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
       <div className="flex flex-col gap-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">{t("interactionExtra.memory.title")}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{t("interactionExtra.memory.description")}</p>
+            <h1 className="text-2xl font-semibold text-foreground">Memory</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Inspect what your agents have stored under{" "}
+              <code className="rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
+                /v1/memory
+              </code>
+              . Scoped to memories visible to your user / team (admins see all).
+            </p>
           </div>
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus />
-            {t("interactionExtra.memory.new")}
+            New memory
           </Button>
         </div>
 
@@ -187,8 +212,10 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
         />
       </div>
 
+      {/* Detail drawer */}
       <MemoryDetailDrawer row={detailRow} onClose={() => setDetailRow(null)} />
 
+      {/* Create / edit modal */}
       <MemoryEditModal
         open={isCreateOpen || !!editRow}
         mode={editRow ? "edit" : "create"}
@@ -200,18 +227,19 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ accessToken }) => {
         onSave={handleSave}
       />
 
+      {/* Delete confirmation modal */}
       <DeleteResourceModal
         isOpen={!!deleteRow}
-        title={t("interactionExtra.memory.deleteTitle")}
-        message={t("interactionExtra.memory.deleteMessage")}
-        resourceInformationTitle={t("interactionExtra.memory.title")}
+        title="Delete memory"
+        message="This action cannot be undone."
+        resourceInformationTitle="Memory"
         resourceInformation={
           deleteRow
             ? [
-                { label: t("interactionExtra.memory.key"), value: deleteRow.key, code: true },
-                { label: t("interactionExtra.memory.id"), value: deleteRow.memory_id, code: true },
-                { label: t("interactionExtra.memory.userId"), value: deleteRow.user_id ?? "-", code: true },
-                { label: t("interactionExtra.memory.teamId"), value: deleteRow.team_id ?? "-", code: true },
+                { label: "Key", value: deleteRow.key, code: true },
+                { label: "Memory ID", value: deleteRow.memory_id, code: true },
+                { label: "User ID", value: deleteRow.user_id ?? "-", code: true },
+                { label: "Team ID", value: deleteRow.team_id ?? "-", code: true },
               ]
             : []
         }

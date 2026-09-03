@@ -32,6 +32,7 @@ from uuid import uuid4
 
 import aiohttp
 from pydantic import BaseModel
+from typing_extensions import NotRequired, ReadOnly
 
 import litellm
 from litellm import get_secret
@@ -75,6 +76,15 @@ class PresidioLogContext(TypedDict, total=False):
     input_source: GuardrailInputSource
 
 
+class _PresidioAnonymizeItem(TypedDict, total=False):
+    entity_type: ReadOnly[str | None]
+
+
+class _PresidioAnonymizeResponse(TypedDict):
+    text: ReadOnly[str]
+    items: ReadOnly[NotRequired[list[_PresidioAnonymizeItem]]]
+
+
 _PRESIDIO_LOG_CONTEXT: ContextVar[PresidioLogContext | None] = ContextVar("presidio_log_context", default=None)
 
 
@@ -98,7 +108,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         ("arguments", "content", "output_text", "reasoning_content", "refusal", "summary", "text")
     )
     user_api_key_cache = None
-    ad_hoc_recognizers = None
+    ad_hoc_recognizers: list[str] | None = None
 
     @classmethod
     def _text_for_pii_analysis(cls, text: str) -> str:
@@ -133,7 +143,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     def __init__(
         self,
         mock_testing: bool = False,
-        mock_redacted_text: dict | None = None,
+        mock_redacted_text: _PresidioAnonymizeResponse | None = None,
         presidio_analyzer_api_base: str | None = None,
         presidio_anonymizer_api_base: str | None = None,
         output_parse_pii: bool | None = False,
@@ -146,7 +156,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_language: str | None = None,
         presidio_score_thresholds: dict[PiiEntityType | str, float] | None = None,
         presidio_entities_deny_list: list[PiiEntityType | str] | None = None,
-        unreachable_fallback: Literal["fail_closed", "fail_open"] = "fail_open",
+        unreachable_fallback: Literal["fail_closed", "fail_open"] = "fail_closed",
         **kwargs,
     ):
         if logging_only is True:
@@ -578,7 +588,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         text: str,
         presidio_config: PresidioPerRequestConfig | None,
         request_data: dict,
-    ) -> list[PresidioAnalyzeResponseItem] | dict:
+    ) -> list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse:
         """
         Send text to the Presidio analyzer endpoint and get analysis results
         """
@@ -693,7 +703,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             # contain API keys or other secrets) in error responses.
             raise Exception(f"Presidio PII analysis failed: {type(e).__name__}") from e
 
-    async def _post_presidio_anonymize(self, text: str, analyze_results: Any) -> Any:
+    async def _post_presidio_anonymize(
+        self,
+        text: str,
+        analyze_results: list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse,
+    ) -> _PresidioAnonymizeResponse | None:
         """POST to Presidio anonymize; returns parsed JSON body."""
         # Use shared session to prevent memory leak (issue #14540)
         async with self._get_session_iterator() as session:
@@ -727,7 +741,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     def _finalize_presidio_anonymize_simple(
         self,
-        redacted_text: dict[str, Any],
+        redacted_text: _PresidioAnonymizeResponse,
         masked_entity_count: dict[str, int],
     ) -> str:
         # No need to build numbered tokens — just use Presidio's
@@ -800,7 +814,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     async def anonymize_text(
         self,
         text: str,
-        analyze_results: Any,
+        analyze_results: list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse,
         output_parse_pii: bool,
         masked_entity_count: dict[str, int],
         request_data: dict | None = None,
@@ -838,8 +852,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             raise Exception(f"Presidio PII anonymization failed: {type(e).__name__}") from e
 
     def filter_analyze_results_by_score(
-        self, analyze_results: list[PresidioAnalyzeResponseItem] | dict
-    ) -> list[PresidioAnalyzeResponseItem] | dict:
+        self, analyze_results: list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse
+    ) -> list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse:
         """
         Drop detections that fall below configured per-entity score thresholds
         or match an entity type in the deny list.
@@ -879,7 +893,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         return filtered_results
 
-    def raise_exception_if_blocked_entities_detected(self, analyze_results: list[PresidioAnalyzeResponseItem] | dict):
+    def raise_exception_if_blocked_entities_detected(
+        self, analyze_results: list[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse
+    ):
         """
         Raise an exception if blocked entities are detected
         """
@@ -1175,7 +1191,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     async def async_logging_hook(self, kwargs: dict, result: Any, call_type: str) -> tuple[dict, Any]:
         """
-        Masks the input before logging to langfuse, datadog, etc.
+        Masks the input and output before logging to langfuse, datadog, etc.
         """
         from litellm.llms import load_guardrail_translation_mappings
 
@@ -1358,7 +1374,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             logging_obj.set_deferred_logging_result(copy.deepcopy(response))
 
     @staticmethod
-    def _is_anthropic_message_response(response: Any) -> bool:
+    def _is_anthropic_message_response(
+        response: ModelResponse | EmbeddingResponse | ImageResponse | dict[str, object],
+    ) -> bool:
         """Check if the response is an Anthropic native message dict."""
         return (
             isinstance(response, dict)
@@ -2158,8 +2176,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     @staticmethod
     def _preserve_usage_from_last_chunk(
-        assembled_model_response: Any,
-        chunks: list[Any],
+        assembled_model_response: ModelResponse,
+        chunks: list[ModelResponseStream],
     ) -> None:
         """Copy usage metadata from the last chunk when stream_chunk_builder misses it."""
         if not getattr(assembled_model_response, "usage", None) and chunks:
@@ -2292,7 +2310,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.unreachable_fallback = (
             litellm_params.unreachable_fallback
             if "unreachable_fallback" in litellm_params.model_fields_set
-            else "fail_open"
+            else "fail_closed"
         )
         if litellm_params.pii_entities_config:
             self.pii_entities_config = litellm_params.pii_entities_config

@@ -99,18 +99,18 @@ describe("UserDropdown", () => {
     });
   });
 
-  it("should not display a license badge for non-premium users", async () => {
+  it("should display Standard badge for non-premium users", async () => {
     const user = userEvent.setup();
     renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);
 
     await user.click(getAccountTrigger());
 
     await waitFor(() => {
-      expect(screen.queryByText("Standard")).not.toBeInTheDocument();
+      expect(screen.getByText("Standard")).toBeInTheDocument();
     });
   });
 
-  it("should not display a license badge for premium users", async () => {
+  it("should display Premium badge for premium users", async () => {
     const user = userEvent.setup();
     mockUseAuthorizedImpl = () => ({
       userId: "test-user-id",
@@ -124,7 +124,7 @@ describe("UserDropdown", () => {
     await user.click(getAccountTrigger());
 
     await waitFor(() => {
-      expect(screen.queryByText("Premium")).not.toBeInTheDocument();
+      expect(screen.getByText("Premium")).toBeInTheDocument();
     });
   });
 
@@ -138,7 +138,7 @@ describe("UserDropdown", () => {
       expect(screen.getAllByText("test@example.com").length).toBeGreaterThan(0);
     });
 
-    await user.click(screen.getByText("Log out"));
+    await user.click(screen.getByText("Logout"));
 
     expect(mockOnLogout).toHaveBeenCalledTimes(1);
   });

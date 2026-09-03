@@ -52,6 +52,7 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
   const [tablePagination, setTablePagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [openTeamId, setOpenTeamId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery] = useDebouncedValue(searchInput, { wait: DEBOUNCE_WAIT_MS });
 
@@ -87,24 +88,36 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
   const rowCount = teamsResponse?.total ?? 0;
 
   const handleSearchChange = useCallback((value: string) => {
+    setOpenTeamId(null);
     setSearchInput(value);
     setTablePagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
   const handleSortingChange = useCallback<OnChangeFn<SortingState>>((updaterOrValue) => {
+    setOpenTeamId(null);
     setSorting(updaterOrValue);
     setTablePagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
   const handleColumnFiltersChange = useCallback<OnChangeFn<ColumnFiltersState>>((updaterOrValue) => {
+    setOpenTeamId(null);
     setColumnFilters(updaterOrValue);
     setTablePagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
   const columns = useMemo(() => {
-    const columnDeps = { organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam, t };
+    const columnDeps = {
+      organizations,
+      userRole,
+      openTeamId,
+      onOpenTeamIdChange: setOpenTeamId,
+      onSelectTeam,
+      onEditTeam,
+      onDeleteTeam,
+      t,
+    };
     return getTeamTableColumns(columnDeps);
-  }, [organizations, userRole, onSelectTeam, onEditTeam, onDeleteTeam, t]);
+  }, [organizations, userRole, openTeamId, onSelectTeam, onEditTeam, onDeleteTeam, t]);
 
   const orgOptions = useMemo(
     () =>
@@ -139,7 +152,10 @@ export function TeamsTable({ userRole, userID, onSelectTeam, onEditTeam, onDelet
       onSortingChange={handleSortingChange}
       paginationMode="server"
       pagination={tablePagination}
-      onPaginationChange={setTablePagination}
+      onPaginationChange={(updaterOrValue) => {
+        setOpenTeamId(null);
+        setTablePagination(updaterOrValue);
+      }}
       rowCount={rowCount}
       filterMode="server"
       columnFilters={columnFilters}

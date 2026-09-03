@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 MODULE_PATH = Path(__file__).parents[2] / "scripts" / "hgi" / "sync_upstream.py"
 SPEC = importlib.util.spec_from_file_location("sync_upstream", MODULE_PATH)
 assert SPEC is not None
@@ -65,7 +64,7 @@ def test_load_manifest_rejects_duplicate_path_ownership(tmp_path):
 def test_load_project_manifest():
     manifest = sync_upstream.load_manifest(Path(__file__).parents[2] / "customizations" / "manifest.json")
 
-    assert manifest["base_ref"] == "ef84494d52c6708e4e9f4a54ce551a265995ad8f"
+    assert manifest["base_ref"] == "10f4033437df30b91b5dbf2b64711d0a8683fc52"
     assert {group["name"] for group in manifest["groups"]} == {
         "license-boundary",
         "oidc",
@@ -96,6 +95,23 @@ def test_verify_coverage_includes_extra_working_tree_paths(monkeypatch, tmp_path
     )
 
     assert uncovered == ["src/new.py"]
+
+
+def test_verify_coverage_ignores_removed_build_artifact(monkeypatch, tmp_path):
+    artifact = "ui/litellm-dashboard/tsconfig.tsbuildinfo"
+    monkeypatch.setattr(sync_upstream, "changed_paths", lambda *_: [artifact])
+
+    assert sync_upstream.verify_coverage(tmp_path, valid_manifest(), "base", "custom") == []
+
+
+def test_verify_coverage_rejects_present_build_artifact(monkeypatch, tmp_path):
+    artifact = "ui/litellm-dashboard/tsconfig.tsbuildinfo"
+    artifact_path = tmp_path / artifact
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text("generated")
+    monkeypatch.setattr(sync_upstream, "changed_paths", lambda *_: [artifact])
+
+    assert sync_upstream.verify_coverage(tmp_path, valid_manifest(), "base", "custom") == [artifact]
 
 
 def test_apply_group_replays_patch_and_sanitizes_paths(tmp_path):

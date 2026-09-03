@@ -70,7 +70,7 @@ const RouterSettingsForm: React.FC<RouterSettingsFormProps> = ({
       </div>
 
       {/* Divider */}
-      <div className="border-t border-gray-200" />
+      <div className="border-t border-border" />
 
       {/* Strategy-Specific Args - Show immediately after strategy if latency-based */}
       {value.selectedStrategy === "latency-based-routing" && (

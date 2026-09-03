@@ -13,10 +13,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cva.config";
-import type { TFunction } from "i18next";
-import { useTranslation } from "react-i18next";
 
 import { AccessGroup } from "./types";
+
+interface AccessGroupsCopy {
+  id: string;
+  name: string;
+  resources: string;
+  created: string;
+  updated: string;
+  models: string;
+  mcpServers: string;
+  agents: string;
+  openActions: string;
+  delete: string;
+  actions: string;
+}
 
 interface ResourceTone {
   icon: typeof Layers;
@@ -24,17 +36,32 @@ interface ResourceTone {
 }
 
 const RESOURCE_TONES: Record<"models" | "mcpServers" | "agents", ResourceTone> = {
-  models: { icon: Layers, className: "bg-blue-50 text-blue-700 ring-blue-600/20" },
-  mcpServers: { icon: Server, className: "bg-cyan-50 text-cyan-700 ring-cyan-600/20" },
-  agents: { icon: Bot, className: "bg-purple-50 text-purple-700 ring-purple-600/20" },
+  models: { icon: Layers, className: "bg-info/10 text-info ring-blue-600/20" },
+  mcpServers: { icon: Server, className: "bg-info/10 text-info ring-cyan-600/20" },
+  agents: {
+    icon: Bot,
+    className:
+      "bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950 dark:text-purple-300 dark:ring-purple-400/30",
+  },
 };
 
-function ResourcesCell({ group }: { group: AccessGroup }) {
-  const { t } = useTranslation();
+function ResourcesCell({ group, copy }: { group: AccessGroup; copy: AccessGroupsCopy }) {
   const items = [
-    { key: "models" as const, label: t("identityAdmin.organization.models"), count: group.modelIds.length },
-    { key: "mcpServers" as const, label: t("identityAdmin.accessGroups.mcpServers"), count: group.mcpServerIds.length },
-    { key: "agents" as const, label: t("identityAdmin.accessGroups.agents"), count: group.agentIds.length },
+    {
+      key: "models" as const,
+      label: copy.models,
+      count: group.modelIds.length,
+    },
+    {
+      key: "mcpServers" as const,
+      label: copy.mcpServers,
+      count: group.mcpServerIds.length,
+    },
+    {
+      key: "agents" as const,
+      label: copy.agents,
+      count: group.agentIds.length,
+    },
   ];
 
   return (
@@ -63,15 +90,16 @@ function ResourcesCell({ group }: { group: AccessGroup }) {
 function AccessGroupRowActions({
   group,
   onDeleteClick,
+  copy,
 }: {
   group: AccessGroup;
   onDeleteClick: (group: AccessGroup) => void;
+  copy: AccessGroupsCopy;
 }) {
-  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={t("identityAdmin.accessGroups.openActions")}
+        aria-label={copy.openActions}
         data-testid={`access-group-actions-${group.id}`}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
       >
@@ -84,7 +112,7 @@ function AccessGroupRowActions({
           onClick={() => onDeleteClick(group)}
         >
           <Trash2 />
-          {t("identityAdmin.accessGroups.delete")}
+          {copy.delete}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -92,14 +120,14 @@ function AccessGroupRowActions({
 }
 
 interface AccessGroupsTableColumnsDeps {
-  translator: TFunction;
+  copy: AccessGroupsCopy;
   canModify: boolean;
   onGroupClick: (id: string) => void;
   onDeleteClick: (group: AccessGroup) => void;
 }
 
 export const getAccessGroupsTableColumns = ({
-  translator,
+  copy,
   canModify,
   onGroupClick,
   onDeleteClick,
@@ -108,8 +136,8 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "id",
       accessorKey: "id",
-      meta: { title: translator("identityAdmin.accessGroups.id") },
-      header: translator("identityAdmin.accessGroups.id"),
+      meta: { title: copy.id },
+      header: copy.id,
       size: 200,
       enableSorting: false,
       cell: ({ row }) => (
@@ -123,10 +151,8 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "name",
       accessorKey: "name",
-      meta: { title: translator("identityAdmin.accessGroups.name") },
-      header: ({ column }) => (
-        <DataTableSortHeader column={column} title={translator("identityAdmin.accessGroups.name")} />
-      ),
+      meta: { title: copy.name },
+      header: ({ column }) => <DataTableSortHeader column={column} title={copy.name} />,
       size: 220,
       enableSorting: true,
       cell: ({ row }) => {
@@ -140,19 +166,17 @@ export const getAccessGroupsTableColumns = ({
     },
     {
       id: "resources",
-      meta: { title: translator("identityAdmin.accessGroups.resources") },
-      header: translator("identityAdmin.accessGroups.resources"),
+      meta: { title: copy.resources },
+      header: copy.resources,
       size: 220,
       enableSorting: false,
-      cell: ({ row }) => <ResourcesCell group={row.original} />,
+      cell: ({ row }) => <ResourcesCell group={row.original} copy={copy} />,
     },
     {
       id: "createdAt",
       accessorKey: "createdAt",
-      meta: { title: translator("identityAdmin.accessGroups.created") },
-      header: ({ column }) => (
-        <DataTableSortHeader column={column} title={translator("identityAdmin.accessGroups.created")} />
-      ),
+      meta: { title: copy.created },
+      header: ({ column }) => <DataTableSortHeader column={column} title={copy.created} />,
       size: 150,
       enableSorting: true,
       sortingFn: "datetime",
@@ -161,8 +185,8 @@ export const getAccessGroupsTableColumns = ({
     {
       id: "updatedAt",
       accessorKey: "updatedAt",
-      meta: { title: translator("identityAdmin.accessGroups.updated") },
-      header: translator("identityAdmin.accessGroups.updated"),
+      meta: { title: copy.updated },
+      header: copy.updated,
       size: 150,
       enableSorting: false,
       cell: ({ row }) => <DateCell value={row.original.updatedAt} precision="date" />,
@@ -177,18 +201,14 @@ export const getAccessGroupsTableColumns = ({
     ...columns,
     {
       id: "actions",
-      meta: {
-        title: translator("identityAdmin.users.actions"),
-        className: "text-right",
-        headerClassName: "text-right",
-      },
-      header: () => <span className="sr-only">{translator("identityAdmin.users.actions")}</span>,
+      meta: { className: "text-right", headerClassName: "text-right" },
+      header: () => <span className="sr-only">{copy.actions}</span>,
       size: 64,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <AccessGroupRowActions group={row.original} onDeleteClick={onDeleteClick} />
+          <AccessGroupRowActions group={row.original} onDeleteClick={onDeleteClick} copy={copy} />
         </div>
       ),
     },

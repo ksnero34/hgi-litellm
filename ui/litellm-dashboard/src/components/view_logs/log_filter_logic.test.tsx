@@ -26,6 +26,8 @@ import { uiSpendLogsCall } from "../networking";
 import * as filterHelpers from "../key_team_helpers/filter_helpers";
 import type { Team } from "../key_team_helpers/key_list";
 
+const fetchAllTeamsSpy = vi.spyOn(filterHelpers, "fetchAllTeams");
+
 const emptyResponse: PaginatedResponse = {
   data: [],
   total: 0,
@@ -42,7 +44,6 @@ const defaultProps = {
   userRole: "Admin" as string | null,
   userID: "user-1" as string | null,
   columnFilters: [] as ColumnFiltersState,
-  filterByCurrentUser: false,
   activeTab: "request logs",
   isLiveTail: false,
   startTime: "2025-01-01T00:00:00",
@@ -58,13 +59,12 @@ const lastCallParams = () => vi.mocked(uiSpendLogsCall).mock.calls.at(-1)?.[0];
 
 describe("useLogFilterLogic", () => {
   let queryClient: QueryClient;
-  let fetchAllTeamsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     vi.clearAllMocks();
     vi.mocked(uiSpendLogsCall).mockResolvedValue(emptyResponse);
-    fetchAllTeamsSpy = vi.spyOn(filterHelpers, "fetchAllTeams").mockResolvedValue([]);
+    fetchAllTeamsSpy.mockResolvedValue([]);
   });
 
   const wrapper = ({ children }: { children: ReactNode }) =>
@@ -180,17 +180,16 @@ describe("useLogFilterLogic", () => {
     });
   });
 
-  describe("filterByCurrentUser", () => {
-    it("scopes to the current user when no explicit user filter is set", async () => {
-      renderFilterHook({ filterByCurrentUser: true });
+  describe("user scope", () => {
+    it("leaves an empty user filter for the backend to authorize", async () => {
+      renderFilterHook();
 
       await waitFor(() => expect(uiSpendLogsCall).toHaveBeenCalled());
-      expect(lastCallParams()?.params).toMatchObject({ user_id: "user-1" });
+      expect(lastCallParams()?.params?.user_id).toBeUndefined();
     });
 
-    it("lets an explicit user filter win over the current-user scope", async () => {
+    it("sends an explicit user filter for the backend to intersect with authorization", async () => {
       renderFilterHook({
-        filterByCurrentUser: true,
         columnFilters: [{ id: LOG_FILTER_IDS.USER_ID, value: "someone-else" }],
       });
 

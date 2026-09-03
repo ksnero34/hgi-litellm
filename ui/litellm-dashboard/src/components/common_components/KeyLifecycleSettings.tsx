@@ -1,13 +1,28 @@
 import React, { useState } from "react";
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { TextInput } from "@tremor/react";
-import { Checkbox, Divider, Form, Select, Switch, Tooltip } from "antd";
+import { CircleHelp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const { Option } = Select;
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+const PREDEFINED_INTERVALS = ["7d", "30d", "90d", "180d", "365d"] as const;
+
+const INTERVAL_LABELS: Record<string, string> = {
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+  "180d": "180 days",
+  "365d": "365 days",
+  custom: "Custom interval",
+};
 
 interface KeyLifecycleSettingsProps {
-  form: any;
+  value?: string;
+  onChange?: (value: string) => void;
   autoRotationEnabled: boolean;
   onAutoRotationChange: (enabled: boolean) => void;
   rotationInterval: string;
@@ -15,10 +30,22 @@ interface KeyLifecycleSettingsProps {
   isCreateMode?: boolean;
   neverExpire?: boolean;
   onNeverExpireChange?: (checked: boolean) => void;
+  id?: string;
 }
 
+const hintIcon = (hint: string): React.ReactNode => (
+  <Tooltip>
+    <TooltipTrigger
+      render={<CircleHelp className="size-3.5 shrink-0 cursor-help text-muted-foreground" />}
+      aria-label={hint}
+    />
+    <TooltipContent>{hint}</TooltipContent>
+  </Tooltip>
+);
+
 const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
-  form,
+  value,
+  onChange,
   autoRotationEnabled,
   onAutoRotationChange,
   rotationInterval,
@@ -26,148 +53,150 @@ const KeyLifecycleSettings: React.FC<KeyLifecycleSettingsProps> = ({
   isCreateMode = false,
   neverExpire = false,
   onNeverExpireChange,
+  id,
 }) => {
   const { t } = useTranslation();
-  const predefinedIntervals = ["7d", "30d", "90d", "180d", "365d"];
-  const isCustomInterval = rotationInterval && !predefinedIntervals.includes(rotationInterval);
+  const isCustomInterval = Boolean(rotationInterval) && !PREDEFINED_INTERVALS.includes(rotationInterval as never);
+
   const [showCustomInput, setShowCustomInput] = useState(isCustomInterval);
   const [customInterval, setCustomInterval] = useState(isCustomInterval ? rotationInterval : "");
-  const watchedDuration = Form.useWatch("duration", form);
-  const durationValue = typeof watchedDuration === "string" ? watchedDuration : "";
 
-  const handleIntervalChange = (value: string) => {
-    if (value === "custom") {
+  const durationId = id ?? "key-lifecycle-duration";
+
+  const handleIntervalChange = (next: string) => {
+    if (next === "custom") {
       setShowCustomInput(true);
       return;
     }
-
     setShowCustomInput(false);
     setCustomInterval("");
-    onRotationIntervalChange(value);
+    onRotationIntervalChange(next);
   };
 
-  const handleCustomIntervalChange = (value: string) => {
-    setCustomInterval(value);
-    onRotationIntervalChange(value);
+  const handleCustomIntervalChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setCustomInterval(event.target.value);
+    onRotationIntervalChange(event.target.value);
   };
 
-  const handleDurationChange = (value: string) => {
-    if (typeof form?.setFieldValue === "function") {
-      form.setFieldValue("duration", value);
-      return;
-    }
-
-    if (typeof form?.setFieldsValue === "function") {
-      form.setFieldsValue({ duration: value });
+  const handleNeverExpireChange = (checked: boolean) => {
+    onNeverExpireChange?.(checked);
+    if (checked) {
+      onChange?.("");
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <span className="text-sm font-medium text-gray-700">{t("gateway.keyLifecycle.expirySettings")}</span>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-            <span>{t("gateway.keyLifecycle.expireKey")}</span>
-            <Tooltip title={t("gateway.keyLifecycle.expiryTooltip")}>
-              <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
-            </Tooltip>
-            {!isCreateMode && onNeverExpireChange && (
-              <Checkbox
-                checked={neverExpire}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  onNeverExpireChange(checked);
-                  if (checked) {
-                    handleDurationChange("");
-                  }
-                }}
-                className="ml-2 text-sm font-normal text-gray-600"
-              >
-                {t("gateway.keyLifecycle.neverExpire")}
-              </Checkbox>
-            )}
-          </label>
-          <Form.Item name="duration" noStyle initialValue="">
-            <TextInput
-              value={durationValue}
-              onValueChange={handleDurationChange}
-              placeholder={
-                isCreateMode ? t("gateway.keyLifecycle.createPlaceholder") : t("gateway.keyLifecycle.editPlaceholder")
-              }
+    <TooltipProvider>
+      <div className="space-y-6">
+        <div className="space-y-4">
+          <span className="text-sm font-medium text-foreground">{t("gateway.keyLifecycle.expirySettings")}</span>
+
+          <div className="space-y-2">
+            <div className="flex items-center space-x-1 text-sm font-medium text-foreground">
+              <label htmlFor={durationId}>{t("gateway.keyLifecycle.expireKey")}</label>
+              {hintIcon(t("gateway.keyLifecycle.expiryTooltip"))}
+              {!isCreateMode && onNeverExpireChange && (
+                <span className="ml-2 flex items-center gap-2 text-sm font-normal text-muted-foreground">
+                  <Checkbox
+                    id={`${durationId}-never-expire`}
+                    checked={neverExpire}
+                    onCheckedChange={handleNeverExpireChange}
+                    aria-label={t("gateway.keyLifecycle.neverExpire")}
+                  />
+                  <label htmlFor={`${durationId}-never-expire`} className="cursor-pointer">
+                    {t("gateway.keyLifecycle.neverExpire")}
+                  </label>
+                </span>
+              )}
+            </div>
+            <Input
+              id={durationId}
+              value={value ?? ""}
+              onChange={(event) => onChange?.(event.target.value)}
+              placeholder={t(
+                isCreateMode ? "gateway.keyLifecycle.createPlaceholder" : "gateway.keyLifecycle.editPlaceholder",
+              )}
               className="w-full"
               disabled={!isCreateMode && neverExpire}
             />
-          </Form.Item>
+          </div>
         </div>
-      </div>
 
-      <Divider />
+        <Separator />
 
-      <div className="space-y-4">
-        <span className="text-sm font-medium text-gray-700">{t("gateway.keyLifecycle.autoRotationSettings")}</span>
+        <div className="space-y-4">
+          <span className="text-sm font-medium text-foreground">{t("gateway.keyLifecycle.autoRotationSettings")}</span>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-              <span>{t("gateway.keyLifecycle.enableAutoRotation")}</span>
-              <Tooltip title={t("gateway.keyLifecycle.autoRotationTooltip")}>
-                <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
-              </Tooltip>
-            </label>
-            <Switch
-              checked={autoRotationEnabled}
-              onChange={onAutoRotationChange}
-              size="default"
-              className={autoRotationEnabled ? "" : "bg-gray-400"}
-            />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="flex items-center space-x-1 text-sm font-medium text-foreground">
+                <span>{t("gateway.keyLifecycle.enableAutoRotation")}</span>
+                {hintIcon(t("gateway.keyLifecycle.autoRotationTooltip"))}
+              </label>
+              <Switch checked={autoRotationEnabled} onCheckedChange={onAutoRotationChange} />
+            </div>
+
+            {autoRotationEnabled && (
+              <div className="space-y-2">
+                <label className="flex items-center space-x-1 text-sm font-medium text-foreground">
+                  <span>{t("gateway.keyLifecycle.rotationInterval")}</span>
+                  {hintIcon(t("gateway.keyLifecycle.rotationTooltip"))}
+                </label>
+                <div className="space-y-2">
+                  <Select
+                    value={showCustomInput ? "custom" : rotationInterval || null}
+                    onValueChange={(next: string | null) => next !== null && handleIntervalChange(next)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={t("gateway.keyLifecycle.rotationPlaceholder")}>
+                        {(selected: string | null) =>
+                          selected === null ? (
+                            t("gateway.keyLifecycle.rotationPlaceholder")
+                          ) : (
+                            <span title={INTERVAL_LABELS[selected] ?? selected}>
+                              {selected === "custom"
+                                ? t("gateway.keyLifecycle.interval.custom")
+                                : t(`gateway.keyLifecycle.interval.${selected}`)}
+                            </span>
+                          )
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREDEFINED_INTERVALS.map((interval) => (
+                        <SelectItem key={interval} value={interval} title={INTERVAL_LABELS[interval]}>
+                          {t(`gateway.keyLifecycle.interval.${interval}`)}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="custom" title={INTERVAL_LABELS.custom}>
+                        {t("gateway.keyLifecycle.interval.custom")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {showCustomInput && (
+                    <div className="space-y-1">
+                      <Input
+                        value={customInterval}
+                        onChange={handleCustomIntervalChange}
+                        placeholder={t("gateway.keyLifecycle.customPlaceholder")}
+                      />
+                      <div className="text-xs text-muted-foreground">{t("gateway.keyLifecycle.customHelp")}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {autoRotationEnabled && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 flex items-center space-x-1">
-                <span>{t("gateway.keyLifecycle.rotationInterval")}</span>
-                <Tooltip title={t("gateway.keyLifecycle.rotationTooltip")}>
-                  <InfoCircleOutlined className="text-gray-400 cursor-help text-xs" />
-                </Tooltip>
-              </label>
-              <div className="space-y-2">
-                <Select
-                  value={showCustomInput ? "custom" : rotationInterval}
-                  onChange={handleIntervalChange}
-                  className="w-full"
-                  placeholder={t("gateway.keyLifecycle.rotationPlaceholder")}
-                >
-                  <Option value="7d">{t("gateway.keyLifecycle.interval.7d")}</Option>
-                  <Option value="30d">{t("gateway.keyLifecycle.interval.30d")}</Option>
-                  <Option value="90d">{t("gateway.keyLifecycle.interval.90d")}</Option>
-                  <Option value="180d">{t("gateway.keyLifecycle.interval.180d")}</Option>
-                  <Option value="365d">{t("gateway.keyLifecycle.interval.365d")}</Option>
-                  <Option value="custom">{t("gateway.keyLifecycle.interval.custom")}</Option>
-                </Select>
-
-                {showCustomInput && (
-                  <div className="space-y-1">
-                    <TextInput
-                      value={customInterval}
-                      onValueChange={handleCustomIntervalChange}
-                      placeholder={t("gateway.keyLifecycle.customPlaceholder")}
-                    />
-                    <div className="text-xs text-gray-500">{t("gateway.keyLifecycle.customHelp")}</div>
-                  </div>
-                )}
-              </div>
+            <div className="rounded-md bg-info/10 p-3 text-sm text-info">
+              {t("gateway.keyLifecycle.rotationNotice")}
             </div>
           )}
         </div>
-
-        {autoRotationEnabled && (
-          <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-700">
-            {t("gateway.keyLifecycle.rotationNotice")}
-          </div>
-        )}
       </div>
-    </div>
+    </TooltipProvider>
   );
 };
 

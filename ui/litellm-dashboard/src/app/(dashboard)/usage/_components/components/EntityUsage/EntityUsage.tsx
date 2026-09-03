@@ -23,15 +23,15 @@ import { Card as ShadcnCard, CardContent, CardHeader, CardTitle } from "@/compon
 import { hasCapability, type Capability } from "@/utils/capabilities";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import type { DateRangePickerValue } from "@/components/shared/date_picker_types";
-import { ChevronDown, ChevronRight, ExternalLink, Info, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Alert, AlertDescription } from "@/components/shared/Alert";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Alert, AlertDescription } from "@/components/shared/Alert";
 import React, { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TeamMultiSelect from "@/components/common_components/team_multi_select";
+import UserDropdown from "@/components/common_components/UserDropdown";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import { UsageExportHeader } from "@/components/EntityUsageExport";
 import type { EntityType } from "@/components/EntityUsageExport/types";
@@ -40,6 +40,7 @@ import {
   customerDailyActivityCall,
   organizationDailyActivityCall,
   tagDailyActivityCall,
+  teamDailyActivityAggregatedCall,
   teamDailyActivityCall,
   userDailyActivityCall,
 } from "@/components/networking";
@@ -50,6 +51,7 @@ import { valueFormatterSpend } from "@/components/UsagePage/utils/value_formatte
 import EndpointUsage from "../EndpointUsage/EndpointUsage";
 import ModelViewToggle, { ModelViewType } from "../ModelViewToggle";
 import TopKeyView from "@/components/UsagePage/components/EntityUsage/TopKeyView";
+import EntityUsageProgressAlerts from "./EntityUsageProgressAlerts";
 import TopModelView from "./TopModelView";
 
 interface EntityMetrics {
@@ -93,6 +95,7 @@ interface EntityUsageProps {
   entityList: EntityList[] | null;
   premiumUser: boolean;
   dateValue: DateRangePickerValue;
+  isOrgAdmin?: boolean;
 }
 
 const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
@@ -102,6 +105,12 @@ const ENTITY_FETCH_FNS: Record<EntityType, (...args: any[]) => Promise<any>> = {
   customer: customerDailyActivityCall,
   agent: agentDailyActivityCall,
   user: userDailyActivityCall,
+};
+
+// Single-shot endpoints returning the whole range in one response; entity types
+// without one fall back to page-draining the paginated endpoint.
+const ENTITY_AGGREGATED_FETCH_FNS: Partial<Record<EntityType, (...args: any[]) => Promise<any>>> = {
+  team: teamDailyActivityAggregatedCall,
 };
 
 const ENTITY_CAPABILITIES: Partial<Record<EntityType, Capability>> = {
@@ -116,6 +125,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   entityList,
   userRole,
   dateValue,
+  isOrgAdmin = false,
 }) => {
   const { t } = useTranslation();
   const { teams } = useTeams();
@@ -135,11 +145,20 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   }, [entityType, selectedTags]);
 
   const fetchFn = ENTITY_FETCH_FNS[entityType];
+  const aggregatedFetchFn = ENTITY_AGGREGATED_FETCH_FNS[entityType];
   const entityCapability = ENTITY_CAPABILITIES[entityType];
-  const canViewEntity = entityCapability === undefined || hasCapability(userRole, entityCapability);
+  const canViewEntity = entityCapability === undefined || hasCapability(userRole, entityCapability, isOrgAdmin);
   const showAgentBreakdown = entityType === "team" && hasCapability(userRole, "viewAgentUsage");
   const hasRequestWindow = !!accessToken && !!startTime && !!endTime;
-  const enabled = hasRequestWindow && canViewEntity;
+  const requiresExplicitSelection = entityType === "team";
+  const hasSelectedEntity = !requiresExplicitSelection || selectedTags.length > 0;
+  const enabled = hasRequestWindow && canViewEntity && hasSelectedEntity;
+  const dailyActivityRequest = {
+    fetchFn,
+    args: [accessToken, startTime, endTime, entityFilterArg],
+    enabled,
+    aggregatedFetchFn,
+  };
 
   const {
     data: spendDataRaw,
@@ -147,11 +166,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     progress,
     cancelled,
     cancel,
-  } = usePaginatedDailyActivity({
-    fetchFn,
-    args: [accessToken, startTime, endTime, entityFilterArg],
-    enabled,
-  });
+  } = usePaginatedDailyActivity(dailyActivityRequest);
 
   const spendData = spendDataRaw as unknown as EntitySpendData;
 
@@ -279,13 +294,13 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
       {
         header: t("observability.usage.successful"),
         accessorKey: "metrics.successful_requests",
-        meta: { numeric: true, className: "text-green-600" },
+        meta: { numeric: true, className: "text-success" },
         cell: ({ row }) => row.original.metrics.successful_requests.toLocaleString(),
       },
       {
         header: t("observability.usage.failed"),
         accessorKey: "metrics.failed_requests",
-        meta: { numeric: true, className: "text-red-600" },
+        meta: { numeric: true, className: "text-destructive" },
         cell: ({ row }) => row.original.metrics.failed_requests.toLocaleString(),
       },
       {
@@ -318,13 +333,13 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
       {
         header: t("observability.usage.successful"),
         accessorKey: "successful_requests",
-        meta: { numeric: true, className: "text-green-600" },
+        meta: { numeric: true, className: "text-success" },
         cell: ({ row }) => row.original.successful_requests.toLocaleString(),
       },
       {
         header: t("observability.usage.failed"),
         accessorKey: "failed_requests",
-        meta: { numeric: true, className: "text-red-600" },
+        meta: { numeric: true, className: "text-destructive" },
         cell: ({ row }) => row.original.failed_requests.toLocaleString(),
       },
       {
@@ -337,13 +352,13 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     [t],
   );
 
-  const chev = "size-3 text-gray-400";
+  const chev = "size-3 text-muted-foreground";
   const expandIcon = showCostBreakdown ? <ChevronDown className={chev} /> : <ChevronRight className={chev} />;
 
   const renderSummaryTile = ({ title, value, className, tooltip, expandable }: SummaryTile) => (
     <ShadcnCard
       key={title}
-      className={expandable ? "cursor-pointer hover:bg-gray-50 transition-colors" : undefined}
+      className={expandable ? "cursor-pointer hover:bg-accent transition-colors" : undefined}
       onClick={expandable ? () => setShowCostBreakdown(!showCostBreakdown) : undefined}
     >
       <CardContent>
@@ -351,7 +366,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
           <h3 className="text-lg font-medium text-foreground">{title}</h3>
           {tooltip ? (
             <Tooltip>
-              <TooltipTrigger render={<Info className="size-4 text-gray-400 hover:text-gray-600" />} />
+              <TooltipTrigger render={<Info className="size-4 text-muted-foreground hover:text-foreground" />} />
               <TooltipContent>{tooltip}</TooltipContent>
             </Tooltip>
           ) : null}
@@ -436,7 +451,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                 const requestSpend = data.metrics.spend ?? 0;
                 const flatCost = data.metrics.flat_cost ?? 0;
                 return (
-                  <div className="bg-white p-4 shadow-lg rounded-lg border">
+                  <div className="bg-card p-4 shadow-lg rounded-lg border">
                     <p className="font-bold">{data.date}</p>
                     {showFlatCost ? (
                       <>
@@ -495,7 +510,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                         .map(([entity, entityData]) => {
                           const metrics = entityData as EntityMetrics;
                           return (
-                            <p key={entity} className="text-sm text-gray-600">
+                            <p key={entity} className="text-sm text-muted-foreground">
                               {getEntityLabel(entity, metrics.metadata)}: $
                               {formatNumberWithCommas(metrics.metrics.spend, 2)}
                             </p>
@@ -532,7 +547,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                 </span>
                 <a
                   href="https://docs.litellm.ai/docs/proxy/enterprise#spend-tracking"
-                  className="text-blue-500 hover:text-blue-700 ml-1"
+                  className="text-info hover:text-info/80 ml-1"
                 >
                   {t("observability.usage.here")}
                 </a>
@@ -554,7 +569,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
                     if (!active || !payload?.[0]) return null;
                     const data = payload[0].payload;
                     return (
-                      <div className="bg-white p-4 shadow-lg rounded-lg border">
+                      <div className="bg-card p-4 shadow-lg rounded-lg border">
                         <p className="font-bold">{data.metadata.alias}</p>
                         <p className="text-cyan-500">
                           {t("observability.usage.daily_spend_value", {
@@ -725,99 +740,71 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
       content: <EndpointUsage userSpendData={spendData} />,
     },
   ];
+  const hasEntityListFilters = entityList !== null && entityList.length > 0;
+  const supportsSelectableFilters = entityType !== "team" && entityType !== "user";
+  const showSelectableFilters = supportsSelectableFilters && hasEntityListFilters;
+  const userFilterValue = selectedTags[0] ?? null;
+  let filterSlot: ReactNode;
+  if (entityType === "team") {
+    filterSlot = <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} />;
+  } else if (entityType === "user") {
+    filterSlot = <UserDropdown value={userFilterValue} onChange={(next) => setSelectedTags(next ? [next] : [])} />;
+  }
+  let filterLabel = getFilterLabel(entityType);
+  if (entityType === "team") {
+    filterLabel = t("observability.usage.filter_by_team");
+  } else if (entityType === "user") {
+    filterLabel = t("observabilityExtra.usage.filterByUser");
+  }
+  const showTeamSelectionPrompt = entityType === "team" && !hasSelectedEntity;
 
   return (
-    <div style={{ width: "100%" }} className="relative">
-      {isFetchingMore && (
-        <Alert variant="warning" className="mb-2">
-          <AlertDescription className="flex items-center justify-between text-inherit">
-            <span>
-              <Loader2 className="mr-2 inline size-4 animate-spin align-text-bottom" />
-              {t("observability.usage.fetching_spend_data", {
-                current: progress.currentPage,
-                total: progress.totalPages,
-              })}{" "}
-              <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                {t("observability.usage.open_new_tab")} <ExternalLink className="inline size-3.5 align-text-bottom" />
-              </a>
-              .
-            </span>
-            <Button variant="destructive" onClick={cancel}>
-              {t("observability.usage.stop")}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {cancelled && (
-        <Alert variant="info" className="mb-2">
-          <AlertDescription className="text-inherit">
-            {t("observability.usage.showing_partial_data", {
-              current: progress.currentPage,
-              total: progress.totalPages,
-            })}
-          </AlertDescription>
-        </Alert>
-      )}
-      {agentIsFetchingMore && showAgentBreakdown && (
-        <Alert variant="warning" className="mb-2">
-          <AlertDescription className="flex items-center justify-between text-inherit">
-            <span>
-              <Loader2 className="mr-2 inline size-4 animate-spin align-text-bottom" />
-              {t("observability.usage.fetching_agent_data", {
-                current: agentProgress.currentPage,
-                total: agentProgress.totalPages,
-              })}{" "}
-              <a href={window.location.href} target="_blank" rel="noopener noreferrer">
-                {t("observability.usage.open_new_tab")} <ExternalLink className="inline size-3.5 align-text-bottom" />
-              </a>
-              .
-            </span>
-            <Button variant="destructive" onClick={agentCancel}>
-              {t("observability.usage.stop")}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {agentCancelled && showAgentBreakdown && (
-        <Alert variant="info" className="mb-2">
-          <AlertDescription className="text-inherit">
-            {t("observability.usage.showing_partial_agent_data", {
-              current: agentProgress.currentPage,
-              total: agentProgress.totalPages,
-            })}
-          </AlertDescription>
-        </Alert>
-      )}
+    <div style={{ width: "100%" }} className="relative" data-testid="entity-usage" data-entity-type={entityType}>
+      <EntityUsageProgressAlerts
+        isFetchingMore={isFetchingMore}
+        progress={progress}
+        cancelled={cancelled}
+        cancel={cancel}
+        showAgentBreakdown={showAgentBreakdown}
+        agentIsFetchingMore={agentIsFetchingMore}
+        agentProgress={agentProgress}
+        agentCancelled={agentCancelled}
+        agentCancel={agentCancel}
+      />
       <UsageExportHeader
         dateValue={dateValue}
         entityType={entityType}
         spendData={spendData}
-        showFilters={entityType !== "team" && entityList !== null && entityList.length > 0}
-        filterSlot={
-          entityType === "team" ? <TeamMultiSelect value={selectedTags} onChange={setSelectedTags} /> : undefined
-        }
-        filterLabel={entityType === "team" ? t("observability.usage.filter_by_team") : getFilterLabel(entityType)}
+        showFilters={showSelectableFilters}
+        filterSlot={filterSlot}
+        filterLabel={filterLabel}
         filterPlaceholder={getFilterPlaceholder(entityType)}
         selectedFilters={selectedTags}
         onFiltersChange={setSelectedTags}
         filterOptions={getAllTags() || undefined}
-        filterMode={entityType === "user" ? "single" : "multiple"}
         teams={teams || []}
       />
-      <Tabs defaultValue={tabs[0].key}>
-        <TabsList className="mt-1">
-          {tabs.map(({ key, label }) => (
-            <TabsTrigger key={key} value={key} className="flex-none px-3">
-              {label}
-            </TabsTrigger>
+      {showTeamSelectionPrompt && (
+        <Alert className="mb-4">
+          <AlertDescription>{t("observability.usage.team_required")}</AlertDescription>
+        </Alert>
+      )}
+      {!showTeamSelectionPrompt && (
+        <Tabs defaultValue={tabs[0].key}>
+          <TabsList className="mt-1">
+            {tabs.map(({ key, label }) => (
+              <TabsTrigger key={key} value={key} className="flex-none px-3">
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {tabs.map(({ key, content }) => (
+            <TabsContent key={key} value={key} keepMounted>
+              {content}
+            </TabsContent>
           ))}
-        </TabsList>
-        {tabs.map(({ key, content }) => (
-          <TabsContent key={key} value={key} keepMounted>
-            {content}
-          </TabsContent>
-        ))}
-      </Tabs>
+        </Tabs>
+      )}
     </div>
   );
 };

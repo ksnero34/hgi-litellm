@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { ThemeProvider } from "next-themes";
 
 import AntdGlobalProvider from "@/contexts/AntdGlobalProvider";
+import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ReactQueryProvider from "@/contexts/ReactQueryProvider";
 import I18nProvider from "@/i18n/I18nProvider";
@@ -20,17 +22,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
+    // next-themes stamps the theme class on <html> before paint, which the exported markup
+    // cannot predict; suppressHydrationWarning confines that mismatch to this element.
+    <html lang="ko" suppressHydrationWarning>
       <body>
-        <I18nProvider>
-          <NuqsAdapter>
-            <ReactQueryProvider>
-              <AntdGlobalProvider>
-                <AuthProvider>{children}</AuthProvider>
-              </AntdGlobalProvider>
-            </ReactQueryProvider>
-          </NuqsAdapter>
-        </I18nProvider>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <I18nProvider>
+            <NuqsAdapter>
+              <ReactQueryProvider>
+                <AntdGlobalProvider>
+                  <AuthProvider>{children}</AuthProvider>
+                  <Toaster />
+                </AntdGlobalProvider>
+              </ReactQueryProvider>
+            </NuqsAdapter>
+          </I18nProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

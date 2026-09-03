@@ -167,6 +167,20 @@ def _safe_actor_key(value: str | None) -> str:
     return hash_token(value) if value.startswith("sk-") else value
 
 
+def is_audit_logging_enabled(store_audit_logs: bool | None = None) -> bool:
+    from litellm.secret_managers.main import get_secret_bool
+
+    configured_value: Final[bool | None] = litellm.store_audit_logs if store_audit_logs is None else store_audit_logs
+    if configured_value is not None:
+        return configured_value
+
+    environment_value: Final[bool | None] = get_secret_bool("LITELLM_STORE_AUDIT_LOGS")
+    if environment_value is not None:
+        return environment_value
+
+    return False
+
+
 def _allows_litellm_changed_by_header(user_api_key_dict: UserAPIKeyAuth) -> bool:
     for admin_metadata in (user_api_key_dict.metadata, user_api_key_dict.team_metadata):
         if (
@@ -308,11 +322,7 @@ async def create_object_audit_log(
     - user_api_key_dict: UserAPIKeyAuth - The user api key dictionary.
     - litellm_proxy_admin_name: Optional[str] - The name of the proxy admin.
     """
-    from litellm.secret_managers.main import get_secret_bool
-
-    _store_audit_logs: Final[bool | None] = litellm.store_audit_logs or get_secret_bool("LITELLM_STORE_AUDIT_LOGS")
-
-    if _store_audit_logs is not True:
+    if not is_audit_logging_enabled():
         return
 
     _changed_by: Final = get_audit_log_changed_by(

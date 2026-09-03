@@ -9,10 +9,9 @@ import { useQuery } from "@tanstack/react-query";
 import { LoaderCircle, Pencil } from "lucide-react";
 import React, { useMemo, useState } from "react";
 import { fetchAvailableModels } from "@/components/llm_calls/fetch_models";
-import NotificationManager from "../../../molecules/notifications_manager";
+import { toast } from "@/lib/toast";
 import { AddFallbacksModal } from "./AddFallbacksModal";
 import { FallbackGroup, FallbackGroupConfig } from "./FallbackGroupConfig";
-import { useTranslation } from "react-i18next";
 
 export type FallbackEntry = { [modelName: string]: string[] };
 export type Fallbacks = FallbackEntry[];
@@ -43,7 +42,6 @@ export default function EditFallbacks({
   onClose,
   maxFallbacks = 10,
 }: EditFallbacksProps) {
-  const { t } = useTranslation();
   const [group, setGroup] = useState<FallbackGroup>(() => toGroup(fallbackEntry));
   const [isSaving, setIsSaving] = useState(false);
 
@@ -71,7 +69,7 @@ export default function EditFallbacks({
     setIsSaving(true);
     try {
       await onChange(updatedFallbacks);
-      NotificationManager.success(t("settingsExtra.fallbacks.editUpdated", { model: primaryModel }));
+      toast.success(`Fallbacks for ${primaryModel} updated successfully!`);
       onClose();
     } catch (error) {
       console.error("Error updating fallbacks:", error);
@@ -89,13 +87,13 @@ export default function EditFallbacks({
         maxFallbacks={maxFallbacks}
         disablePrimaryModel
       />
-      <div className="flex items-center justify-end space-x-3 pt-6 mt-6 border-t border-gray-100">
+      <div className="flex items-center justify-end space-x-3 pt-6 mt-6 border-t border-border">
         <Button variant="outline" onClick={onClose} disabled={isSaving}>
-          {t("settingsExtra.fallbacks.cancel")}
+          Cancel
         </Button>
         <Button onClick={handleSave} disabled={isSaving || group.fallbackModels.length === 0}>
           {isSaving ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
-          {isSaving ? t("settingsExtra.fallbacks.savingChanges") : t("settingsExtra.fallbacks.saveChanges")}
+          {isSaving ? "Saving Changes..." : "Save Changes"}
         </Button>
       </div>
     </AddFallbacksModal>

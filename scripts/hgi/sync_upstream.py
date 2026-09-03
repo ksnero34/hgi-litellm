@@ -4,8 +4,15 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
+
+BUILD_ARTIFACT_PATHS = (
+    "ui/litellm-dashboard/.next",
+    "ui/litellm-dashboard/coverage",
+    "ui/litellm-dashboard/tsconfig.tsbuildinfo",
+)
 
 
 def emit(message: str, *, error: bool = False) -> None:
@@ -83,6 +90,10 @@ def working_tree_paths(repo: Path) -> list[str]:
     return sorted({line for output in (tracked, untracked) for line in output.splitlines() if line})
 
 
+def is_removed_build_artifact(repo: Path, path: str) -> bool:
+    return path_is_owned(path, BUILD_ARTIFACT_PATHS) and not (repo / path).exists()
+
+
 def verify_coverage(
     repo: Path,
     manifest: dict[str, Any],
@@ -99,7 +110,9 @@ def verify_coverage(
     return [
         path
         for path in sorted(candidates)
-        if not path_is_owned(path, owned_paths) and not path_is_owned(path, generated_paths)
+        if not path_is_owned(path, owned_paths)
+        and not path_is_owned(path, generated_paths)
+        and not is_removed_build_artifact(repo, path)
     ]
 
 

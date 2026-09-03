@@ -256,7 +256,12 @@ def test_legacy_user_owned_key_remains_compatible_with_generic_lifecycle_api():
         },
     )()
 
-    _reject_managed_personal_key_mutation(key_row)
+    result = _reject_managed_personal_key_mutation(key_row)
+
+    assert result is None
+    assert key_row.user_id == "user-1"
+    assert key_row.team_id == "department-1"
+    assert key_row.metadata == {}
 
 
 def test_ui_session_cannot_use_generic_key_read_api():

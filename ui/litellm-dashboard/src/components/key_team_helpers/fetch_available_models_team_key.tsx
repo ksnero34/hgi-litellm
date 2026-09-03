@@ -13,7 +13,7 @@ export const fetchAvailableModelsForTeamOrKey = async (
     if (accessToken !== null) {
       const model_available = await modelAvailableCall(accessToken, userID, userRole, true, null, true);
 
-      let available_model_names = model_available["data"].map((element: { id: string }) => element.id);
+      const available_model_names = model_available["data"].map((element: { id: string }) => element.id);
 
       // Group and sort models
       const providerModels: string[] = [];

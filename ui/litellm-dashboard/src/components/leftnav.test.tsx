@@ -1,14 +1,13 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../tests/test-utils";
-import { i18n } from "@/i18n/i18n";
 import Sidebar, { menuGroups, getBreadcrumb } from "./leftnav";
 
 vi.mock("../utils/roles", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils/roles")>();
   return {
     ...actual,
-    all_admin_roles: ["Admin", "admin", "admin_viewer", "proxy_admin", "proxy_admin_viewer", "org_admin"],
+    all_admin_roles: ["admin", "admin_viewer"],
     old_admin_roles: ["admin", "admin_viewer"],
     internalUserRoles: ["internal"],
     rolesWithWriteAccess: ["admin", "internal"],
@@ -63,8 +62,17 @@ vi.mock("@/app/(dashboard)/hooks/uiConfig/useUIConfig", () => {
 
 // The redesigned sidebar reads the custom logo from ThemeContext; the test tree
 // has no ThemeProvider, so stub the hook.
+const unbrandedTheme = () => ({
+  logoUrl: null as string | null,
+  logoUrlDark: null as string | null,
+  faviconUrl: null as string | null,
+  setLogoUrl: vi.fn(),
+  setLogoUrlDark: vi.fn(),
+  setFaviconUrl: vi.fn(),
+});
+let mockUseThemeImpl = unbrandedTheme;
 vi.mock("@/contexts/ThemeContext", () => ({
-  useTheme: () => ({ logoUrl: null, faviconUrl: null, setLogoUrl: vi.fn(), setFaviconUrl: vi.fn() }),
+  useTheme: () => mockUseThemeImpl(),
 }));
 
 // Version tag + logout target come from network hooks; keep them inert in unit tests.
@@ -89,9 +97,6 @@ const placementsOf = (page: string): string[] =>
   ]);
 
 describe("Sidebar (leftnav)", () => {
-  beforeEach(async () => {
-    await i18n.changeLanguage("en");
-  });
   const defaultProps = {
     setPage: vi.fn(),
     defaultSelectedKey: "api-keys",
@@ -101,12 +106,68 @@ describe("Sidebar (leftnav)", () => {
   afterEach(() => {
     mockUseAuthorized.mockReset();
     mockUseOrganizations.mockReset();
+    mockUseThemeImpl = unbrandedTheme;
   });
 
   it("should link the logo to the UI home route rather than the proxy origin", () => {
     renderWithProviders(<Sidebar {...defaultProps} />);
 
     expect(screen.getByRole("link", { name: /litellm home/i })).toHaveAttribute("href", "/ui");
+  });
+
+  it("pairs the logo with a dark-mode variant that swaps on the dark class", () => {
+    renderWithProviders(<Sidebar {...defaultProps} />);
+
+    const [light, dark] = Array.from(screen.getByRole("link", { name: /litellm home/i }).querySelectorAll("img"));
+    const classesOf = (el: Element) => new Set(el.className.split(/\s+/));
+
+    const lightSrc = light.getAttribute("src") ?? "";
+    expect(light).toHaveAttribute("src", expect.stringMatching(/\/get_image$/));
+    expect(dark).toHaveAttribute("src", `${lightSrc}?theme=dark`);
+    expect(classesOf(light).has("dark:hidden")).toBe(true);
+    expect(classesOf(light).has("hidden")).toBe(false);
+    expect(classesOf(dark).has("hidden")).toBe(true);
+    expect(classesOf(dark).has("dark:block")).toBe(true);
+  });
+
+  it("prefers a configured dark logo over the light one in dark mode", () => {
+    mockUseThemeImpl = () => ({
+      ...unbrandedTheme(),
+      logoUrl: "https://cdn.example.com/logo.png",
+      logoUrlDark: "https://cdn.example.com/logo-dark.png",
+    });
+    renderWithProviders(<Sidebar {...defaultProps} />);
+
+    const [light, dark] = Array.from(screen.getByRole("link", { name: /litellm home/i }).querySelectorAll("img"));
+
+    expect(light).toHaveAttribute("src", "https://cdn.example.com/logo.png");
+    expect(dark).toHaveAttribute("src", "https://cdn.example.com/logo-dark.png");
+  });
+
+  it("reuses the light custom logo in dark mode when no dark one is configured", () => {
+    mockUseThemeImpl = () => ({ ...unbrandedTheme(), logoUrl: "https://cdn.example.com/logo.png" });
+    renderWithProviders(<Sidebar {...defaultProps} />);
+
+    const [light, dark] = Array.from(screen.getByRole("link", { name: /litellm home/i }).querySelectorAll("img"));
+
+    expect(light).toHaveAttribute("src", "https://cdn.example.com/logo.png");
+    expect(dark).toHaveAttribute("src", "https://cdn.example.com/logo.png");
+  });
+
+  it("falls back to the light logo when a configured dark logo fails to load", () => {
+    mockUseThemeImpl = () => ({
+      ...unbrandedTheme(),
+      logoUrl: "https://cdn.example.com/logo.png",
+      logoUrlDark: "https://cdn.example.com/gone.png",
+    });
+    renderWithProviders(<Sidebar {...defaultProps} />);
+
+    const [, dark] = Array.from(screen.getByRole("link", { name: /litellm home/i }).querySelectorAll("img"));
+    expect(dark).toHaveAttribute("src", "https://cdn.example.com/gone.png");
+
+    fireEvent.error(dark);
+
+    expect(dark).toHaveAttribute("src", "https://cdn.example.com/logo.png");
   });
 
   it("renders all top-level (non-nested) tabs for admin", () => {
@@ -131,12 +192,13 @@ describe("Sidebar (leftnav)", () => {
       "Budgets",
       "API Reference",
       "AI Hub",
+      "Learning Resources",
       "Experimental",
       "Settings",
     ];
 
     topLevelLabels.forEach((label) => {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      expect(screen.getByText(label)).toBeInTheDocument();
     });
   });
 
@@ -164,17 +226,6 @@ describe("Sidebar (leftnav)", () => {
     const keys = collectNavKeys();
     const duplicates = keys.filter((key, i) => keys.indexOf(key) !== i);
     expect(duplicates).toEqual([]);
-  });
-
-  it("limits Organizations navigation to administrator roles", () => {
-    const organizationItem = menuGroups
-      .find((group) => group.groupLabel === "ACCESS CONTROL")
-      ?.items.find((item) => item.key === "organizations");
-
-    expect(organizationItem?.roles).toEqual(
-      expect.arrayContaining(["Admin", "proxy_admin", "proxy_admin_viewer", "org_admin"]),
-    );
-    expect(organizationItem?.roles).not.toEqual(expect.arrayContaining(["internal_user", "internal_user_viewer"]));
   });
 
   describe("Admin Viewer parity", () => {
@@ -284,7 +335,7 @@ describe("Sidebar (leftnav)", () => {
         fireEvent.click(screen.getByText("Experimental"));
       });
       await waitFor(() => {
-        expect(screen.getByText("API Test")).toBeInTheDocument();
+        expect(screen.getByText("API Playground")).toBeInTheDocument();
       });
       expect(screen.queryByText("Prompts")).not.toBeInTheDocument();
     });
@@ -297,7 +348,7 @@ describe("Sidebar (leftnav)", () => {
         fireEvent.click(screen.getByText("Experimental"));
       });
       await waitFor(() => {
-        expect(screen.getByText("API Test")).toBeInTheDocument();
+        expect(screen.getByText("API Playground")).toBeInTheDocument();
       });
       expect(screen.queryByText("Old Usage")).not.toBeInTheDocument();
     });
@@ -309,7 +360,7 @@ describe("Sidebar (leftnav)", () => {
         fireEvent.click(screen.getByText("Experimental"));
       });
       await waitFor(() => {
-        expect(screen.getByText("Legacy Usage")).toBeInTheDocument();
+        expect(screen.getByText("Old Usage")).toBeInTheDocument();
       });
     });
   });
@@ -470,8 +521,8 @@ describe("Sidebar (leftnav)", () => {
 
     const costOptimization = container.querySelector('a[href*="cost-optimization"]');
     expect(costOptimization).not.toBeNull();
-    expect(costOptimization!.textContent).toContain("Cost Optimization");
-    expect(costOptimization!.textContent).toContain("Beta");
+    expect(costOptimization!).toHaveTextContent(/Cost Optimization/);
+    expect(costOptimization!).toHaveTextContent(/Beta/);
 
     expect(container.querySelector('a[href*="projects"]')).toBeNull();
   });

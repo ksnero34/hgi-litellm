@@ -26,7 +26,16 @@ function formatTimestamp(ts?: string): string {
 }
 
 export function MemoryDetailDrawer({ row, onClose }: MemoryDetailDrawerProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const isKorean = (i18n.resolvedLanguage ?? i18n.language ?? "").startsWith("ko");
+  const labels = {
+    title: isKorean ? t("identityAdmin.memory.title") : "Memory",
+    memoryId: isKorean ? "메모리 ID" : "Memory ID",
+    userId: isKorean ? "사용자 ID" : "User ID",
+    teamId: isKorean ? "팀 ID" : "Team ID",
+    value: isKorean ? t("identityAdmin.memory.value") : "Value",
+    metadata: isKorean ? "메타데이터" : "Metadata",
+  };
 
   return (
     <Sheet
@@ -37,37 +46,35 @@ export function MemoryDetailDrawer({ row, onClose }: MemoryDetailDrawerProps) {
     >
       <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:max-w-full data-[side=right]:sm:w-[720px] data-[side=right]:sm:max-w-full">
         <SheetHeader className="border-b">
-          <SheetTitle>
-            {row ? <code className={CODE_CLASS}>{row.key}</code> : t("identityAdmin.memory.title")}
-          </SheetTitle>
+          <SheetTitle>{row ? <code className={CODE_CLASS}>{row.key}</code> : labels.title}</SheetTitle>
         </SheetHeader>
         {row && (
           <div className="flex flex-col gap-4 px-4 pb-4">
             <div className="flex flex-wrap gap-x-8 gap-y-3">
               <div>
-                <span className={`block ${LABEL_CLASS}`}>{t("identityAdmin.memory.id")}</span>
+                <span className={`block ${LABEL_CLASS}`}>{labels.memoryId}</span>
                 <code className={CODE_CLASS}>{row.memory_id}</code>
               </div>
               <div>
-                <span className={`block ${LABEL_CLASS}`}>{t("identityAdmin.memory.userId")}</span>
+                <span className={`block ${LABEL_CLASS}`}>{labels.userId}</span>
                 <span className={row.user_id ? "text-sm text-foreground" : "text-sm text-muted-foreground"}>
                   {row.user_id ?? "-"}
                 </span>
               </div>
               <div>
-                <span className={`block ${LABEL_CLASS}`}>{t("identityAdmin.memory.teamId")}</span>
+                <span className={`block ${LABEL_CLASS}`}>{labels.teamId}</span>
                 <span className={row.team_id ? "text-sm text-foreground" : "text-sm text-muted-foreground"}>
                   {row.team_id ?? "-"}
                 </span>
               </div>
             </div>
             <div>
-              <span className={LABEL_CLASS}>{t("identityAdmin.memory.value")}</span>
+              <span className={LABEL_CLASS}>{labels.value}</span>
               <p className={`${BLOCK_CLASS} text-[13px]`}>{row.value}</p>
             </div>
             {row.metadata !== undefined && row.metadata !== null && (
               <div>
-                <span className={LABEL_CLASS}>{t("identityAdmin.createUser.metadata")}</span>
+                <span className={LABEL_CLASS}>{labels.metadata}</span>
                 <p className={`${BLOCK_CLASS} text-xs`}>{JSON.stringify(row.metadata, null, 2)}</p>
               </div>
             )}

@@ -1,17 +1,12 @@
 import { renderWithProviders, screen } from "@/../tests/test-utils";
-import { languageStorageKey } from "@/i18n/resources";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import CategoryTable from "./CategoryTable";
 import ContentCategoryConfiguration from "./ContentCategoryConfiguration";
 import KeywordTable from "./KeywordTable";
 import PatternTable from "./PatternTable";
 
 describe("content filter tables", () => {
-  beforeEach(() => {
-    window.localStorage.setItem(languageStorageKey, "ko");
-  });
-
   it("should render category details in the shared table and remove a category", async () => {
     const onRemove = vi.fn();
     const user = userEvent.setup();
@@ -31,13 +26,13 @@ describe("content filter tables", () => {
       />,
     );
 
-    expect(await screen.findByRole("columnheader", { name: "카테고리" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "심각도 임계값" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Severity Threshold" })).toBeInTheDocument();
     expect(screen.getByRole("table")).toHaveAttribute("data-slot", "table");
     expect(screen.getByText("Self Harm")).toBeInTheDocument();
     expect(screen.getByText("self_harm")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "삭제" }));
+    await user.click(screen.getByRole("button", { name: /delete/i }));
 
     expect(onRemove).toHaveBeenCalledWith("category-1");
   });
@@ -54,13 +49,13 @@ describe("content filter tables", () => {
       />,
     );
 
-    expect(await screen.findByRole("columnheader", { name: "키워드" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "설명(선택 사항)" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Keyword" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeInTheDocument();
     expect(screen.getByRole("table")).toHaveAttribute("data-slot", "table");
     expect(screen.getByText("secret")).toBeInTheDocument();
     expect(screen.getByText("Sensitive term")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "삭제" }));
+    await user.click(screen.getByRole("button", { name: /delete/i }));
 
     expect(onRemove).toHaveBeenCalledWith("keyword-1");
   });
@@ -86,13 +81,13 @@ describe("content filter tables", () => {
       />,
     );
 
-    expect(await screen.findByRole("columnheader", { name: "패턴 이름" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "정규식 패턴" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Pattern name" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Regex pattern" })).toBeInTheDocument();
     expect(screen.getByRole("table")).toHaveAttribute("data-slot", "table");
     expect(screen.getByText("Email address")).toBeInTheDocument();
     expect(screen.getByText(/\[a-z\]\+@example/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "삭제" }));
+    await user.click(screen.getByRole("button", { name: /delete/i }));
 
     expect(onRemove).toHaveBeenCalledWith("pattern-1");
   });
@@ -148,9 +143,8 @@ describe("content filter tables", () => {
       />,
     );
 
-    await screen.findByRole("columnheader", { name: "동작" });
     await user.click(screen.getByRole("combobox"));
-    const maskOptions = await screen.findAllByText("마스킹");
+    const maskOptions = await screen.findAllByText("Mask");
     await user.click(maskOptions[maskOptions.length - 1]);
 
     expect(onActionChange).toHaveBeenCalledWith("pattern-1", "MASK");
@@ -168,9 +162,8 @@ describe("content filter tables", () => {
       />,
     );
 
-    await screen.findByRole("columnheader", { name: "동작" });
     await user.click(screen.getByRole("combobox"));
-    const maskOptions = await screen.findAllByText("마스킹");
+    const maskOptions = await screen.findAllByText("Mask");
     await user.click(maskOptions[maskOptions.length - 1]);
 
     expect(onActionChange).toHaveBeenCalledWith("keyword-1", "action", "MASK");
@@ -198,15 +191,14 @@ describe("content filter tables", () => {
       />,
     );
 
-    await screen.findByRole("columnheader", { name: "심각도 임계값" });
     await user.click(screen.getAllByRole("combobox")[0]);
-    const lowOptions = await screen.findAllByText("낮음");
+    const lowOptions = await screen.findAllByText("Low");
     await user.click(lowOptions[lowOptions.length - 1]);
 
     expect(onSeverityChange).toHaveBeenCalledWith("category-1", "low");
 
     await user.click(screen.getAllByRole("combobox")[1]);
-    const maskOptions = await screen.findAllByText("마스킹");
+    const maskOptions = await screen.findAllByText("Mask");
     await user.click(maskOptions[maskOptions.length - 1]);
 
     expect(onActionChange).toHaveBeenCalledWith("category-1", "MASK");

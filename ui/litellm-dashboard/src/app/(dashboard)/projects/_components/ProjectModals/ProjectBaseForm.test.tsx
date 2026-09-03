@@ -1,11 +1,10 @@
 import React from "react";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders, screen, waitFor } from "../../../../../../tests/test-utils";
-import { Form } from "antd";
-import { i18n } from "@/i18n/i18n";
-import { languageStorageKey } from "@/i18n/resources";
-import { ProjectBaseForm, ProjectFormValues } from "./ProjectBaseForm";
+import { useZodForm } from "@/lib/forms/useZodForm";
+import { ProjectBaseForm } from "./ProjectBaseForm";
+import { emptyProjectFormValues, projectFormSchema } from "./projectFormSchema";
 
 const mockUseTeams = vi.fn();
 vi.mock("@/app/(dashboard)/hooks/teams/useTeams", () => ({
@@ -25,18 +24,13 @@ vi.mock("@/components/key_team_helpers/fetch_available_models_team_key", () => (
 }));
 
 function FormWrapper() {
-  const [form] = Form.useForm<ProjectFormValues>();
-  return <ProjectBaseForm form={form} />;
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const form = useZodForm(projectFormSchema, { defaultValues: emptyProjectFormValues });
+  return <ProjectBaseForm form={form} advancedOpen={advancedOpen} onAdvancedOpenChange={setAdvancedOpen} />;
 }
-
-beforeAll(() => {
-  void i18n.changeLanguage("en");
-});
 
 describe("ProjectBaseForm", () => {
   beforeEach(() => {
-    window.localStorage.setItem(languageStorageKey, "en");
-    void i18n.changeLanguage("en");
     mockUseTeams.mockReturnValue({ data: [], isLoading: false });
   });
 
@@ -67,6 +61,7 @@ describe("ProjectBaseForm", () => {
 
   it("should show the models select as disabled when no team is selected", () => {
     renderWithProviders(<FormWrapper />);
+    // The models select should be disabled — its placeholder indicates no team yet
     expect(screen.getByText("Select a team first")).toBeInTheDocument();
   });
 
@@ -80,6 +75,7 @@ describe("ProjectBaseForm", () => {
       isLoading: false,
     });
     renderWithProviders(<FormWrapper />);
+    // The form label "Team" is associated with the combobox input inside the Select
     await user.click(screen.getByLabelText("Team"));
     await waitFor(() => {
       expect(screen.getByText("Engineering")).toBeInTheDocument();
@@ -104,5 +100,19 @@ describe("ProjectBaseForm", () => {
     await waitFor(() => {
       expect(screen.getByText("Guardrails")).toBeInTheDocument();
     });
+  });
+
+  it("should show combined, input, and output TPM limit inputs for a model row", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<FormWrapper />);
+    await user.click(screen.getByText("Advanced Settings"));
+    await user.click(screen.getByRole("button", { name: /add model limit/i }));
+
+    expect(screen.getByPlaceholderText("TPM Limit")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Input TPM Limit")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Output TPM Limit")).toBeInTheDocument();
+    expect(screen.getByLabelText("TPM Limit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Input TPM Limit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Output TPM Limit")).toBeInTheDocument();
   });
 });
