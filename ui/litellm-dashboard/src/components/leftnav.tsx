@@ -27,13 +27,11 @@ import {
   Bell,
   Blocks,
   Bot,
-  BookOpen,
   Boxes,
   Building2,
   ChevronRight,
   Code2,
   Database,
-  ExternalLink,
   FileText,
   FlaskConical,
   Folder,
@@ -106,7 +104,6 @@ interface MenuItem {
   roles?: string[];
   children?: MenuItem[];
   icon?: React.ReactNode;
-  external_url?: string;
 }
 
 interface MenuGroup {
@@ -258,13 +255,6 @@ const menuGroups: MenuGroup[] = [
     items: [
       { key: "api_ref", page: "api_ref", label: "API Reference", icon: <Code2 {...ICON} /> },
       { key: "model-hub-table", page: "model-hub-table", label: "AI Hub", icon: <LayoutGrid {...ICON} /> },
-      {
-        key: "learning-resources",
-        page: "learning-resources",
-        label: "Learning Resources",
-        icon: <BookOpen {...ICON} />,
-        external_url: "https://models.litellm.ai/cookbook",
-      },
       {
         key: "caching",
         page: "caching",
@@ -567,7 +557,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
   };
 
   const handleLeafClick = (e: React.MouseEvent, item: MenuItem) => {
-    if (item.external_url) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
     e.preventDefault();
     setPage(item.page);
@@ -582,24 +571,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
         {item.badge}
       </span>
     );
-
-    if (item.external_url) {
-      return (
-        <a
-          key={item.key}
-          href={item.external_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={collapsed ? labelText(item) : undefined}
-          data-active={active || undefined}
-          className={cn(sidebarMenuButtonVariants({ isActive: active, size }))}
-        >
-          {item.icon}
-          {label}
-          <ExternalLink className="size-3.5 shrink-0 opacity-70 group-data-[collapsed=true]/sidebar:hidden" />
-        </a>
-      );
-    }
 
     const href = MIGRATED_PAGES[item.page] ? migratedHref(MIGRATED_PAGES[item.page]) : legacyPageHref(item.page);
     return (
@@ -677,7 +648,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
             {version && (
               <Badge
                 variant="outline"
-                render={<a href="https://docs.litellm.ai/release_notes" target="_blank" rel="noopener noreferrer" />}
                 className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
               >
                 v{version}

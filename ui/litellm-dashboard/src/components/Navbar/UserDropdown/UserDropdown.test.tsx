@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders, screen, waitFor } from "../../../../tests/test-utils";
 import UserDropdown from "./UserDropdown";
 
-let mockUseAuthorizedImpl = () => ({
+interface AuthMock {
+  userId: string | null;
+  userEmail: string | null;
+  userRoleLabel: string;
+}
+
+let mockUseAuthorizedImpl: () => AuthMock = () => ({
   userId: "test-user-id",
   userEmail: "test@example.com",
   userRoleLabel: "Admin",
-  premiumUser: false,
 });
 
 let mockUseDisableShowPromptsImpl = () => false;
@@ -45,7 +50,6 @@ describe("UserDropdown", () => {
       userId: "test-user-id",
       userEmail: "test@example.com",
       userRoleLabel: "Admin",
-      premiumUser: false,
     });
     mockUseDisableShowPromptsImpl = () => false;
     mockGetLocalStorageItemImpl = (key: string): string | null => {
@@ -99,33 +103,17 @@ describe("UserDropdown", () => {
     });
   });
 
-  it("should display Standard badge for non-premium users", async () => {
+  it("does not show tier badges in the dropdown", async () => {
     const user = userEvent.setup();
     renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);
 
     await user.click(getAccountTrigger());
 
     await waitFor(() => {
-      expect(screen.getByText("Standard")).toBeInTheDocument();
+      expect(screen.getAllByText("test@example.com").length).toBeGreaterThan(0);
     });
-  });
-
-  it("should display Premium badge for premium users", async () => {
-    const user = userEvent.setup();
-    mockUseAuthorizedImpl = () => ({
-      userId: "test-user-id",
-      userEmail: "test@example.com",
-      userRoleLabel: "Admin",
-      premiumUser: true,
-    });
-
-    renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);
-
-    await user.click(getAccountTrigger());
-
-    await waitFor(() => {
-      expect(screen.getByText("Premium")).toBeInTheDocument();
-    });
+    expect(screen.queryByText("Premium")).not.toBeInTheDocument();
+    expect(screen.queryByText("Standard")).not.toBeInTheDocument();
   });
 
   it("should call onLogout when logout is clicked", async () => {
@@ -237,9 +225,8 @@ describe("UserDropdown", () => {
   it("should show Account in the trigger when user id is the default placeholder", () => {
     mockUseAuthorizedImpl = () => ({
       userId: "default_user_id",
-      userEmail: null as any,
+      userEmail: null,
       userRoleLabel: "Admin",
-      premiumUser: false,
     });
     renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);
     expect(screen.getByText("Account")).toBeInTheDocument();
@@ -249,9 +236,8 @@ describe("UserDropdown", () => {
     const user = userEvent.setup();
     mockUseAuthorizedImpl = () => ({
       userId: "test-user-id",
-      userEmail: null as any,
+      userEmail: null,
       userRoleLabel: "Admin",
-      premiumUser: false,
     });
 
     renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);
@@ -266,10 +252,9 @@ describe("UserDropdown", () => {
   it("should display dash when user ID is not available", async () => {
     const user = userEvent.setup();
     mockUseAuthorizedImpl = () => ({
-      userId: null as any,
+      userId: null,
       userEmail: "test@example.com",
       userRoleLabel: "Admin",
-      premiumUser: false,
     });
 
     renderWithProviders(<UserDropdown onLogout={mockOnLogout} />);

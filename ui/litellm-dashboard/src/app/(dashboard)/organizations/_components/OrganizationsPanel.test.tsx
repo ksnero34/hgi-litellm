@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import I18nProvider from "@/i18n/I18nProvider";
 import type OrganizationsTableComponent from "./OrganizationsTable";
 import type OrganizationInfoViewComponent from "@/components/organization/organization_view";
 
@@ -46,11 +47,11 @@ import OrganizationsPanel from "./OrganizationsPanel";
 const onUrlUpdate = vi.fn<(event: UrlUpdateEvent) => void>();
 
 interface RenderPanelOptions {
-  premiumUser?: boolean;
+  userRole?: string;
   searchParams?: string;
 }
 
-const renderPanel = ({ premiumUser = true, searchParams = "" }: RenderPanelOptions = {}) => {
+const renderPanel = ({ userRole = "Admin", searchParams = "" }: RenderPanelOptions = {}) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -60,11 +61,13 @@ const renderPanel = ({ premiumUser = true, searchParams = "" }: RenderPanelOptio
     url.current = event.queryString;
   };
   const tree = (currentSearchParams: string) => (
-    <NuqsTestingAdapter searchParams={currentSearchParams} onUrlUpdate={handleUrlUpdate} hasMemory>
-      <QueryClientProvider client={queryClient}>
-        <OrganizationsPanel userRole="Admin" accessToken={null} premiumUser={premiumUser} />
-      </QueryClientProvider>
-    </NuqsTestingAdapter>
+    <I18nProvider>
+      <NuqsTestingAdapter searchParams={currentSearchParams} onUrlUpdate={handleUrlUpdate} hasMemory>
+        <QueryClientProvider client={queryClient}>
+          <OrganizationsPanel userRole={userRole} accessToken={null} />
+        </QueryClientProvider>
+      </NuqsTestingAdapter>
+    </I18nProvider>
   );
   const { rerender } = render(tree(searchParams));
   return {
@@ -86,17 +89,18 @@ beforeEach(() => {
 });
 
 describe("OrganizationsPanel", () => {
-  it("gates non-premium users behind the enterprise notice", () => {
-    renderPanel({ premiumUser: false });
+  it("keeps the organizations view available to org admins without a premium gate", () => {
+    renderPanel({ userRole: "Org Admin" });
 
-    expect(screen.getByText(/LiteLLM Enterprise feature/i)).toBeInTheDocument();
-    expect(screen.queryByText("+ Create New Organization")).not.toBeInTheDocument();
+    expect(screen.getByText(/Click on .*Organization ID.*view organization details/i)).toBeInTheDocument();
+    expect(screen.queryByText(/LiteLLM Enterprise feature/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\+ Create New Organization/i)).not.toBeInTheDocument();
   });
 
-  it("shows the create button for a premium admin", () => {
+  it("shows the create button only for a proxy admin session", () => {
     renderPanel();
 
-    expect(screen.getByText("+ Create New Organization")).toBeInTheDocument();
+    expect(screen.getByText(/\+ Create New Organization/i)).toBeInTheDocument();
   });
 
   it("resolves the loading skeleton to false when the query is disabled (no token)", () => {
@@ -121,11 +125,15 @@ describe("OrganizationsPanel - org detail deep link (?org=)", () => {
   });
 
   it("opens the org detail directly from a ?org= deep link", () => {
-    renderPanel({ searchParams: "?org=org-from-url" });
+    renderPanel({ userRole: "Org Admin", searchParams: "?org=org-from-url" });
+    const expectedOrgDetail = {
+      organizationId: "org-from-url",
+      editOrg: false,
+      is_org_admin: true,
+      is_proxy_admin: false,
+    };
 
-    expect(mockOrgInfoView).toHaveBeenLastCalledWith(
-      expect.objectContaining({ organizationId: "org-from-url", editOrg: false }),
-    );
+    expect(mockOrgInfoView).toHaveBeenLastCalledWith(expect.objectContaining(expectedOrgDetail));
     expect(screen.queryByTestId("organizations-table")).not.toBeInTheDocument();
   });
 

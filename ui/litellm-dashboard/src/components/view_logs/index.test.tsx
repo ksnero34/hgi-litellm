@@ -46,7 +46,6 @@ const defaultProps = {
   token: "test-token",
   userRole: "Admin",
   userID: "user-1",
-  premiumUser: false,
 };
 
 const ORG_ADMIN_MEMBERSHIPS = [{ organization_id: "org-1", members: [{ user_id: "user-1", user_role: "org_admin" }] }];

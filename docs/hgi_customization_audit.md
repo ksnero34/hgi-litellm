@@ -409,22 +409,22 @@ semantic re-audit에서 자동/clean merge만으로는 발견하기 어려운 �
 | 5 | managed personal/service key 보호 | upstream 구조에 맞춰 이식 | create/update/delete/block/list endpoint와 ownership helper에서 일반 사용자 mutation을 차단한다. |
 | 6 | 수동·자동 rotation 및 deprecated lineage | upstream 구조에 맞춰 이식 | active token/lineage transaction 뒤 cache/access-group 정리와 hook을 한 번 실행한다. |
 | 7 | OSS team admin 및 로그 범위 | upstream 구조에 맞춰 이식 | role persistence와 key-hash observability scope를 유지하고 구형 member permission 우회를 허용하지 않는다. |
-| 8 | OSS DB audit | 누락되어 복구 | config/env opt-in은 유지하되 premium fallback을 제거하고 create/update/delete hook이 공통 helper와 mandatory await를 사용한다. |
+| 8 | OSS DB audit | 누락되어 복구 | config/env opt-in과 role-based reader 범위는 유지하되 backend 및 dashboard의 premium fallback을 제거하고 create/update/delete hook이 공통 helper와 mandatory await를 사용한다. |
 | 9 | spend-log 목록/detail/session scope | upstream 구조에 맞춰 이식 | v1.99 raw SQL/pagination에 HGI key-hash allowlist와 team-admin 범위를 적용한다. |
 | 10 | usage/performance/TTFT 지표 | upstream 구조에 맞춰 이식 | v1.99 daily repository에 count-weighted 응답시간, TTFT와 cache token 필드를 유지한다. |
 | 11 | Presidio fail-closed 및 PII rollback | 누락되어 복구 | 모든 initializer 기본값을 fail-closed로 통일하고 blocked payload의 request/response/log snapshot redaction을 유지한다. |
 | 12 | guardrail usage/policy/deferred logging | upstream 구조에 맞춰 이식 | usage-unit aggregation과 connection-safe retry/requeue에 HGI policy attribution을 연결했다. |
 | 13 | Microsoft Purview | 그대로 보존 | OSS guardrail hook, config와 telemetry 경로를 유지했다. 실제 Graph/Purview 호출은 외부 검증 항목이다. |
 | 14 | chat/responses/streaming guardrail translation | upstream 구조에 맞춰 이식 | v1.99 Responses 타입과 source mapping에 HGI metadata/redaction을 연결했다. |
-| 15 | dashboard i18n 및 폐쇄망 | upstream 구조에 맞춰 이식 | I18n/Nuqs/provider 순서, HGI labels와 same-origin resolution을 유지하고 Google Font import를 제거했다. |
+| 15 | dashboard i18n 및 폐쇄망 | 누락되어 복구 | I18n/Nuqs/provider 순서, HGI labels와 same-origin resolution을 유지하고 Google Font import와 외부 Docs/Blog/Support/Release Notes 및 Premium/Standard 표기를 제거했다. |
 | 16 | Admin Viewer/navigation/capabilities | upstream 구조에 맞춰 이식 | read-only parity를 유지하고 Playground 및 write/cost action을 숨긴다. |
-| 17 | key info/edit/regenerate UI | 누락되어 복구 | managed personal key는 관리자 전용 API를 사용하고 generic regenerate는 premium gate 없이 backend 계약에 연결한다. |
+| 17 | key info/edit/regenerate UI | 누락되어 복구 | Internal User/Viewer는 generic `/key/list`가 아니라 `/internal/personal-key` self-service 화면을 사용하며 404를 미생성 상태로 처리한다. managed personal key 관리자 action과 generic regenerate도 premium gate 없이 backend 계약에 연결한다. |
 | 18 | Prisma v2 migration | 누락되어 복구 | migration check는 기본 강제, 명시적 opt-out만 허용하며 baked client의 generate 실패는 log-only다. |
 | 19 | upstream runtime reliability fixes | 더 안전한 upstream 구현으로 대체 | DB spend batch transaction, common retry와 repository helper는 v1.99 구현을 사용하고 HGI 정책만 덧붙였다. |
 | 20 | manifest, lock, schema, generated output | upstream 구조에 맞춰 이식 | base SHA와 누락 ownership 경로를 고치고 공식 uv/npm/OpenAPI/Prisma 생성 명령으로 검증한다. |
 
-ledger는 총 20개이며 상태별로 그대로 보존 2개, upstream 구조에 맞춰 이식 13개, 더 안전한 upstream 구현으로
-대체 1개, 누락되어 복구 4개다. `obsolete` 또는 `검증 불가`로 코드 기능을 제거한 항목은 없다.
+ledger는 총 20개이며 상태별로 그대로 보존 2개, upstream 구조에 맞춰 이식 12개, 더 안전한 upstream 구현으로
+대체 1개, 누락되어 복구 5개다. `obsolete` 또는 `검증 불가`로 코드 기능을 제거한 항목은 없다.
 
 ### 14.3 생성물 및 검증 결과
 
@@ -434,7 +434,7 @@ type 생성 명령을 통과했고, `_experimental/out` tree는 upstream `v1.99.
 npm 11.17 환경에서 lockfile-only 갱신과 `npm ci`를 수행했다. production dependency audit은 취약점 0건이며,
 개발 의존성을 포함하면 upstream graph의 high 1건이 남는다.
 
-Backend 검증은 HGI suite 23건, auth/IP/personal-service-key/key/team/request-type 1,109건,
+Backend 검증은 HGI suite 28건, auth/IP/personal-service-key/key/team/request-type 1,109건,
 rotation/deprecated/audit/observability 94건(2 skipped), guardrail/Presidio/Purview/deferred/translation의
 local/mock 408건, usage/proxy-type 33건을 통과했다. 실제 Presidio analyzer/anonymizer를 호출하는 6건은
 `PRESIDIO_ANALYZER_API_BASE`와 anonymizer endpoint가 없는 로컬 환경이라 외부 통합 미검증으로 분류한다.
@@ -456,3 +456,30 @@ virtual-key, Presidio, dashboard i18n, usage-performance, maintenance 그룹에 
 알려진 dashboard 빌드 산출물이 실제 작업 tree에 없을 때에만 삭제를 customization coverage에서 제외한다.
 `python scripts/hgi/sync_upstream.py check`는 14개 그룹이 모든 변경을 덮는다고 확인했다. reviewer 재검토의
 최종 blocking finding 수는 0건이다.
+
+### 14.4 원본 checkout 반영 후 HGI branch 교차 재감사
+
+원본 checkout의 `hgi-v1.99.1`로 전환한 뒤 local/remote의 `hgi-v1.93.0`부터 `hgi-v1.98.0`까지와
+현재 branch를 다시 비교했다. 그 결과 v1.98에 존재했으나 v1.99.1에 빠진 실제 동작은 네 묶음이었다.
+
+- Internal User/Viewer의 Virtual Keys가 `/internal/personal-key` self-service 화면으로 연결되지 않아,
+  권한상 사용할 수 없는 generic `/key/list`를 호출하고 404/접근 실패를 보이던 회귀
+- OSS Organization 화면에 Enterprise premium gate가 다시 생겨 권한이 있는 사용자도 조직을 보지 못하던 회귀
+- OSS Audit Logs 화면에 Enterprise preview gate가 다시 생겨 Admin/Admin Viewer가 실제 audit query를 실행하지
+  못하던 회귀
+- 폐쇄망 dashboard에 외부 Docs/Blog/Support/Release Notes 링크와 Premium/Standard 등급 표시가 다시 나타난 회귀
+
+매니페스트의 exact path 21개도 실제 tree와 대조했다. 이 중 `PersonalKeyDashboard.tsx`와 그 테스트 두 파일은
+실제 기능 삭제였고, 나머지 19개는 v1.99의 component 재구성으로 대체 경로가 이미 소유 그룹에 등록된 stale
+선언이었다. stale 선언은 제거하고 self-service component와 회귀 테스트는 복구했다.
+
+반복 누락의 직접 원인은 두 가지다. 첫째, 기존 `sync_upstream.py check`는 변경된 경로의 ownership만 검사하고
+매니페스트에 선언한 보존 파일/디렉터리의 존재와 `remove_paths`의 부재를 검사하지 않았다. 둘째, premium gate나
+navigation 항목처럼 파일 경로는 그대로인데 조건문만 바뀌는 semantic regression은 path coverage만으로 발견할
+수 없다. checker에 working tree 및 historical ref 기준 path 존재 검사를 추가하고, 개인 키·조직·감사 로그·폐쇄망
+정책을 사용자 role과 premium 상태까지 고정하는 dashboard 회귀 테스트로 보완했다.
+
+재감사 수정분은 개인 키, 조직, 감사 로그, navigation/account menu의 focused component test 10개 파일
+121건을 통과했고, 신규 개인 키 및 감사 로그 핵심 경로 14건을 다시 독립 실행했다. HGI maintenance suite
+28건, 변경 TypeScript/TSX ESLint(오류 0), Vitest typecheck와 51개 static page의 production build도 통과했다.
+build에는 기존 `enkrypt_ai.avif`를 최적화 없이 emit한다는 Turbopack 경고 1건만 남는다.

@@ -2,6 +2,7 @@
 
 import { teamListCall as v2TeamListCall } from "@/app/(dashboard)/hooks/teams/useTeams";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import PersonalKeyDashboard from "@/components/PersonalKeyDashboard";
 import { KeyResponse, Team } from "@/components/key_team_helpers/key_list";
 import { CreateKeyPrefillData } from "@/components/organisms/create_key_button";
 import UserDashboard from "@/components/user_dashboard";
@@ -21,6 +22,8 @@ export default function ApiKeysDashboard() {
   const [createClicked, setCreateClicked] = useState<boolean>(false);
 
   const autoOpenCreate = searchParams.get("create") === "true";
+  const isInternalUser = userRole === "Internal User" || userRole === "internal_user";
+  const isInternalViewer = userRole === "Internal Viewer" || userRole === "internal_user_viewer";
   const prefillData: CreateKeyPrefillData | undefined = useMemo(() => {
     if (!autoOpenCreate) return undefined;
 
@@ -29,8 +32,9 @@ export default function ApiKeysDashboard() {
     const keyAlias = searchParams.get("key_alias");
     const modelsParam = searchParams.get("models");
     const keyType = searchParams.get("key_type");
+    const hasPrefillData = [ownedBy, teamId, keyAlias, modelsParam, keyType].some(Boolean);
 
-    if (!ownedBy && !teamId && !keyAlias && !modelsParam && !keyType) {
+    if (!hasPrefillData) {
       return undefined;
     }
 
@@ -75,6 +79,10 @@ export default function ApiKeysDashboard() {
         .catch(console.error);
     }
   }, [accessToken, userID, userRole]);
+
+  if (accessToken && (isInternalUser || isInternalViewer)) {
+    return <PersonalKeyDashboard accessToken={accessToken} readOnly={isInternalViewer} />;
+  }
 
   return (
     <UserDashboard

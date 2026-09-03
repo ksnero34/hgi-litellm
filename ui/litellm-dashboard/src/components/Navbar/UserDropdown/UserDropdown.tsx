@@ -9,13 +9,11 @@ import {
   setLocalStorageItem,
 } from "@/utils/localStorageUtils";
 import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
-import { ChevronDown, ChevronsUpDown, Crown, LogOut, Mail, ShieldCheck, User } from "lucide-react";
+import { ChevronDown, ChevronsUpDown, LogOut, Mail, ShieldCheck, User } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import CopyButton from "@/components/shared/CopyButton";
 import { cn } from "@/lib/cva.config";
 import React, { useEffect, useState } from "react";
@@ -65,7 +63,7 @@ interface UserDropdownProps {
 
 const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
   const { t } = useTranslation();
-  const { userId, userEmail, userRoleLabel: userRole, premiumUser } = useAuthorized();
+  const { userId, userEmail, userRoleLabel: userRole } = useAuthorized();
   const disableShowPrompts = useDisableShowPrompts();
   const disableBlogPosts = useDisableBlogPosts();
   const disableBouncingIcon = useDisableBouncingIcon();
@@ -87,22 +85,6 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
           <Mail className="size-4" />
           <span className="text-muted-foreground">{userEmail || emptyValue}</span>
         </div>
-        {premiumUser ? (
-          <Badge>
-            <Crown className="size-3" />
-            Premium
-          </Badge>
-        ) : (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger render={<Badge variant="outline" />}>
-                <Crown className="size-3" />
-                Standard
-              </TooltipTrigger>
-              <TooltipContent side="left">Upgrade to Premium for advanced features</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
       </div>
       <Separator className="my-2" />
       <div className="flex w-full items-center justify-between gap-2">

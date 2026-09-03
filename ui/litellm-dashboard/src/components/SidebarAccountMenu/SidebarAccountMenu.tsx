@@ -15,11 +15,9 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cva.config";
 import LanguageSwitcher from "@/i18n/LanguageSwitcher";
-import { ChevronsUpDown, Crown, IdCard, LogOut, Mail, ShieldCheck } from "lucide-react";
+import { ChevronsUpDown, IdCard, LogOut, Mail, ShieldCheck } from "lucide-react";
 import React from "react";
 import { useTranslation } from "react-i18next";
-
-const RELEASE_NOTES_URL = "https://docs.litellm.ai/release_notes";
 
 function hueFromString(seed: string): number {
   let h = 0;
@@ -84,7 +82,7 @@ interface SidebarAccountMenuProps {
 
 const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, collapsed = false }) => {
   const { t } = useTranslation();
-  const { userId, userEmail, userRoleLabel: userRole, premiumUser, accessToken } = useAuthorized();
+  const { userId, userEmail, userRoleLabel: userRole, accessToken } = useAuthorized();
   const { data: healthData } = useHealthReadinessDetails(accessToken);
   const version = healthData?.litellm_version;
   const disableShowPrompts = useDisableShowPrompts();
@@ -189,30 +187,13 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
           )}
           <span className="flex-1" />
           {version && (
-            <Badge
-              variant="outline"
-              render={<a href={RELEASE_NOTES_URL} target="_blank" rel="noopener noreferrer" />}
-              className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground"
-            >
+            <Badge variant="outline" className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground">
               v{version}
             </Badge>
           )}
         </div>
 
         <div className="flex flex-col px-3 py-2">
-          <InfoRow icon={<Crown className="size-[17px]" />} label="Tier">
-            {premiumUser ? (
-              <Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning">
-                <Crown />
-                Premium
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="gap-1" title="Upgrade to Premium for advanced features">
-                <Crown />
-                Standard
-              </Badge>
-            )}
-          </InfoRow>
           <InfoRow icon={<ShieldCheck className="size-[17px]" />} label={t("account.role")}>
             <Badge variant="secondary">{userRole}</Badge>
           </InfoRow>
@@ -249,11 +230,11 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
         <Button
           variant="ghost"
           onClick={onLogout}
-          aria-label="Logout"
+          aria-label={t("account.logout")}
           className="h-[42px] w-full justify-start gap-2.5 rounded-none px-3 text-sm font-medium text-foreground"
         >
           <LogOut className="size-[19px] text-muted-foreground" />
-          Logout
+          {t("account.logout")}
         </Button>
       </PopoverContent>
     </Popover>

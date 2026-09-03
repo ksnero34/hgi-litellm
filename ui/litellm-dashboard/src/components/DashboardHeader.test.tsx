@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { DashboardHeader } from "./DashboardHeader";
-import { NAV_PRODUCT_LINK_CLASS } from "@/components/Navbar/navProductLinkClass";
 
 const { mockUsePluginMode, mockUseUISettings, state } = vi.hoisted(() => {
   const state = {
     plugins: [] as { name: string; display_name: string; url: string }[],
     enableChatUI: false,
+    isControlPlane: false,
+    selectedWorker: null as { id: string } | null,
   };
   return {
     state,
@@ -19,11 +20,8 @@ vi.mock("@/contexts/PluginModeContext", () => ({ usePluginMode: mockUsePluginMod
 vi.mock("@/app/(dashboard)/hooks/uiSettings/useUISettings", () => ({ useUISettings: mockUseUISettings }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/ui/" }));
 vi.mock("@/utils/migratedPages", () => ({ migratedHref: (seg: string) => `/ui/${seg}` }));
-vi.mock("@/hooks/useWorker", () => ({ useWorker: () => ({ isControlPlane: false, selectedWorker: null }) }));
-vi.mock("@/app/(dashboard)/hooks/useDisableShowPrompts", () => ({ useDisableShowPrompts: () => false }));
-vi.mock("@/components/Navbar/BlogDropdown/BlogDropdown", () => ({ BlogDropdown: () => null }));
-vi.mock("@/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons", () => ({
-  CommunityEngagementButtons: () => null,
+vi.mock("@/hooks/useWorker", () => ({
+  useWorker: () => ({ isControlPlane: state.isControlPlane, selectedWorker: state.selectedWorker }),
 }));
 vi.mock("@/components/Navbar/NotificationsBell/NotificationsBell", () => ({ NotificationsBell: () => null }));
 vi.mock("@/components/Navbar/WorkerDropdown/WorkerDropdown", () => ({ default: () => null }));
@@ -32,6 +30,8 @@ describe("DashboardHeader breadcrumb", () => {
   afterEach(() => {
     state.plugins = [];
     state.enableChatUI = false;
+    state.isControlPlane = false;
+    state.selectedWorker = null;
   });
 
   it("roots the breadcrumb in the AI Gateway selector (with a Chat option) and drops the static section crumb when the selector is available", async () => {
@@ -56,17 +56,17 @@ describe("DashboardHeader breadcrumb", () => {
     expect(screen.queryByText("Observability")).not.toBeInTheDocument();
   });
 
-  it("styles Docs with the shared product-link class instead of a muted toolbar button", () => {
+  it("does not expose external product or community links in the closed-network header", () => {
     render(<DashboardHeader page="logs" />);
 
-    const docs = screen.getByRole("link", { name: "Docs" });
-    for (const cls of NAV_PRODUCT_LINK_CLASS.trim().split(/\s+/)) {
-      expect(docs).toHaveClass(cls);
-    }
-    expect(docs).not.toHaveClass("text-muted-foreground");
+    expect(screen.queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Blog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Support")).not.toBeInTheDocument();
   });
 
   it("renders the tools divider centered rather than stretched to the top of the row", () => {
+    state.isControlPlane = true;
+    state.selectedWorker = { id: "worker-1" };
     const { container } = render(<DashboardHeader page="logs" />);
 
     const separators = container.querySelectorAll('[data-slot="separator"][data-orientation="vertical"]');

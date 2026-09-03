@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { ColumnFiltersState, OnChangeFn, PaginationState } from "@tanstack/react-table";
-import { resolveLogoSrc } from "@/lib/assetPaths";
+import moment from "moment";
+
 import { uiAuditLogsCall } from "../networking";
 import { AuditLogEntry } from "./AuditLogsTableColumns";
 import { AuditLogsTable } from "./AuditLogsTable";
@@ -13,13 +15,20 @@ interface AuditLogsProps {
   userRole: string | null;
   userID: string | null;
   isActive: boolean;
-  premiumUser: boolean;
 }
 
-const asset_logos_folder = "/ui/assets/";
-const auditLogsPreviewImg = `${asset_logos_folder}audit-logs-preview.png`;
-
 const PAGE_SIZE = 50;
+const AUDIT_READER_ROLES = new Set(["Admin", "proxy_admin", "Admin Viewer", "proxy_admin_viewer"]);
+
+const parseSuccessFilter = (value: string | undefined): boolean | undefined => {
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return undefined;
+};
 
 interface AuditLogsResponse {
   audit_logs: AuditLogEntry[];
@@ -29,14 +38,8 @@ interface AuditLogsResponse {
   total_pages: number;
 }
 
-export default function AuditLogsPanel({
-  userID,
-  userRole,
-  token,
-  accessToken,
-  isActive,
-  premiumUser,
-}: AuditLogsProps) {
+export default function AuditLogsPanel({ userID, userRole, token, accessToken, isActive }: AuditLogsProps) {
+  const { t } = useTranslation();
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
@@ -47,33 +50,60 @@ export default function AuditLogsPanel({
     return typeof entry?.value === "string" && entry.value.trim() ? entry.value.trim() : undefined;
   };
 
-  const canQueryAuditLogs = !!accessToken && !!token && !!userRole && !!userID && isActive && premiumUser;
+  const canReadAuditLogs = userRole !== null && AUDIT_READER_ROLES.has(userRole);
+  const auditAuthParts = [accessToken, token, userRole, userID];
+  const hasResolvedAuditAuth = auditAuthParts.every(Boolean);
+  const canQueryAuditLogs = hasResolvedAuditAuth && isActive && canReadAuditLogs;
+  const emptyAuditLogsResponse = {
+    audit_logs: [],
+    total: 0,
+    page: 1,
+    page_size: pagination.pageSize,
+    total_pages: 0,
+  } satisfies AuditLogsResponse;
 
-  const query = useQuery<AuditLogsResponse>({
+  const auditLogsQueryOptions = {
     queryKey: ["audit_logs", pagination.pageIndex, pagination.pageSize, columnFilters],
     queryFn: async () => {
       if (!accessToken) {
-        return { audit_logs: [], total: 0, page: 1, page_size: pagination.pageSize, total_pages: 0 };
+        return emptyAuditLogsResponse;
       }
-      return uiAuditLogsCall({
+      const startDateFilter = getFilterValue("start_date");
+      const endDateFilter = getFilterValue("end_date");
+      const success = parseSuccessFilter(getFilterValue("success"));
+      const queryParams = {
+        object_id: getFilterValue("object_id"),
+        changed_by: getFilterValue("changed_by"),
+        object_key_hash: getFilterValue("key_hash"),
+        object_team_id: getFilterValue("team_id"),
+        action: getFilterValue("action"),
+        table_name: getFilterValue("table_name"),
+        start_date: startDateFilter
+          ? moment.utc(startDateFilter, "YYYY-MM-DD").startOf("day").format("YYYY-MM-DD HH:mm:ss")
+          : undefined,
+        end_date: endDateFilter
+          ? moment.utc(endDateFilter, "YYYY-MM-DD").endOf("day").format("YYYY-MM-DD HH:mm:ss")
+          : undefined,
+        success,
+        sort_order: "desc" as const,
+      };
+      const auditLogsRequest = {
         accessToken,
         page: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
-        params: {
-          object_id: getFilterValue("object_id"),
-          changed_by: getFilterValue("changed_by"),
-          object_key_hash: getFilterValue("key_hash"),
-          object_team_id: getFilterValue("team_id"),
-          action: getFilterValue("action"),
-          table_name: getFilterValue("table_name"),
-          sort_by: "updated_at",
-          sort_order: "desc",
-        },
-      });
+        params: queryParams,
+      };
+
+      return uiAuditLogsCall(auditLogsRequest);
     },
     enabled: canQueryAuditLogs,
     placeholderData: keepPreviousData,
-  });
+  } satisfies Parameters<typeof useQuery<AuditLogsResponse>>[0];
+  const query = useQuery<AuditLogsResponse>(auditLogsQueryOptions);
+
+  const refreshAuditLogs = useCallback(() => {
+    void query.refetch();
+  }, [query]);
 
   const handleColumnFiltersChange = useCallback<OnChangeFn<ColumnFiltersState>>((updaterOrValue) => {
     setColumnFilters(updaterOrValue);
@@ -85,30 +115,10 @@ export default function AuditLogsPanel({
     setDrawerOpen(true);
   }, []);
 
-  if (!premiumUser) {
+  if (!canReadAuditLogs) {
     return (
-      <div style={{ textAlign: "center", marginTop: "20px" }}>
-        <h1 style={{ display: "block", marginBottom: "10px" }}>✨ Enterprise Feature.</h1>
-        <p style={{ display: "block", marginBottom: "10px" }}>
-          This is a LiteLLM Enterprise feature, and requires a valid key to use.
-        </p>
-        <p style={{ display: "block", marginBottom: "20px", fontStyle: "italic" }}>
-          Here&apos;s a preview of what Audit Logs offer:
-        </p>
-        <img
-          src={resolveLogoSrc(auditLogsPreviewImg)}
-          alt="Audit Logs Preview"
-          style={{
-            maxWidth: "100%",
-            maxHeight: "700px",
-            borderRadius: "8px",
-            boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
-            margin: "0 auto",
-          }}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
-        />
+      <div className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
+        {t("observabilityExtra.audit.accessDenied")}
       </div>
     );
   }
@@ -116,8 +126,16 @@ export default function AuditLogsPanel({
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Audit Logs</h1>
+        <h1 className="text-xl font-semibold">{t("observabilityExtra.audit.title")}</h1>
       </div>
+
+      {query.isError ? (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {t("observabilityExtra.audit.loadError", {
+            error: query.error instanceof Error ? query.error.message : t("observabilityExtra.audit.unknownError"),
+          })}
+        </div>
+      ) : null}
 
       <AuditLogsTable
         data={query.data?.audit_logs ?? []}
@@ -128,7 +146,7 @@ export default function AuditLogsPanel({
         onPaginationChange={setPagination}
         columnFilters={columnFilters}
         onColumnFiltersChange={handleColumnFiltersChange}
-        onRefresh={() => query.refetch()}
+        onRefresh={refreshAuditLogs}
         onViewLog={handleViewLog}
       />
 

@@ -12,7 +12,6 @@ interface SpendLogsTableProps {
   token: string | null;
   userRole: string | null;
   userID: string | null;
-  premiumUser: boolean;
 }
 
 type LogsTabId = "request logs" | "audit logs" | "deleted keys" | "deleted teams";
@@ -27,7 +26,7 @@ const AUDIT_LOGS_TAB: LogsTab = { id: "audit logs", label: "Audit Logs" };
 const DELETED_KEYS_TAB: LogsTab = { id: "deleted keys", label: "Deleted Keys" };
 const DELETED_TEAMS_TAB: LogsTab = { id: "deleted teams", label: "Deleted Teams" };
 
-export default function SpendLogsTable({ accessToken, token, userRole, userID, premiumUser }: SpendLogsTableProps) {
+export default function SpendLogsTable({ accessToken, token, userRole, userID }: SpendLogsTableProps) {
   const [activeTab, setActiveTab] = useState<LogsTabId>(REQUEST_LOGS_TAB.id);
   const canViewAuditLogs = useCan("viewAuditLogs");
   const canViewDeletedTeams = useCan("viewDeletedTeams");
@@ -67,7 +66,6 @@ export default function SpendLogsTable({ accessToken, token, userRole, userID, p
             token={token}
             accessToken={accessToken}
             isActive={activeTab === "audit logs"}
-            premiumUser={premiumUser}
           />
         );
       case "deleted keys":

@@ -114,6 +114,87 @@ def test_verify_coverage_rejects_present_build_artifact(monkeypatch, tmp_path):
     assert sync_upstream.verify_coverage(tmp_path, valid_manifest(), "base", "custom") == [artifact]
 
 
+def test_manifest_path_errors_accepts_existing_file_and_absent_remove_path(tmp_path):
+    source = tmp_path / "src" / "file.py"
+    source.parent.mkdir()
+    source.write_text("value = 1\n")
+
+    assert (
+        sync_upstream.manifest_path_errors(
+            tmp_path,
+            valid_manifest(),
+            "HEAD",
+            use_working_tree=True,
+        )
+        == []
+    )
+
+
+def test_manifest_path_errors_reports_missing_file(tmp_path):
+    errors = sync_upstream.manifest_path_errors(
+        tmp_path,
+        valid_manifest(),
+        "HEAD",
+        use_working_tree=True,
+    )
+
+    assert errors == ["Group one path does not exist: src/file.py"]
+
+
+def test_manifest_path_errors_accepts_existing_directory(tmp_path):
+    manifest = valid_manifest()
+    manifest["groups"][0]["paths"] = ["src"]
+    (tmp_path / "src").mkdir()
+
+    assert (
+        sync_upstream.manifest_path_errors(
+            tmp_path,
+            manifest,
+            "HEAD",
+            use_working_tree=True,
+        )
+        == []
+    )
+
+
+def test_manifest_path_errors_reports_present_remove_path(tmp_path):
+    source = tmp_path / "src" / "file.py"
+    source.parent.mkdir()
+    source.write_text("value = 1\n")
+    (tmp_path / "enterprise").mkdir()
+
+    errors = sync_upstream.manifest_path_errors(
+        tmp_path,
+        valid_manifest(),
+        "HEAD",
+        use_working_tree=True,
+    )
+
+    assert errors == ["Group one remove_path still exists: enterprise"]
+
+
+def test_manifest_path_errors_reads_custom_ref_for_apply(tmp_path):
+    git(tmp_path, "init")
+    git(tmp_path, "config", "user.email", "test@example.com")
+    git(tmp_path, "config", "user.name", "Test")
+    source = tmp_path / "src" / "file.py"
+    source.parent.mkdir()
+    source.write_text("value = 1\n")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "custom")
+    source.unlink()
+
+    assert (
+        sync_upstream.manifest_path_errors(
+            tmp_path,
+            valid_manifest(),
+            "HEAD",
+            use_working_tree=False,
+        )
+        == []
+    )
+
+
 def test_apply_group_replays_patch_and_sanitizes_paths(tmp_path):
     source = tmp_path / "source"
     target = tmp_path / "target"

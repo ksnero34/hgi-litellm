@@ -7,7 +7,6 @@ interface AuthMock {
   userId: string | null;
   userEmail: string | null;
   userRoleLabel: string;
-  premiumUser: boolean;
   accessToken: string;
 }
 
@@ -15,7 +14,6 @@ let mockUseAuthorizedImpl: () => AuthMock = () => ({
   userId: "test-user-id",
   userEmail: "test@example.com",
   userRoleLabel: "Admin",
-  premiumUser: false,
   accessToken: "test-token",
 });
 
@@ -75,7 +73,6 @@ describe("SidebarAccountMenu", () => {
       userId: "test-user-id",
       userEmail: "test@example.com",
       userRoleLabel: "Admin",
-      premiumUser: false,
       accessToken: "test-token",
     });
     mockUseDisableShowPromptsImpl = () => false;
@@ -113,41 +110,24 @@ describe("SidebarAccountMenu", () => {
     expect(screen.getAllByText("Admin").length).toBeGreaterThan(0);
   });
 
-  it("should display Standard tier for non-premium users", async () => {
+  it("does not render tier badges in the account panel", async () => {
     const user = userEvent.setup();
     renderWithProviders(<SidebarAccountMenu onLogout={mockOnLogout} />);
 
     await openMenu(user);
 
-    expect(screen.getByText("Standard")).toBeInTheDocument();
+    expect(screen.queryByText("Premium")).not.toBeInTheDocument();
+    expect(screen.queryByText("Standard")).not.toBeInTheDocument();
   });
 
-  it("should display Premium tier for premium users", async () => {
-    const user = userEvent.setup();
-    mockUseAuthorizedImpl = () => ({
-      userId: "test-user-id",
-      userEmail: "test@example.com",
-      userRoleLabel: "Admin",
-      premiumUser: true,
-      accessToken: "test-token",
-    });
-
-    renderWithProviders(<SidebarAccountMenu onLogout={mockOnLogout} />);
-
-    await openMenu(user);
-
-    expect(screen.getByText("Premium")).toBeInTheDocument();
-  });
-
-  it("should render a clickable version badge linking to the release notes", async () => {
+  it("renders the version badge without a release notes link", async () => {
     const user = userEvent.setup();
     renderWithProviders(<SidebarAccountMenu onLogout={mockOnLogout} />);
 
     await openMenu(user);
 
-    const versionLink = screen.getByRole("link", { name: /v1\.99\.0/ });
-    expect(versionLink).toHaveAttribute("href", "https://docs.litellm.ai/release_notes");
-    expect(versionLink).toHaveAttribute("target", "_blank");
+    expect(screen.getByText("v1.99.0")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /v1\.99\.0/ })).not.toBeInTheDocument();
   });
 
   it("should not render the version badge when the version is unavailable", async () => {
@@ -196,7 +176,7 @@ describe("SidebarAccountMenu", () => {
 
     await openMenu(user);
 
-    await user.click(screen.getByRole("button", { name: /logout/i }));
+    await user.click(screen.getByRole("button", { name: /log out/i }));
 
     expect(mockOnLogout).toHaveBeenCalledTimes(1);
   });
@@ -274,7 +254,6 @@ describe("SidebarAccountMenu", () => {
       userId: "default_user_id",
       userEmail: null,
       userRoleLabel: "Admin",
-      premiumUser: false,
       accessToken: "test-token",
     });
     renderWithProviders(<SidebarAccountMenu onLogout={mockOnLogout} />);
@@ -287,7 +266,6 @@ describe("SidebarAccountMenu", () => {
       userId: "test-user-id",
       userEmail: null,
       userRoleLabel: "Admin",
-      premiumUser: false,
       accessToken: "test-token",
     });
 

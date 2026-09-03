@@ -14,16 +14,11 @@ vi.mock("@/app/(dashboard)/hooks/useDisableBouncingIcon", () => ({
   useDisableBouncingIcon: () => false,
 }));
 
-vi.mock("./Navbar/BlogDropdown/BlogDropdown", () => ({
-  BlogDropdown: () => <div data-testid="blog-dropdown">Blog</div>,
-}));
-
 const mockUserDropdownData = vi.hoisted(() => ({
   current: () => ({
     userId: "test-user",
     userEmail: "test@example.com",
     userRole: "Admin",
-    premiumUser: false,
   }),
 }));
 
@@ -33,7 +28,7 @@ vi.mock("./Navbar/UserDropdown/UserDropdown", async (importOriginal) => {
   const localStorageUtils = await import("@/utils/localStorageUtils");
   return {
     default: function MockUserDropdown({ onLogout }: { onLogout: () => void }) {
-      const { userId, userEmail, userRole, premiumUser } = mockUserDropdownData.current();
+      const { userId, userEmail, userRole } = mockUserDropdownData.current();
       const [open, setOpen] = useState(false);
       return (
         <div>
@@ -45,7 +40,6 @@ vi.mock("./Navbar/UserDropdown/UserDropdown", async (importOriginal) => {
               <span>{userId}</span>
               <span>{userRole}</span>
               <span>{userEmail}</span>
-              {premiumUser && <span>Premium</span>}
               <button type="button" onClick={() => onLogout()}>
                 Logout
               </button>
@@ -77,20 +71,6 @@ vi.mock("@/utils/proxyUtils", () => ({
   }),
 }));
 
-// Mock CommunityEngagementButtons component
-vi.mock("./Navbar/CommunityEngagementButtons/CommunityEngagementButtons", () => ({
-  CommunityEngagementButtons: () => (
-    <div data-testid="community-engagement-buttons">
-      <a href="https://www.litellm.ai/support" target="_blank" rel="noopener noreferrer">
-        Join Slack
-      </a>
-      <a href="https://github.com/BerriAI/litellm" target="_blank" rel="noopener noreferrer">
-        Star us on GitHub
-      </a>
-    </div>
-  ),
-}));
-
 // Create mock functions that can be controlled in tests
 let mockUseThemeImpl = () => ({ logoUrl: null as string | null });
 let mockUseHealthReadinessDetailsImpl = () => ({ data: null as any });
@@ -99,7 +79,6 @@ const mockUseAuthorizedImpl = () => ({
   userId: "test-user",
   userEmail: "test@example.com",
   userRole: "Admin",
-  premiumUser: false,
 });
 
 const useHealthReadinessDetailsSpy = vi.hoisted(() => vi.fn());
@@ -147,7 +126,6 @@ describe("Navbar", () => {
     renderWithProviders(<Navbar {...defaultProps} />);
 
     expect(screen.getByRole("button", { name: /^notifications$/i })).toBeInTheDocument();
-    expect(screen.getByText("Docs")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open account menu/i })).toBeInTheDocument();
   });
 
@@ -204,36 +182,25 @@ describe("Navbar", () => {
     expect(mockToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("should show premium user badge when premiumUser is true", async () => {
-    const user = userEvent.setup();
-    const originalCurrent = mockUserDropdownData.current;
-    mockUserDropdownData.current = () => ({
-      userId: "test-user",
-      userEmail: "test@example.com",
-      userRole: "Admin",
-      premiumUser: true,
-    });
-    renderWithProviders(<Navbar {...defaultProps} />);
-
-    await user.click(screen.getByRole("button", { name: /open account menu/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Premium")).toBeInTheDocument();
-    });
-
-    // Reset mock
-    mockUserDropdownData.current = originalCurrent;
-  });
-
   it("should show version badge when health data contains version", () => {
     mockUseHealthReadinessDetailsImpl = () => ({ data: { litellm_version: "1.0.0" } });
 
     renderWithProviders(<Navbar {...defaultProps} />);
 
     expect(screen.getByText("v1.0.0")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "v1.0.0" })).not.toBeInTheDocument();
 
     // Reset mock
     mockUseHealthReadinessDetailsImpl = () => ({ data: null });
+  });
+
+  it("hides external docs, blog, and support surfaces", () => {
+    renderWithProviders(<Navbar {...defaultProps} />);
+
+    expect(screen.queryByText("Docs")).not.toBeInTheDocument();
+    expect(screen.queryByText("Blog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Join Slack")).not.toBeInTheDocument();
+    expect(screen.queryByText("Star us on GitHub")).not.toBeInTheDocument();
   });
 
   it("should forward accessToken to the readiness hook", () => {

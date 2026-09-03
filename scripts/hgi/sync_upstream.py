@@ -94,6 +94,45 @@ def is_removed_build_artifact(repo: Path, path: str) -> bool:
     return path_is_owned(path, BUILD_ARTIFACT_PATHS) and not (repo / path).exists()
 
 
+def ref_path_exists(repo: Path, ref: str, path: str) -> bool:
+    result = subprocess.run(
+        ("git", "cat-file", "-e", f"{ref}:{path}"),
+        cwd=repo,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def manifest_path_errors(
+    repo: Path,
+    manifest: dict[str, Any],
+    custom_ref: str,
+    *,
+    use_working_tree: bool,
+) -> list[str]:
+    def path_exists(path: str) -> bool:
+        if use_working_tree:
+            target = repo / path
+            return target.exists() or target.is_symlink()
+        return ref_path_exists(repo, custom_ref, path)
+
+    missing_paths = (
+        f"Group {group['name']} path does not exist: {path}"
+        for group in manifest["groups"]
+        for path in group["paths"]
+        if not path_exists(path.rstrip("/"))
+    )
+    present_remove_paths = (
+        f"Group {group['name']} remove_path still exists: {path}"
+        for group in manifest["groups"]
+        for path in group["remove_paths"]
+        if path_exists(path.rstrip("/"))
+    )
+    return [*missing_paths, *present_remove_paths]
+
+
 def verify_coverage(
     repo: Path,
     manifest: dict[str, Any],
@@ -212,6 +251,20 @@ def main() -> int:
     base_ref = args.base_ref or manifest["base_ref"]
     check_ref(repo, base_ref)
     check_ref(repo, args.custom_ref)
+    custom_is_head = git_output(repo, "rev-parse", f"{args.custom_ref}^{{commit}}") == git_output(
+        repo, "rev-parse", "HEAD^{commit}"
+    )
+    path_errors = manifest_path_errors(
+        repo,
+        manifest,
+        args.custom_ref,
+        use_working_tree=args.command == "check" and custom_is_head,
+    )
+    if path_errors:
+        emit("Invalid manifest path declarations:", error=True)
+        for error in path_errors:
+            emit(f"  {error}", error=True)
+        return 2
     extra_paths = working_tree_paths(repo) if args.command == "check" else ()
     uncovered = verify_coverage(
         repo,

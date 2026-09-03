@@ -192,7 +192,6 @@ describe("Sidebar (leftnav)", () => {
       "Budgets",
       "API Reference",
       "AI Hub",
-      "Learning Resources",
       "Experimental",
       "Settings",
     ];
@@ -212,6 +211,13 @@ describe("Sidebar (leftnav)", () => {
     await waitFor(() => {
       expect(screen.getByText("Search Tools")).toBeInTheDocument();
     });
+  });
+
+  it("does not expose the external learning resources entry", () => {
+    renderWithProviders(<Sidebar {...defaultProps} />);
+
+    expect(screen.queryByText("Learning Resources")).not.toBeInTheDocument();
+    expect(menuGroups.some((group) => group.items.some((item) => item.key === "learning-resources"))).toBe(false);
   });
   it("keeps Router Settings as a single Settings child", () => {
     // Router Settings is admin-only, so getAvailablePages() filters it out entirely and the
@@ -456,7 +462,7 @@ describe("Sidebar (leftnav)", () => {
   });
 
   it("should show Organizations tab for organization admins", () => {
-    mockUseAuthorized.mockReturnValue({
+    const orgAdminSession = {
       userId: "org-admin-user-id",
       accessToken: "test-access-token",
       userRole: "viewer",
@@ -466,9 +472,8 @@ describe("Sidebar (leftnav)", () => {
       premiumUser: false,
       disabledPersonalKeyCreation: false,
       showSSOBanner: false,
-    });
-
-    mockUseOrganizations.mockReturnValue({
+    };
+    const orgAdminOrganizations = {
       data: [
         {
           organization_id: "org-1",
@@ -488,7 +493,10 @@ describe("Sidebar (leftnav)", () => {
       ],
       isLoading: false,
       error: null,
-    } as any);
+    };
+
+    mockUseAuthorized.mockReturnValue(orgAdminSession);
+    mockUseOrganizations.mockReturnValue(orgAdminOrganizations);
 
     renderWithProviders(<Sidebar {...defaultProps} />);
 
