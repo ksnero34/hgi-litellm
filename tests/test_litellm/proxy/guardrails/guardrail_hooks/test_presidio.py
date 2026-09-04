@@ -305,7 +305,6 @@ async def test_multimodal_message_format_completion_call_type(presidio_guardrail
     assert "555-123-4567" not in content_item["text"]
 
 
-
 @pytest.mark.asyncio
 async def test_multimodal_message_format_anthropic_messages_call_type(
     presidio_guardrail, mock_user_api_key, mock_cache
@@ -373,7 +372,6 @@ async def test_multimodal_message_format_anthropic_messages_call_type(
     assert "555-123-4567" not in content_item["text"]
 
 
-
 @pytest.mark.asyncio
 async def test_multimodal_message_multiple_content_items(presidio_guardrail, mock_user_api_key, mock_cache):
     """
@@ -424,7 +422,6 @@ async def test_multimodal_message_multiple_content_items(presidio_guardrail, moc
     assert len(content_items) == 2
     assert "[CREDIT_CARD]" in content_items[0]["text"]
     assert "[EMAIL]" in content_items[1]["text"]
-
 
 
 @pytest.mark.asyncio
@@ -490,7 +487,6 @@ async def test_mixed_string_and_list_content(presidio_guardrail, mock_user_api_k
     assert "[EMAIL]" in messages[2]["content"][0]["text"]
 
 
-
 @pytest.mark.asyncio
 async def test_content_list_without_text_field(presidio_guardrail, mock_user_api_key, mock_cache):
     """
@@ -544,7 +540,6 @@ async def test_content_list_without_text_field(presidio_guardrail, mock_user_api
     # Text content should be redacted
     assert content_items[1]["type"] == "text"
     assert "[EMAIL]" in content_items[1]["text"]
-
 
 
 @pytest.mark.asyncio
@@ -644,7 +639,6 @@ async def test_logging_hook_multimodal_message_format(presidio_guardrail):
     assert "test@example.com" not in content_item["text"]
 
 
-
 @pytest.mark.asyncio
 async def test_logging_hook_multiple_content_items(presidio_guardrail):
     """
@@ -696,7 +690,6 @@ async def test_logging_hook_multiple_content_items(presidio_guardrail):
     assert "[EMAIL]" in content_items[1]["text"]
 
 
-
 @pytest.mark.asyncio
 async def test_logging_only_does_not_mask_pre_call_request(mock_user_api_key, mock_cache):
     """
@@ -735,7 +728,6 @@ async def test_logging_only_does_not_mask_pre_call_request(mock_user_api_key, mo
     # The live request must be unchanged: PII reaches the model intact.
     assert result["messages"][0]["content"] == original_text
     assert "[PHONE]" not in result["messages"][0]["content"]
-
 
 
 @pytest.mark.asyncio
@@ -1048,7 +1040,6 @@ async def test_presidio_sets_guardrail_information_in_request_data():
     assert guardrail_info["masked_entity_count"]["PERSON"] == 1
 
 
-
 @pytest.mark.asyncio
 async def test_presidio_logs_input_source_event_and_run_id():
     presidio = _OPTIONAL_PresidioPIIMasking(
@@ -1167,7 +1158,6 @@ async def test_request_data_flows_to_apply_guardrail():
 
         assert "metadata" in request_data
         assert request_data["metadata"].get("test_flag") == "passed_correctly"
-
 
 
 @pytest.mark.asyncio
@@ -1461,7 +1451,6 @@ async def test_empty_content_handling(presidio_guardrail, mock_user_api_key, moc
     assert len(result["messages"]) == 3
 
 
-
 @pytest.mark.asyncio
 async def test_whitespace_only_content(presidio_guardrail, mock_user_api_key, mock_cache):
     """
@@ -1495,7 +1484,6 @@ async def test_whitespace_only_content(presidio_guardrail, mock_user_api_key, mo
     assert len(result["messages"]) == 3
 
 
-
 @pytest.mark.asyncio
 async def test_analyze_text_with_empty_string():
     """
@@ -1526,7 +1514,6 @@ async def test_analyze_text_with_empty_string():
     assert result == [], "Whitespace-only text should return empty list"
 
 
-
 @pytest.mark.asyncio
 async def test_analyze_text_error_dict_handling():
     """
@@ -1552,7 +1539,6 @@ async def test_analyze_text_error_dict_handling():
             request_data={},
         )
     assert result == [], "Error dict should be handled gracefully"
-
 
 
 @pytest.mark.asyncio
@@ -2069,7 +2055,6 @@ async def test_tool_calling_complete_scenario(presidio_guardrail, mock_user_api_
     assert len(result["messages"]) == 4
 
 
-
 def test_filter_drops_low_score_detection():
     """
     Detections below the configured score threshold should be removed.
@@ -2325,7 +2310,6 @@ async def test_get_session_iterator_thread_safety(presidio_guardrail):
     # The background session should be cached in _loop_sessions and remain open for reuse
     # (Changed behavior: no longer closes immediately, cached per loop for efficiency)
     assert not bg_session.closed, "Background session should remain open for reuse"
-
 
 
 from litellm.types.utils import ModelResponseStream
@@ -3938,6 +3922,116 @@ def test_numbered_presidio_entities_remain_unique_across_messages():
     }
     assert guardrail._unmask_pii_text(first, request_data["metadata"]["pii_tokens"]) == "홍길동 900101-1234567"
     assert guardrail._unmask_pii_text(second, request_data["metadata"]["pii_tokens"]) == "김철수 880202-2345678"
+
+
+def test_reversible_tokens_are_canonicalized_in_final_input_order():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True)
+    request_data = {
+        "metadata": {
+            # Simulate independently analyzed segments completing in reverse order.
+            "pii_tokens": {
+                "<ACTNO_1>": "222-22",
+                "<PERSON_2>": "Alice",
+            },
+            "pii_token_sources": {
+                "<ACTNO_1>": {"scope": "current_user_context"},
+                "<PERSON_2>": {"scope": "current_user_prompt"},
+            },
+        }
+    }
+    inputs = {
+        "texts": [
+            "First Alice is <PERSON_2>",
+            "Then account <ACTNO_1>",
+            "Non-restorable <ACTNO> and caller text <ACTNO_999>",
+        ]
+    }
+
+    result = guardrail._canonicalize_reversible_token_order(inputs, request_data)
+
+    assert result == {
+        "texts": [
+            "First Alice is <PERSON_1>",
+            "Then account <ACTNO_2>",
+            "Non-restorable <ACTNO> and caller text <ACTNO_999>",
+        ]
+    }
+    assert request_data["metadata"]["pii_tokens"] == {
+        "<ACTNO_2>": "222-22",
+        "<PERSON_1>": "Alice",
+    }
+    assert request_data["metadata"]["pii_token_sources"] == {
+        "<ACTNO_2>": {"scope": "current_user_context"},
+        "<PERSON_1>": {"scope": "current_user_prompt"},
+    }
+
+
+def test_reversible_token_canonicalization_preserves_unreferenced_request_mapping():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True)
+    request_data = {
+        "metadata": {
+            "pii_tokens": {
+                "<ACTNO_1>": "hidden-provider-input",
+                "<PERSON_2>": "Alice",
+            }
+        }
+    }
+
+    result = guardrail._canonicalize_reversible_token_order(
+        {"texts": ["Hello <PERSON_2>"]},
+        request_data,
+    )
+
+    assert result == {"texts": ["Hello <PERSON_1>"]}
+    assert request_data["metadata"]["pii_tokens"] == {
+        "<ACTNO_2>": "hidden-provider-input",
+        "<PERSON_1>": "Alice",
+    }
+
+
+@pytest.mark.asyncio
+async def test_parallel_pre_call_renumbers_tokens_by_message_order():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        guardrail_name="ordered-presidio",
+        event_hook="pre_call",
+        default_on=True,
+        output_parse_pii=True,
+    )
+
+    async def complete_out_of_order(text, output_parse_pii, presidio_config, request_data):
+        if text == "first":
+            await asyncio.sleep(0.01)
+        pii_tokens = request_data.setdefault("metadata", {}).setdefault("pii_tokens", {})
+        entity = "PERSON" if text == "first" else "ACTNO"
+        token = f"<{entity}_{len(pii_tokens) + 1}>"
+        pii_tokens[token] = text
+        return token
+
+    guardrail.check_pii = complete_out_of_order
+    data = {
+        "metadata": {},
+        "messages": [
+            {"role": "user", "content": "first"},
+            {"role": "user", "content": "second"},
+        ],
+    }
+
+    result = await guardrail.async_pre_call_hook(
+        user_api_key_dict=UserAPIKeyAuth(api_key="test-key"),
+        cache=DualCache(),
+        data=data,
+        call_type="acompletion",
+    )
+
+    assert result["messages"] == [
+        {"role": "user", "content": "<PERSON_1>"},
+        {"role": "user", "content": "<ACTNO_2>"},
+    ]
+    assert result["metadata"]["pii_tokens"] == {
+        "<ACTNO_2>": "second",
+        "<PERSON_1>": "first",
+    }
 
 
 @pytest.mark.asyncio

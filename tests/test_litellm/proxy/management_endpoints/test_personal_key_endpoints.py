@@ -22,8 +22,8 @@ from litellm.proxy.management_endpoints.personal_key_endpoints import (
     _delete_deprecated_personal_keys,
     _invalidate_personal_key_cache,
     _load_scope,
-    _retarget_deprecated_personal_keys,
     _resolve_personal_key_alias,
+    _retarget_deprecated_personal_keys,
     _rotation_grace,
     _target_user_id,
     _writer_database,
@@ -73,12 +73,27 @@ def test_blank_personal_key_alias_defaults_to_sso_subject(requested_alias: str |
     assert _resolve_personal_key_alias(requested_alias, "oidc-sub-123") == "oidc-sub-123"
 
 
-def test_explicit_personal_key_alias_takes_precedence_over_sso_subject():
-    assert _resolve_personal_key_alias("my-personal-key", "oidc-sub-123") == "my-personal-key"
+def test_explicit_personal_key_alias_appends_sso_subject():
+    assert _resolve_personal_key_alias("my-personal-key", "oidc-sub-123") == "my-personal-key-oidc-sub-123"
+
+
+def test_explicit_personal_key_alias_is_preserved_without_sso_subject():
+    assert _resolve_personal_key_alias("my-personal-key", None) == "my-personal-key"
 
 
 @pytest.mark.asyncio
-async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize(
+    ("requested_alias", "expected_alias"),
+    [
+        (None, "oidc-sub-123"),
+        ("my-personal-key", "my-personal-key-oidc-sub-123"),
+    ],
+)
+async def test_create_personal_key_persists_resolved_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    requested_alias: str | None,
+    expected_alias: str,
+):
     from litellm.proxy import proxy_server
     from litellm.proxy.management_endpoints import personal_key_endpoints
 
@@ -151,7 +166,7 @@ async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeyp
     monkeypatch.setattr(personal_key_endpoints, "_invalidate_personal_key_cache", AsyncMock())
 
     response = await create_personal_key(
-        data=PersonalKeyCreateRequest(key_alias=None),
+        data=PersonalKeyCreateRequest(key_alias=requested_alias),
         auth=UserAPIKeyAuth(
             user_id="user-1",
             user_role=LitellmUserRoles.INTERNAL_USER,
@@ -160,8 +175,8 @@ async def test_create_personal_key_persists_sso_subject_as_default_alias(monkeyp
     )
 
     create_data = verification_tokens.create.await_args.kwargs["data"]
-    assert create_data["key_alias"] == "oidc-sub-123"
-    assert response.key_alias == "oidc-sub-123"
+    assert create_data["key_alias"] == expected_alias
+    assert response.key_alias == expected_alias
     audit_data = transaction.litellm_auditlog.create.await_args.kwargs["data"]
     assert '"success": true' in audit_data["updated_values"]
     verification_tokens.update_many.assert_awaited_once_with(

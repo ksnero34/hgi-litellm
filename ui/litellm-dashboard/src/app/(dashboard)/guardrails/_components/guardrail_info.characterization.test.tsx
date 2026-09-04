@@ -136,6 +136,20 @@ describe("GuardrailInfoView update payload characterization", () => {
     expect(lastPayload()).toEqual({ litellm_params: { guardrailIdentifier: "gr-new" } });
   });
 
+  it("updates the guardrail mode from the settings editor", async () => {
+    const user = userEvent.setup({ delay: null });
+    renderView();
+    await openEditor(user);
+
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
+    await user.click(screen.getByLabelText("Mode"));
+    await user.click(screen.getByRole("option", { name: /post_call/ }));
+    await saveChanges(user);
+
+    await waitFor(() => expect(networking.updateGuardrailCall).toHaveBeenCalledTimes(1));
+    expect(lastPayload()).toEqual({ litellm_params: { mode: ["post_call"] } });
+  });
+
   it("sends null for a provider param the user cleared", async () => {
     const user = userEvent.setup({ delay: null });
     renderView();

@@ -151,6 +151,8 @@ def _rotation_grace(
 
 def _resolve_personal_key_alias(requested_alias: str | None, user_alias: str | None) -> str | None:
     if requested_alias is not None and requested_alias.strip():
+        if user_alias is not None and user_alias.strip():
+            return f"{requested_alias}-{user_alias}"
         return requested_alias
     return user_alias
 

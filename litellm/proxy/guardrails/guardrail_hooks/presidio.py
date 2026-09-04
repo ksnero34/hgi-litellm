@@ -102,7 +102,7 @@ class _StreamingPiiState:
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     requires_guardrailed_previous_response_history: ClassVar[bool] = True
     _STREAM_PII_HOLDBACK_CHARS: ClassVar[int] = 128
-    _PII_TOKEN_PATTERN = re.compile(r"<[A-Z][A-Z0-9_]*_[0-9]+>")
+    _PII_TOKEN_PATTERN = re.compile(r"<(?P<entity>[A-Z][A-Z0-9_]*)_(?P<sequence>[0-9]+)>")
     _RESTORABLE_INPUT_SCOPES = frozenset({"conversation_history", "current_user_prompt", "current_user_context"})
     _LOGGING_TEXT_FIELDS = frozenset(
         ("arguments", "content", "output_text", "reasoning_content", "refusal", "summary", "text")
@@ -116,6 +116,111 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             lambda match: " " * len(match.group()),
             text,
         )
+
+    @classmethod
+    def _canonicalize_reversible_token_order(
+        cls,
+        value: object,
+        request_data: dict,
+    ) -> object:
+        """Renumber request-local reversible tokens in final LLM input order.
+
+        Presidio analyzes message segments independently. Some lifecycle paths run
+        those calls concurrently, so the order in which they populate
+        ``metadata.pii_tokens`` is completion order rather than message order. Keep
+        independent analysis, then make token numbering deterministic immediately
+        before the transformed input is returned to the LLM.
+
+        Only tokens created by this request (keys present in ``pii_tokens``) are
+        rewritten. Non-restorable placeholders such as ``<ACTNO>`` and matching
+        strings supplied by the caller are deliberately left untouched.
+        """
+        metadata = request_data.get("metadata")
+        if not isinstance(metadata, dict):
+            return value
+        pii_tokens = metadata.get("pii_tokens")
+        if not isinstance(pii_tokens, dict) or not pii_tokens:
+            return value
+
+        known_tokens = {
+            token
+            for token in pii_tokens
+            if isinstance(token, str) and cls._PII_TOKEN_PATTERN.fullmatch(token) is not None
+        }
+        if not known_tokens:
+            return value
+
+        ordered_tokens: list[str] = []
+        seen_tokens: set[str] = set()
+
+        def _collect_tokens(current: object) -> None:
+            if isinstance(current, str):
+                for match in cls._PII_TOKEN_PATTERN.finditer(current):
+                    token = match.group()
+                    if token in known_tokens and token not in seen_tokens:
+                        seen_tokens.add(token)
+                        ordered_tokens.append(token)
+                return
+            if isinstance(current, Mapping):
+                for nested_value in current.values():
+                    _collect_tokens(nested_value)
+                return
+            if isinstance(current, (list, tuple)):
+                for nested_value in current:
+                    _collect_tokens(nested_value)
+
+        _collect_tokens(value)
+        # Preserve any request-local mappings not present in ``value``. This is
+        # defensive for provider-specific inputs that may keep their transformed
+        # text outside GenericGuardrailAPIInputs.
+        ordered_tokens.extend(token for token in pii_tokens if token in known_tokens and token not in seen_tokens)
+
+        replacements: dict[str, str] = {}
+        for sequence, old_token in enumerate(ordered_tokens, start=1):
+            token_match = cls._PII_TOKEN_PATTERN.fullmatch(old_token)
+            if token_match is None:
+                continue
+            replacements[old_token] = f"<{token_match.group('entity')}_{sequence}>"
+
+        if not replacements:
+            return value
+
+        tokens_changed = any(old_token != new_token for old_token, new_token in replacements.items())
+
+        def _replace_tokens(current: object) -> object:
+            if isinstance(current, str):
+                return cls._PII_TOKEN_PATTERN.sub(
+                    lambda match: replacements.get(match.group(), match.group()),
+                    current,
+                )
+            if isinstance(current, dict):
+                return {key: _replace_tokens(nested_value) for key, nested_value in current.items()}
+            if isinstance(current, list):
+                return [_replace_tokens(nested_value) for nested_value in current]
+            if isinstance(current, tuple):
+                return tuple(_replace_tokens(nested_value) for nested_value in current)
+            return current
+
+        # Rebuild the maps in the same canonical order as the final LLM input.
+        # Dict order is not required for exact-token restoration, but keeping it
+        # aligned makes fallback/debug behavior deterministic as well.
+        canonical_pii_tokens = {replacements[token]: pii_tokens[token] for token in ordered_tokens}
+        canonical_pii_tokens.update(
+            {token: original_text for token, original_text in pii_tokens.items() if token not in known_tokens}
+        )
+        metadata["pii_tokens"] = canonical_pii_tokens
+        pii_token_sources = metadata.get("pii_token_sources")
+        if isinstance(pii_token_sources, dict):
+            canonical_pii_token_sources = {
+                replacements[token]: pii_token_sources[token] for token in ordered_tokens if token in pii_token_sources
+            }
+            canonical_pii_token_sources.update(
+                {token: source for token, source in pii_token_sources.items() if token not in known_tokens}
+            )
+            metadata["pii_token_sources"] = canonical_pii_token_sources
+        if not tokens_changed:
+            return value
+        return _replace_tokens(value)
 
     @classmethod
     def _should_create_reversible_tokens(
@@ -1136,8 +1241,12 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             if first_exception is not None:
                 raise first_exception
 
-            verbose_proxy_logger.debug(f"Presidio PII Masking: Redacted pii message: {data['messages']}")
+            messages = cast(
+                list,
+                self._canonicalize_reversible_token_order(messages, data),
+            )
             data["messages"] = messages
+            verbose_proxy_logger.debug(f"Presidio PII Masking: Redacted pii message: {data['messages']}")
             return data
         except Exception as e:
             raise e
@@ -2262,7 +2371,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         input_source,
                     ),
                     presidio_config=None,
-                    request_data=request_data or {},
+                    request_data=request_data,
                     log_context={
                         "guardrail_run_id": guardrail_run_id,
                         "guardrail_event": guardrail_event,
@@ -2290,7 +2399,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         text=arguments,
                         output_parse_pii=self.output_parse_pii,
                         presidio_config=None,
-                        request_data=request_data or {},
+                        request_data=request_data,
                         log_context={
                             "guardrail_run_id": guardrail_run_id,
                             "guardrail_event": guardrail_event,
@@ -2300,6 +2409,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                             },
                         },
                     )
+        if input_type == "request" and not should_unmask_response:
+            inputs = cast(
+                GenericGuardrailAPIInputs,
+                self._canonicalize_reversible_token_order(inputs, request_data),
+            )
         return inputs
 
     def update_in_memory_litellm_params(self, litellm_params: LitellmParams) -> None:
