@@ -73,6 +73,7 @@ import {
   keyCreateCall,
   keyCreateServiceAccountCall,
   modelAvailableCall,
+  personalKeyCreateCall,
   proxyBaseUrl,
   userFilterUICall,
 } from "../networking";
@@ -90,6 +91,8 @@ const KEY_TYPE_OPTIONS = [
 ];
 
 const KEY_OWNER_LABEL_CLASS = "flex items-center gap-2 text-sm font-normal text-foreground";
+
+const isPersonalKeyOwner = (owner: string): boolean => owner === "you" || owner === "another_user";
 
 const SECTION_HEADER_CLASS = "group/section flex w-full items-center justify-between px-4 py-3 text-left";
 const SECTION_CHEVRON_CLASS =
@@ -138,7 +141,7 @@ const McpToolPermissionsField: React.FC<McpToolPermissionsFieldProps> = ({ acces
  * Interface for pre-filling the create key form from URL parameters
  */
 export interface CreateKeyPrefillData {
-  owned_by?: "you" | "service_account" | "another_user";
+  owned_by?: "you" | "service_account" | "another_user" | "agent";
   team_id?: string;
   key_alias?: string;
   models?: string[];
@@ -419,10 +422,28 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   // Check if team selection is required
   const isTeamSelectionRequired = modelsToPick.includes("no-default-models");
-  const isFormDisabled = isTeamSelectionRequired && !selectedCreateKeyTeam;
+  const isFormDisabled = !isPersonalKeyOwner(keyOwner) && isTeamSelectionRequired && !selectedCreateKeyTeam;
 
   const handleCreate = async (formValues: MountedFormValues) => {
     try {
+      if (isPersonalKeyOwner(keyOwner)) {
+        const keyAlias = typeof formValues.key_alias === "string" ? formValues.key_alias : "";
+        const targetUserID =
+          keyOwner === "another_user" && typeof formValues.user_id === "string" ? formValues.user_id : null;
+
+        toast.info("Making API Call");
+        setIsModalVisible(true);
+        const response = await personalKeyCreateCall(accessToken, targetUserID, keyAlias);
+
+        addKey(response);
+        queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
+        setApiKey(response["key"]);
+        toast.success("Virtual Key Created");
+        form.reset(formDefaults);
+        localStorage.removeItem("userData" + userID);
+        return;
+      }
+
       const input: KeyCreateInput = {
         formValues,
         existingKeys: data,
@@ -764,79 +785,86 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     </div>
                   </div>
                 )}
-                <MountedFormField
-                  label={
-                    <span>
-                      Organization{" "}
-                      <SimpleTooltip content="The organization this key belongs to. Selecting an organization filters the available teams.">
-                        <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                      </SimpleTooltip>
-                    </span>
-                  }
-                  name="organization_id"
-                  className="mt-4"
-                >
-                  {(control) => (
-                    <OrganizationDropdown
-                      id={control.id}
-                      value={control.value as string | undefined}
-                      organizations={organizations}
-                      loading={isOrganizationsLoading}
-                      disabled={userRole !== "Admin"}
-                      onChange={changeOrganization(control.onChange)}
-                    />
-                  )}
-                </MountedFormField>
-                <MountedFormField
-                  label={
-                    <span>
-                      Team{" "}
-                      <SimpleTooltip content="The team this key belongs to, which determines available models and budget limits">
-                        <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                      </SimpleTooltip>
-                    </span>
-                  }
-                  name="team_id"
-                  className="mt-4"
-                  required={keyOwner === "service_account"}
-                  rules={requiredRule(keyOwner === "service_account", "Please select a team for the service account")}
-                  help={keyOwner === "service_account" ? "required" : ""}
-                >
-                  {(control) => (
-                    <TeamDropdown
-                      id={control.id}
-                      value={control.value as string | undefined}
-                      onChange={control.onChange}
-                      disabled={selectedProjectId !== null}
-                      organizationId={selectedOrganizationId}
-                      onTeamSelect={selectTeam}
-                    />
-                  )}
-                </MountedFormField>
-                {enableProjectsUI && (
-                  <MountedFormField
-                    label={
-                      <span>
-                        Project{" "}
-                        <SimpleTooltip content="Assign this key to a project. Selecting a project will lock the team to the project's team.">
-                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                        </SimpleTooltip>
-                      </span>
-                    }
-                    name="project_id"
-                    className="mt-4"
-                  >
-                    {(control) => (
-                      <ProjectDropdown
-                        id={control.id}
-                        value={control.value as string | undefined}
-                        projects={projects}
-                        teamId={selectedCreateKeyTeam?.team_id}
-                        loading={isProjectsLoading || !teams}
-                        onChange={changeProject(control.onChange)}
-                      />
+                {!isPersonalKeyOwner(keyOwner) && (
+                  <>
+                    <MountedFormField
+                      label={
+                        <span>
+                          Organization{" "}
+                          <SimpleTooltip content="The organization this key belongs to. Selecting an organization filters the available teams.">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="organization_id"
+                      className="mt-4"
+                    >
+                      {(control) => (
+                        <OrganizationDropdown
+                          id={control.id}
+                          value={control.value as string | undefined}
+                          organizations={organizations}
+                          loading={isOrganizationsLoading}
+                          disabled={userRole !== "Admin"}
+                          onChange={changeOrganization(control.onChange)}
+                        />
+                      )}
+                    </MountedFormField>
+                    <MountedFormField
+                      label={
+                        <span>
+                          Team{" "}
+                          <SimpleTooltip content="The team this key belongs to, which determines available models and budget limits">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="team_id"
+                      className="mt-4"
+                      required={keyOwner === "service_account"}
+                      rules={requiredRule(
+                        keyOwner === "service_account",
+                        "Please select a team for the service account",
+                      )}
+                      help={keyOwner === "service_account" ? "required" : ""}
+                    >
+                      {(control) => (
+                        <TeamDropdown
+                          id={control.id}
+                          value={control.value as string | undefined}
+                          onChange={control.onChange}
+                          disabled={selectedProjectId !== null}
+                          organizationId={selectedOrganizationId}
+                          onTeamSelect={selectTeam}
+                        />
+                      )}
+                    </MountedFormField>
+                    {enableProjectsUI && (
+                      <MountedFormField
+                        label={
+                          <span>
+                            Project{" "}
+                            <SimpleTooltip content="Assign this key to a project. Selecting a project will lock the team to the project's team.">
+                              <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                            </SimpleTooltip>
+                          </span>
+                        }
+                        name="project_id"
+                        className="mt-4"
+                      >
+                        {(control) => (
+                          <ProjectDropdown
+                            id={control.id}
+                            value={control.value as string | undefined}
+                            projects={projects}
+                            teamId={selectedCreateKeyTeam?.team_id}
+                            loading={isProjectsLoading || !teams}
+                            onChange={changeProject(control.onChange)}
+                          />
+                        )}
+                      </MountedFormField>
                     )}
-                  </MountedFormField>
+                  </>
                 )}
               </div>
 
@@ -857,10 +885,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                   <MountedFormField
                     label={
                       <span>
-                        {keyOwner === "you" || keyOwner === "another_user" ? "Key Name" : "Service Account ID"}{" "}
+                        {keyOwner === "service_account" ? "Service Account ID" : "Key Name"}{" "}
                         <SimpleTooltip
                           content={
-                            keyOwner === "you" || keyOwner === "another_user"
+                            keyOwner !== "service_account"
                               ? "A descriptive name to identify this key"
                               : "Unique identifier for this service account"
                           }
@@ -870,98 +898,106 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                       </span>
                     }
                     name="key_alias"
-                    required
+                    required={!isPersonalKeyOwner(keyOwner)}
                     rules={requiredRule(
-                      true,
-                      `Please input a ${keyOwner === "you" ? "key name" : "service account ID"}`,
+                      !isPersonalKeyOwner(keyOwner),
+                      `Please input a ${keyOwner === "service_account" ? "service account ID" : "key name"}`,
                     )}
-                    help="required"
+                    help={isPersonalKeyOwner(keyOwner) ? undefined : "required"}
                   >
                     {(control) => <Input {...control} value={(control.value as string | undefined) ?? ""} />}
                   </MountedFormField>
 
-                  <MountedFormField
-                    label={
-                      <span>
-                        Models{" "}
-                        <SimpleTooltip content="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
-                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                        </SimpleTooltip>
-                      </span>
-                    }
-                    name="models"
-                    help={
-                      keyType === "management" || keyType === "read_only"
-                        ? "Models field is disabled for this key type"
-                        : "optional - leave empty to allow access to all models"
-                    }
-                    className="mt-4"
-                  >
-                    {(control) => (
-                      <MultiSelect
-                        id={control.id}
-                        options={modelOptions}
-                        value={(control.value as string[] | undefined) ?? []}
-                        placeholder="Select models"
-                        disabled={keyType === "management" || keyType === "read_only"}
-                        onValueChange={(values) => {
-                          control.onChange(values);
-                          if (values.includes("all-team-models")) {
-                            form.setValue("models", ["all-team-models"]);
-                          } else if (values.includes("all-proxy-models")) {
-                            form.setValue("models", ["all-proxy-models"]);
-                          }
-                        }}
-                      />
-                    )}
-                  </MountedFormField>
+                  {isPersonalKeyOwner(keyOwner) && (
+                    <p className="mt-2 text-sm text-muted-foreground">You can have one active personal key.</p>
+                  )}
 
-                  <MountedFormField
-                    label={
-                      <span>
-                        Key Type{" "}
-                        <SimpleTooltip content="Select the type of key to determine what routes and operations this key can access">
-                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                        </SimpleTooltip>
-                      </span>
-                    }
-                    name="key_type"
-                    className="mt-4"
-                  >
-                    {(control) => (
-                      <Select
-                        items={KEY_TYPE_OPTIONS}
-                        value={control.value as string | undefined}
-                        onValueChange={(value: string | null) =>
-                          value != null && changeKeyType(control.onChange)(value)
-                        }
-                      >
-                        <SelectTrigger
+                  {!isPersonalKeyOwner(keyOwner) && (
+                    <MountedFormField
+                      label={
+                        <span>
+                          Models{" "}
+                          <SimpleTooltip content="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="models"
+                      help={
+                        keyType === "management" || keyType === "read_only"
+                          ? "Models field is disabled for this key type"
+                          : "optional - leave empty to allow access to all models"
+                      }
+                      className="mt-4"
+                    >
+                      {(control) => (
+                        <MultiSelect
                           id={control.id}
-                          className="w-full"
-                          aria-invalid={control["aria-invalid"]}
-                          aria-describedby={control["aria-describedby"]}
+                          options={modelOptions}
+                          value={(control.value as string[] | undefined) ?? []}
+                          placeholder="Select models"
+                          disabled={keyType === "management" || keyType === "read_only"}
+                          onValueChange={(values) => {
+                            control.onChange(values);
+                            if (values.includes("all-team-models")) {
+                              form.setValue("models", ["all-team-models"]);
+                            } else if (values.includes("all-proxy-models")) {
+                              form.setValue("models", ["all-proxy-models"]);
+                            }
+                          }}
+                        />
+                      )}
+                    </MountedFormField>
+                  )}
+
+                  {!isPersonalKeyOwner(keyOwner) && (
+                    <MountedFormField
+                      label={
+                        <span>
+                          Key Type{" "}
+                          <SimpleTooltip content="Select the type of key to determine what routes and operations this key can access">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="key_type"
+                      className="mt-4"
+                    >
+                      {(control) => (
+                        <Select
+                          items={KEY_TYPE_OPTIONS}
+                          value={control.value as string | undefined}
+                          onValueChange={(value: string | null) =>
+                            value != null && changeKeyType(control.onChange)(value)
+                          }
                         >
-                          <SelectValue placeholder="Select key type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {KEY_TYPE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <div className="py-1">
-                                <div className="font-medium">{option.label}</div>
-                                <div className="mt-0.5 text-[11px] text-muted-foreground">{option.hint}</div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </MountedFormField>
+                          <SelectTrigger
+                            id={control.id}
+                            className="w-full"
+                            aria-invalid={control["aria-invalid"]}
+                            aria-describedby={control["aria-describedby"]}
+                          >
+                            <SelectValue placeholder="Select key type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {KEY_TYPE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                <div className="py-1">
+                                  <div className="font-medium">{option.label}</div>
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">{option.hint}</div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </MountedFormField>
+                  )}
                 </div>
               )}
 
               {/* Section 3: Optional Settings */}
-              {!isFormDisabled && (
+              {!isPersonalKeyOwner(keyOwner) && !isFormDisabled && (
                 <div className="mb-8">
                   <Collapsible className="mt-4 mb-4 overflow-hidden rounded-lg border">
                     <h3 className="m-0 text-lg font-medium text-foreground">

@@ -2,7 +2,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderWithProviders, screen, testQueryClient, waitFor } from "../../../tests/test-utils";
 import type { Team } from "../key_team_helpers/key_list";
-import { keyCreateCall, keyCreateServiceAccountCall, modelAvailableCall, userFilterUICall } from "../networking";
+import {
+  keyCreateCall,
+  keyCreateServiceAccountCall,
+  modelAvailableCall,
+  personalKeyCreateCall,
+  userFilterUICall,
+} from "../networking";
 import { toast } from "@/lib/toast";
 import CreateKey from "./create_key_button";
 
@@ -77,13 +83,14 @@ vi.mock("../networking", async (importOriginal) => {
     ...actual,
     keyCreateCall: vi.fn().mockResolvedValue({ key: "sk-created", soft_budget: null }),
     keyCreateServiceAccountCall: vi.fn().mockResolvedValue({ key: "sk-service-account", soft_budget: null }),
+    personalKeyCreateCall: vi.fn().mockResolvedValue({ key: "sk-personal", soft_budget: null }),
     modelAvailableCall: vi.fn().mockResolvedValue({ data: [{ id: "gpt-4" }] }),
     getGuardrailsList: vi.fn().mockResolvedValue({ guardrails: [] }),
     getPoliciesList: vi.fn().mockResolvedValue({ policies: [] }),
     getPromptsList: vi.fn().mockResolvedValue({ prompts: [] }),
     getPossibleUserRoles: vi.fn().mockResolvedValue({}),
     userFilterUICall: vi.fn().mockResolvedValue([]),
-    getAgentsList: vi.fn().mockResolvedValue({ agents: [] }),
+    getAgentsList: vi.fn().mockResolvedValue({ agents: [{ agent_id: "agent-1", agent_name: "Test Agent" }] }),
     getPassThroughEndpointsCall: vi.fn().mockResolvedValue({ endpoints: [] }),
     vectorStoreListCall: vi.fn().mockResolvedValue({ data: [] }),
     listMCPTools: vi.fn().mockResolvedValue(emptyMcpTools),
@@ -122,7 +129,7 @@ const ALL_CLOSED_PAYLOAD = {
   key_alias: "contract-key",
   models: [],
   key_type: "llm_api",
-  user_id: "test-user-id",
+  agent_id: "agent-1",
   duration: null,
   metadata: "{}",
 };
@@ -182,10 +189,18 @@ const ALL_OPEN_PAYLOAD = {
 const renderCreateKey = (props: Partial<React.ComponentProps<typeof CreateKey>> = {}) =>
   renderWithProviders(<CreateKey team={null} teams={[]} data={[]} addKey={vi.fn()} {...props} />);
 
-const openModal = async (props: Partial<React.ComponentProps<typeof CreateKey>> = {}) => {
+const openModal = async (
+  props: Partial<React.ComponentProps<typeof CreateKey>> = {},
+  owner: "agent" | "you" = "agent",
+) => {
   const view = renderCreateKey(props);
   await userEvent.click(screen.getByTestId("create-key-button"));
   await screen.findByRole("button", { name: /^create key$/i });
+  if (owner === "agent") {
+    await userEvent.click(screen.getByRole("radio", { name: /Agent/ }));
+    await userEvent.click(await screen.findByPlaceholderText("Select an agent"));
+    await userEvent.click(await screen.findByRole("option", { name: "Test Agent" }));
+  }
   return view;
 };
 
@@ -225,6 +240,7 @@ describe("CreateKey", () => {
     vi.mocked(keyCreateServiceAccountCall)
       .mockClear()
       .mockResolvedValue({ key: "sk-service-account", soft_budget: null });
+    vi.mocked(personalKeyCreateCall).mockClear().mockResolvedValue({ key: "sk-personal", soft_budget: null });
     vi.mocked(userFilterUICall).mockClear().mockResolvedValue([]);
     vi.mocked(toast.fromError).mockClear();
     vi.mocked(modelAvailableCall)
@@ -300,7 +316,7 @@ describe("CreateKey", () => {
       [
         "every section closed",
         false,
-        ["team_id", "key_alias", "models", "key_type", "user_id", "duration", "metadata"],
+        ["team_id", "key_alias", "models", "key_type", "agent_id", "duration", "metadata"],
       ],
       [
         "Optional Settings open",
@@ -312,7 +328,7 @@ describe("CreateKey", () => {
           "key_type",
           "tpm_limit_type",
           "rpm_limit_type",
-          "user_id",
+          "agent_id",
           "duration",
           "metadata",
         ],
@@ -547,12 +563,22 @@ describe("CreateKey", () => {
   });
 
   describe("key ownership", () => {
-    it("stamps the signed-in user onto user_id when the key is owned by you", async () => {
-      await openModal();
-      await nameTheKey();
+    it("creates an admin's personal key without team, model, or advanced settings", async () => {
+      await openModal({}, "you");
+
+      expect(screen.getByText("You can have one active personal key.")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Models")).not.toBeInTheDocument();
+      expect(screen.queryByText("Optional Settings")).not.toBeInTheDocument();
+
       await submit();
 
-      expect((await createdPayload()).user_id).toBe("test-user-id");
+      await waitFor(() => {
+        expect(vi.mocked(personalKeyCreateCall)).toHaveBeenCalledWith("test-token", null, "");
+      });
+      expect(vi.mocked(keyCreateCall)).not.toHaveBeenCalled();
+      expect(vi.mocked(keyCreateServiceAccountCall)).not.toHaveBeenCalled();
     });
 
     it("mounts the user search control only once Another User is chosen", async () => {
@@ -656,7 +682,7 @@ describe("CreateKey", () => {
     });
 
     it("prefills models once the available model list arrives", async () => {
-      renderCreateKey({ autoOpenCreate: true, prefillData: { models: ["gpt-4"] } });
+      renderCreateKey({ autoOpenCreate: true, prefillData: { owned_by: "service_account", models: ["gpt-4"] } });
 
       expect(await screen.findByLabelText("gpt-4", {}, { timeout: 5000 })).toBeInTheDocument();
     });
@@ -665,9 +691,11 @@ describe("CreateKey", () => {
       renderCreateKey({
         teams: [{ team_id: "team-1", models: [] } as unknown as Team],
         autoOpenCreate: true,
-        prefillData: { team_id: "team-404", key_alias: "example-key" },
+        prefillData: { owned_by: "agent", team_id: "team-404", key_alias: "example-key" },
       });
 
+      await userEvent.click(await screen.findByPlaceholderText("Select an agent"));
+      await userEvent.click(await screen.findByRole("option", { name: "Test Agent" }));
       await userEvent.type(await screen.findByLabelText(/Key Name/), "-suffix");
       await submit();
 
@@ -690,9 +718,10 @@ describe("CreateKey", () => {
     });
 
     it("prefills the key type", async () => {
-      renderCreateKey({ autoOpenCreate: true, prefillData: { key_type: "management" } });
+      renderCreateKey({ autoOpenCreate: true, prefillData: { owned_by: "agent", key_type: "management" } });
 
-      await screen.findByLabelText(/Key Name/);
+      await userEvent.click(await screen.findByPlaceholderText("Select an agent"));
+      await userEvent.click(await screen.findByRole("option", { name: "Test Agent" }));
       await userEvent.type(await screen.findByLabelText(/Key Name/), "prefilled-type");
       await submit();
 
@@ -981,7 +1010,10 @@ describe("CreateKey", () => {
       }
 
       await submit();
-      expect((await createdPayload()).user_id).toBe("u-77");
+      await waitFor(() => {
+        expect(vi.mocked(personalKeyCreateCall)).toHaveBeenCalledWith("test-token", "u-77", "contract-key");
+      });
+      expect(vi.mocked(keyCreateCall)).not.toHaveBeenCalled();
     });
   });
 
@@ -1066,6 +1098,7 @@ describe("CreateKey", () => {
       vi.mocked(modelAvailableCall).mockResolvedValue({ data: [{ id: "no-default-models" }] });
       renderCreateKey();
       await userEvent.click(screen.getByTestId("create-key-button"));
+      await userEvent.click(screen.getByRole("radio", { name: /Agent/ }));
 
       expect(await screen.findByText(/Please select a team to continue/)).toBeInTheDocument();
       expect(screen.queryByLabelText(/Key Name/)).not.toBeInTheDocument();
@@ -1087,7 +1120,10 @@ describe("CreateKey", () => {
       await userEvent.click(await screen.findByRole("option", { name: "alice@example.com (u-77)" }));
       await submit();
 
-      expect((await createdPayload()).user_id).toBe("u-77");
+      await waitFor(() => {
+        expect(vi.mocked(personalKeyCreateCall)).toHaveBeenCalledWith("test-token", "u-77", "contract-key");
+      });
+      expect(vi.mocked(keyCreateCall)).not.toHaveBeenCalled();
     });
 
     it("surfaces the required message on a field that carries no help text", async () => {
