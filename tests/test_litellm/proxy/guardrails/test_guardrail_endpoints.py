@@ -656,6 +656,18 @@ def test_get_provider_specific_params():
         "options": ["fail_open", "fail_closed"],
         "default_value": "fail_open",
     }
+    assert presidio_fields["presidio_max_parallel_requests"] == {
+        "description": (
+            "Maximum number of message or tool-call segments analyzed by Presidio concurrently. "
+            "Each segment still performs analyze and anonymize in order."
+        ),
+        "required": False,
+        "type": "number",
+        "default_value": 4,
+        "min": 1,
+        "max": 64,
+        "step": 1,
+    }
 
     # Check nested fields within optional_params
     nested_fields = fields["optional_params"]["fields"]

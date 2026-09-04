@@ -257,6 +257,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_ad_hoc_recognizers: str | None = None,
         logging_only: bool | None = None,
         presidio_filter_scope: Literal["input", "output", "both"] = "both",
+        presidio_max_parallel_requests: int = 4,
         pii_entities_config: dict[PiiEntityType | str, PiiAction] | None = None,
         presidio_language: str | None = None,
         presidio_score_thresholds: dict[PiiEntityType | str, float] | None = None,
@@ -276,6 +277,13 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.output_parse_pii = output_parse_pii or False
         self.apply_to_output = apply_to_output
         self.presidio_filter_scope = presidio_filter_scope
+        if (
+            isinstance(presidio_max_parallel_requests, bool)
+            or presidio_max_parallel_requests < 1
+            or presidio_max_parallel_requests > 64
+        ):
+            raise ValueError("presidio_max_parallel_requests must be between 1 and 64")
+        self.presidio_max_parallel_requests = presidio_max_parallel_requests
         self.unreachable_fallback = unreachable_fallback
 
         # When output_parse_pii or apply_to_output is enabled, the guardrail must
@@ -1030,6 +1038,31 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         finally:
             _PRESIDIO_LOG_CONTEXT.reset(context_token)
 
+    async def _check_pii_with_limit(
+        self,
+        semaphore: asyncio.Semaphore,
+        text: str,
+        output_parse_pii: bool,
+        presidio_config: PresidioPerRequestConfig | None,
+        request_data: dict,
+        log_context: PresidioLogContext | None = None,
+    ) -> str:
+        async with semaphore:
+            if log_context is not None:
+                return await self._check_pii_with_context(
+                    text=text,
+                    output_parse_pii=output_parse_pii,
+                    presidio_config=presidio_config,
+                    request_data=request_data,
+                    log_context=log_context,
+                )
+            return await self.check_pii(
+                text=text,
+                output_parse_pii=output_parse_pii,
+                presidio_config=presidio_config,
+                request_data=request_data,
+            )
+
     async def check_pii(
         self,
         text: str,
@@ -1188,6 +1221,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 return data
             tasks: Final = []
             task_mappings: list[tuple[int, int | None]] = []  # Track (message_index, content_index) for each task
+            semaphore = asyncio.Semaphore(self.presidio_max_parallel_requests)
 
             for msg_idx, m in enumerate(messages):
                 content = m.get("content", None)
@@ -1195,7 +1229,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     continue
                 if isinstance(content, str):
                     tasks.append(
-                        self.check_pii(
+                        self._check_pii_with_limit(
+                            semaphore=semaphore,
                             text=content,
                             output_parse_pii=self.output_parse_pii,
                             presidio_config=presidio_config,
@@ -1209,7 +1244,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         if text_str is None:
                             continue
                         tasks.append(
-                            self.check_pii(
+                            self._check_pii_with_limit(
+                                semaphore=semaphore,
                                 text=text_str,
                                 output_parse_pii=self.output_parse_pii,
                                 presidio_config=presidio_config,
@@ -2342,7 +2378,6 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         # unmask the text instead of masking it.
         pii_tokens = self._get_restorable_pii_tokens(request_data)
 
-        new_texts = []
         should_unmask_response = (
             input_type == "response" and bool(pii_tokens) and self.output_parse_pii and not self.apply_to_output
         )
@@ -2351,10 +2386,25 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 response=request_data.get("response"),
                 logging_obj=logging_obj,
             )
+
+        tool_call_functions: list[tuple[int, dict]] = []
+        tool_calls = inputs.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call_index, tool_call in enumerate(tool_calls):
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function")
+                if isinstance(function, dict) and isinstance(function.get("arguments"), str):
+                    tool_call_functions.append((tool_call_index, function))
+
         if should_unmask_response:
-            for text in texts:
-                new_texts.append(self._unmask_pii_text(text, pii_tokens))
+            inputs["texts"] = [self._unmask_pii_text(text, pii_tokens) for text in texts]
+            for _, function in tool_call_functions:
+                arguments = cast(str, function["arguments"])
+                function["arguments"] = self._unmask_pii_text(arguments, pii_tokens)
         else:
+            semaphore = asyncio.Semaphore(self.presidio_max_parallel_requests)
+            tasks = []
             for text_index, text in enumerate(texts):
                 input_source: GuardrailInputSource = (
                     text_sources[text_index]
@@ -2364,38 +2414,29 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         "path": f"texts[{text_index}]",
                     }
                 )
-                modified_text = await self._check_pii_with_context(
-                    text=text,
-                    output_parse_pii=self._should_create_reversible_tokens(
-                        self.output_parse_pii,
-                        input_source,
-                    ),
-                    presidio_config=None,
-                    request_data=request_data,
-                    log_context={
-                        "guardrail_run_id": guardrail_run_id,
-                        "guardrail_event": guardrail_event,
-                        "input_source": input_source,
-                    },
+                tasks.append(
+                    self._check_pii_with_limit(
+                        semaphore=semaphore,
+                        text=text,
+                        output_parse_pii=self._should_create_reversible_tokens(
+                            self.output_parse_pii,
+                            input_source,
+                        ),
+                        presidio_config=None,
+                        request_data=request_data,
+                        log_context={
+                            "guardrail_run_id": guardrail_run_id,
+                            "guardrail_event": guardrail_event,
+                            "input_source": input_source,
+                        },
+                    )
                 )
-                new_texts.append(modified_text)
-        inputs["texts"] = new_texts
 
-        tool_calls = inputs.get("tool_calls")
-        if isinstance(tool_calls, list):
-            for tool_call_index, tool_call in enumerate(tool_calls):
-                if not isinstance(tool_call, dict):
-                    continue
-                function = tool_call.get("function")
-                if not isinstance(function, dict):
-                    continue
-                arguments = function.get("arguments")
-                if not isinstance(arguments, str):
-                    continue
-                if should_unmask_response:
-                    function["arguments"] = self._unmask_pii_text(arguments, pii_tokens)
-                else:
-                    function["arguments"] = await self._check_pii_with_context(
+            for tool_call_index, function in tool_call_functions:
+                arguments = cast(str, function["arguments"])
+                tasks.append(
+                    self._check_pii_with_limit(
+                        semaphore=semaphore,
                         text=arguments,
                         output_parse_pii=self.output_parse_pii,
                         presidio_config=None,
@@ -2409,6 +2450,22 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                             },
                         },
                     )
+                )
+
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            if tasks:
+                # ContextVar updates made inside gather tasks do not propagate
+                # back to this parent task. Tell the outer logging decorator
+                # that each real Presidio check already recorded its own entry.
+                self.mark_guardrail_information_recorded()
+            first_exception = next((result for result in responses if isinstance(result, Exception)), None)
+            if first_exception is not None:
+                raise first_exception
+
+            text_count = len(texts)
+            inputs["texts"] = [cast(str, result) for result in responses[:text_count]]
+            for (_, function), result in zip(tool_call_functions, responses[text_count:], strict=True):
+                function["arguments"] = cast(str, result)
         if input_type == "request" and not should_unmask_response:
             inputs = cast(
                 GenericGuardrailAPIInputs,
@@ -2426,6 +2483,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             if "unreachable_fallback" in litellm_params.model_fields_set
             else "fail_closed"
         )
+        if "presidio_max_parallel_requests" in litellm_params.model_fields_set:
+            self.presidio_max_parallel_requests = litellm_params.presidio_max_parallel_requests
         if litellm_params.pii_entities_config:
             self.pii_entities_config = litellm_params.pii_entities_config
         if litellm_params.presidio_score_thresholds:

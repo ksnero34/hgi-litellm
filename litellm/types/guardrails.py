@@ -364,6 +364,16 @@ class PresidioPresidioConfigModelUserInterface(BaseModel):
         default=None,
         description="Where to apply Presidio checks: input, output, or both (default).",
     )
+    presidio_max_parallel_requests: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        description=(
+            "Maximum number of message or tool-call segments analyzed by Presidio concurrently. "
+            "Each segment still performs analyze and anonymize in order."
+        ),
+        json_schema_extra={"min": 1, "max": 64, "step": 1},
+    )
     unreachable_fallback: Literal["fail_open", "fail_closed"] = Field(
         default="fail_open",
         description=(

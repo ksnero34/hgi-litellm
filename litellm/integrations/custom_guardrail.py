@@ -1100,6 +1100,11 @@ class CustomGuardrail(CustomLogger):
         except Exception:
             pass
 
+    @staticmethod
+    def mark_guardrail_information_recorded() -> None:
+        """Propagate self-recording from child asyncio tasks to a wrapped parent call."""
+        _guardrail_self_recorded.set(True)
+
     async def apply_guardrail(
         self,
         inputs: GenericGuardrailAPIInputs,

@@ -4035,6 +4035,54 @@ async def test_parallel_pre_call_renumbers_tokens_by_message_order():
 
 
 @pytest.mark.asyncio
+async def test_apply_guardrail_limits_parallel_checks_and_preserves_input_order():
+    guardrail = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        presidio_max_parallel_requests=2,
+    )
+    active_checks = 0
+    max_active_checks = 0
+
+    async def track_parallelism(text, output_parse_pii, presidio_config, request_data):
+        nonlocal active_checks, max_active_checks
+        active_checks += 1
+        max_active_checks = max(max_active_checks, active_checks)
+        await asyncio.sleep(0.01)
+        active_checks -= 1
+        return f"masked:{text}"
+
+    guardrail.check_pii = track_parallelism
+    inputs = {
+        "texts": ["first", "second", "third"],
+        "tool_calls": [
+            {
+                "type": "function",
+                "function": {"name": "lookup", "arguments": "fourth"},
+            }
+        ],
+    }
+
+    result = await guardrail.apply_guardrail(
+        inputs=inputs,
+        request_data={"metadata": {}},
+        input_type="request",
+    )
+
+    assert max_active_checks == 2
+    assert result["texts"] == ["masked:first", "masked:second", "masked:third"]
+    assert result["tool_calls"][0]["function"]["arguments"] == "masked:fourth"
+
+
+@pytest.mark.parametrize("invalid_limit", [0, 65, True])
+def test_presidio_rejects_invalid_parallel_request_limit(invalid_limit):
+    with pytest.raises(ValueError, match="presidio_max_parallel_requests must be between 1 and 64"):
+        _OPTIONAL_PresidioPIIMasking(
+            mock_testing=True,
+            presidio_max_parallel_requests=invalid_limit,
+        )
+
+
+@pytest.mark.asyncio
 async def test_apply_guardrail_masks_tool_call_arguments():
     guardrail = _OPTIONAL_PresidioPIIMasking(
         mock_testing=True,
