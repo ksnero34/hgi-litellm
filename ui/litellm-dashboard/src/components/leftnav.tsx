@@ -20,7 +20,7 @@ import {
   SidebarMenuSub,
   SidebarSeparator,
   sidebarMenuButtonVariants,
-} from "@/components/ui/sidebar";
+} from "@/components/shared/Sidebar";
 import {
   Activity,
   BarChart3,
@@ -72,7 +72,6 @@ import {
   rolesWithWriteAccess,
 } from "../utils/roles";
 import BetaBadge from "./BetaBadge";
-import NewBadge from "./common_components/NewBadge";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
 import SidebarUsageCard from "./SidebarUsageCard";
 import { i18n } from "@/i18n/i18n";
@@ -308,7 +307,6 @@ const menuGroups: MenuGroup[] = [
         key: "settings",
         page: "settings",
         label: "Settings",
-        badge: <NewBadge />,
         icon: <SettingsIcon {...ICON} />,
         roles: all_admin_roles,
         children: [
@@ -330,11 +328,6 @@ const menuGroups: MenuGroup[] = [
             key: "admin-panel",
             page: "admin-panel",
             label: "Admin Settings",
-            badge: (
-              <NewBadge dot>
-                <span />
-              </NewBadge>
-            ),
             icon: <SettingsIcon {...ICON} />,
             roles: all_admin_roles,
           },

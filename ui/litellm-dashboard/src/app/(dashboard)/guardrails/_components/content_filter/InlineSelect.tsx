@@ -43,7 +43,7 @@ export default function InlineSelect<T extends string>({
       </Button>
 
       {open && (
-        <div className="absolute top-full left-0 z-20 mt-1 min-w-full rounded-md border border-border bg-popover p-1 shadow-md">
+        <div className="absolute top-full left-0 z-sticky mt-1 min-w-full rounded-md border border-border bg-popover p-1 shadow-md">
           {options.map((option) => (
             <button
               key={option.value}

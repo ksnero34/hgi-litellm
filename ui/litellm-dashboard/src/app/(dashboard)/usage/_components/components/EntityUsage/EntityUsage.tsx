@@ -740,7 +740,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
       content: <EndpointUsage userSpendData={spendData} />,
     },
   ];
-  const hasEntityListFilters = entityList !== null && entityList.length > 0;
+  const hasEntityListFilters = entityList !== null;
   const supportsSelectableFilters = entityType !== "team" && entityType !== "user";
   const showSelectableFilters = supportsSelectableFilters && hasEntityListFilters;
   const userFilterValue = selectedTags[0] ?? null;

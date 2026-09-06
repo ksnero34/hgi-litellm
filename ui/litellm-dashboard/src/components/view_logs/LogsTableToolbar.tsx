@@ -24,6 +24,8 @@ interface LogsTableToolbarProps {
   onSelectedTimeIntervalChange: (value: { value: number; unit: string }) => void;
   isLiveTail: boolean;
   onIsLiveTailChange: (value: boolean) => void;
+  excludeInternalHealthChecks: boolean;
+  onExcludeInternalHealthChecksChange: (value: boolean) => void;
   onResetToFirstPage: () => void;
   onResetFilters: () => void;
 }
@@ -39,6 +41,8 @@ export function LogsTableToolbar({
   onSelectedTimeIntervalChange,
   isLiveTail,
   onIsLiveTailChange,
+  excludeInternalHealthChecks,
+  onExcludeInternalHealthChecksChange,
   onResetToFirstPage,
   onResetFilters,
 }: LogsTableToolbarProps) {
@@ -125,6 +129,15 @@ export function LogsTableToolbar({
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium">{t("observabilityExtra.logs.liveTail")}</span>
         <Switch checked={isLiveTail} onCheckedChange={onIsLiveTailChange} aria-label="Live Tail" />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">Hide Health Checks</span>
+        <Switch
+          checked={excludeInternalHealthChecks}
+          onCheckedChange={onExcludeInternalHealthChecksChange}
+          aria-label="Hide Health Checks"
+        />
       </div>
 
       <Button variant="outline" size="sm" onClick={onResetFilters}>

@@ -38,6 +38,11 @@ from typing_extensions import NotRequired, ReadOnly
 import litellm
 from litellm import get_secret
 from litellm._logging import verbose_proxy_logger
+from litellm.constants import (
+    DEFAULT_PRESIDIO_ANALYZE_CHUNK_SIZE_BYTES,
+    PRESIDIO_ANALYZE_CHUNK_CONCURRENCY,
+    PRESIDIO_ANALYZE_CHUNK_OVERLAP_CHARS,
+)
 from litellm.types.utils import CallTypes, GenericGuardrailAPIInputs, GuardrailInputSource
 
 if TYPE_CHECKING:
@@ -104,6 +109,18 @@ class _StreamingPiiState:
     pending: str = ""
     emitted: str = ""
     template: object | None = None
+
+
+_LoopSemaphores = dict[asyncio.AbstractEventLoop, asyncio.Semaphore]
+
+
+def _json_escaped_len(text: str) -> int:
+    """
+    Byte length of ``text`` as it appears serialized inside the JSON request
+    body sent to Presidio (``json.dumps`` escapes non-ASCII characters, so a
+    3-byte UTF-8 character can occupy 6+ bytes on the wire).
+    """
+    return len(json.dumps(text).encode("utf-8")) - 2  # strip the surrounding quotes
 
 
 class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
@@ -271,6 +288,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_score_thresholds: dict[PiiEntityType | str, float] | None = None,
         presidio_entities_deny_list: list[PiiEntityType | str] | None = None,
         unreachable_fallback: Literal["fail_closed", "fail_open"] = "fail_closed",
+        presidio_analyze_chunk_size_bytes: int | None = None,
         **kwargs,
     ):
         if logging_only is True:
@@ -313,6 +331,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.presidio_score_thresholds: dict[PiiEntityType | str, float] = presidio_score_thresholds or {}
         self.presidio_entities_deny_list: list[PiiEntityType | str] = presidio_entities_deny_list or []
         self.presidio_language = presidio_language or "en"
+        self.presidio_analyze_chunk_size_bytes: int = self._coerce_analyze_chunk_size(presidio_analyze_chunk_size_bytes)
         # Shared HTTP session to prevent memory leaks (issue #14540)
         self._http_session: aiohttp.ClientSession | None = None
         # Lock to prevent race conditions when creating session under concurrent load
@@ -325,6 +344,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         # Loop-bound session cache for background threads
         self._loop_sessions: dict[asyncio.AbstractEventLoop, aiohttp.ClientSession] = {}
+
+        # Per-loop semaphores bounding chunked-analyze fan-out across ALL
+        # concurrent oversized blocks/requests on this instance, not per call
+        self._loop_chunk_semaphores: _LoopSemaphores = {}  # mutable-ok: per-loop semaphore cache
 
         if mock_testing is True:  # for testing purposes only
             return
@@ -406,6 +429,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         pool: Final = self.__dict__.get("_session_pool")
         self._http_session = None
         self._loop_sessions.clear()
+        self._loop_chunk_semaphores.clear()
         if pool is not None:
             await pool.close()
 
@@ -716,6 +740,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             with analysis_request_scope(max_concurrency=self.presidio_max_parallel_requests):
                 return await self.analyze_text(text, presidio_config, request_data)
         try:
+            if len(text) > 1 and _json_escaped_len(text) > self.presidio_analyze_chunk_size_bytes:
+                return await asyncio.wait_for(
+                    self._analyze_text_chunked(text, presidio_config, request_data),
+                    timeout=context.remaining(),
+                )
             results: Final = await self._analysis_cache.analyze_many(
                 (payload,),
                 context,
@@ -748,11 +777,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         started: Final = datetime.now(timezone.utc).timestamp()
         try:
             payloads: Final = tuple(
-                self._get_presidio_analyze_request_payload(
-                    self._text_for_pii_analysis(text), presidio_config, request_data
-                )
+                self._get_presidio_analyze_request_payload(chunk_text, presidio_config, request_data)
                 for text in texts
                 if text and text.strip()
+                for _, chunk_text in self._analysis_text_chunks(self._text_for_pii_analysis(text))
             )
             await self._analysis_cache.analyze_many(
                 payloads,
@@ -838,6 +866,213 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError, KeyError, RuntimeError) as error:
             raise _PresidioServiceError(f"Presidio PII analysis failed: {type(error).__name__}") from None
+
+    async def _analyze_text_chunked(
+        self,
+        text: str,
+        presidio_config: PresidioPerRequestConfig | None,
+        request_data: dict,  # mutable-ok: shared per-request state dict, matching analyze_text's parameter
+    ) -> list[PresidioAnalyzeResponseItem]:  # mutable-ok: analyze_text's declared return type requires list
+        """
+        Analyze an oversized text by splitting it into overlapping chunks.
+
+        Each chunk serializes to at most ``presidio_analyze_chunk_size_bytes``
+        bytes inside the JSON request body, so every /analyze call stays below
+        the analyzer deployment's request body limit; per-chunk results are remapped onto the original text and
+        merged. Raises exactly like a single ``analyze_text`` call if any chunk
+        fails.
+
+        Only the analyzer side is chunked: the later anonymize call still
+        receives the full original text, so texts above the anonymizer's own
+        body limit that contain detections keep failing there.
+        """
+        text_chunks: Final = self._split_text_for_analysis(
+            text=text,
+            chunk_size_bytes=self.presidio_analyze_chunk_size_bytes,
+            overlap_chars=PRESIDIO_ANALYZE_CHUNK_OVERLAP_CHARS,
+        )
+        verbose_proxy_logger.debug(
+            "Presidio analyze: text exceeds %s bytes, analyzing in %s overlapping chunks",
+            self.presidio_analyze_chunk_size_bytes,
+            len(text_chunks),
+        )
+        analyze_semaphore: Final = self._get_chunk_semaphore()
+
+        async def _analyze_chunk_bounded(
+            chunk_text: str,
+        ) -> Sequence[PresidioAnalyzeResponseItem] | _PresidioAnonymizeResponse:
+            async with analyze_semaphore:
+                return await self.analyze_text(
+                    text=chunk_text,
+                    presidio_config=presidio_config,
+                    request_data=request_data,
+                )
+
+        gathered: Final = tuple(
+            [
+                result
+                for offset in range(0, len(text_chunks), PRESIDIO_ANALYZE_CHUNK_CONCURRENCY)
+                for result in await asyncio.gather(
+                    *(
+                        _analyze_chunk_bounded(chunk_text)
+                        for _, chunk_text in text_chunks[offset : offset + PRESIDIO_ANALYZE_CHUNK_CONCURRENCY]
+                    ),
+                    return_exceptions=True,
+                )
+            ]
+        )
+        chunk_results: Final = []
+        for result in gathered:
+            if isinstance(result, BaseException):
+                raise result
+            # analyze_text only returns a non-list shape when mock_redacted_text
+            # is set, and the chunked path is never entered in that case.
+            typed_result = cast("list[PresidioAnalyzeResponseItem]", result)  # cast-ok: gather() erases element type
+            # Apply the configured score thresholds and deny list BEFORE the
+            # overlap merge: a below-threshold detection must not win overlap
+            # resolution against one the thresholds would keep. The same filter
+            # runs again downstream in check_pii, where it is a no-op for the
+            # already-filtered items.
+            filtered_result = self.filter_analyze_results_by_score(analyze_results=typed_result)
+            chunk_results.append(
+                cast("list[PresidioAnalyzeResponseItem]", filtered_result)  # cast-ok: list input yields list
+            )
+        return self._merge_chunked_analyze_results(text_chunks=text_chunks, chunk_results=chunk_results)
+
+    def _analysis_text_chunks(self, text: str) -> Sequence[tuple[int, str]]:
+        if len(text) <= 1 or _json_escaped_len(text) <= self.presidio_analyze_chunk_size_bytes:
+            return ((0, text),)
+        return self._split_text_for_analysis(
+            text, self.presidio_analyze_chunk_size_bytes, PRESIDIO_ANALYZE_CHUNK_OVERLAP_CHARS
+        )
+
+    def _get_chunk_semaphore(self) -> asyncio.Semaphore:
+        """Per-event-loop semaphore shared by all chunked analyze calls on this instance."""
+        loop: Final = asyncio.get_running_loop()
+        existing: Final = self._loop_chunk_semaphores.get(loop)
+        if existing is not None:
+            return existing
+        created: Final = asyncio.Semaphore(PRESIDIO_ANALYZE_CHUNK_CONCURRENCY)
+        self._loop_chunk_semaphores[loop] = created
+        return created
+
+    @staticmethod
+    def _coerce_analyze_chunk_size(value: int | None) -> int:
+        """
+        Validate a configured chunk size, falling back to the default.
+
+        Non-positive values would either bypass chunking entirely or degenerate
+        it into per-character splits (silently disabling detection), so they are
+        replaced by the default; values below 4 bytes are floored to 4 and the
+        splitter always emits at least one character per chunk, so the chunked
+        path can never re-enter itself.
+        """
+        if not value or value <= 0:
+            return DEFAULT_PRESIDIO_ANALYZE_CHUNK_SIZE_BYTES
+        return max(value, 4)
+
+    @staticmethod
+    def _split_text_for_analysis(
+        text: str,
+        chunk_size_bytes: int,
+        overlap_chars: int,
+    ) -> Sequence[tuple[int, str]]:
+        """
+        Split ``text`` into chunks whose JSON-serialized form is at most
+        ``chunk_size_bytes`` bytes (the analyzer body limit applies to the
+        JSON request body, where non-ASCII characters are escaped and larger
+        than their raw UTF-8 encoding).
+
+        Consecutive chunks overlap by up to ``overlap_chars`` characters so a
+        PII entity up to that length lying across a chunk boundary is still
+        seen whole by one of the chunks (longer boundary-straddling entities
+        may be seen only truncated); ``_merge_chunked_analyze_results`` resolves
+        the duplicate and truncated detections this produces. Returns
+        ``(char_offset, chunk_text)`` pairs where ``char_offset`` is the
+        chunk's start position in the original text.
+        """
+        chunks: Final = []
+        text_len: Final = len(text)
+        start = 0  # rebind-ok: chunk cursor advances across the loop
+        while start < text_len:
+            # Serialized length of a character is at least 1 byte, so a slice
+            # of chunk_size_bytes characters is a sufficient search window.
+            candidate = text[start : start + chunk_size_bytes]
+            if _json_escaped_len(candidate) <= chunk_size_bytes:
+                chunk = candidate
+            else:
+                # Largest prefix whose serialized form fits the budget.
+                low, high = 1, len(candidate)
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    if _json_escaped_len(candidate[:mid]) <= chunk_size_bytes:
+                        low = mid
+                    else:
+                        high = mid - 1
+                # low >= 1 keeps the loop advancing even when a single
+                # character serializes over a (floored, tiny) budget.
+                chunk = candidate[:low]
+            end = start + len(chunk)
+            chunks.append((start, chunk))
+            if end >= text_len:
+                break
+            # Cap the overlap so the next chunk always makes forward progress.
+            effective_overlap = min(overlap_chars, len(chunk) // 2)
+            start = max(start + 1, end - effective_overlap)
+        return chunks
+
+    @staticmethod
+    def _merge_chunked_analyze_results(
+        text_chunks: Sequence[tuple[int, str]],
+        chunk_results: Sequence[Sequence[PresidioAnalyzeResponseItem]],
+    ) -> list[PresidioAnalyzeResponseItem]:  # mutable-ok: analyze_text's declared return type requires list
+        """
+        Remap per-chunk analyzer offsets onto the original text and merge.
+
+        A detection in an overlap region is reported by both neighbouring
+        chunks, and a boundary entity can additionally be reported truncated by
+        the chunk that saw only its head or tail. Same-entity-type detections
+        with overlapping remapped spans are therefore combined into their union
+        after policy filtering, preserving every detected character. The maximum
+        score of the combined detections is retained.
+        Detections of DIFFERENT entity types may still overlap, exactly as in a
+        single-call response. The merged list is sorted by position.
+        """
+        remapped: Final = []
+        for (char_offset, _), results in zip(text_chunks, chunk_results, strict=True):
+            for original_item in results:
+                item = copy.deepcopy(original_item)
+                item_start = item.get("start")
+                item_end = item.get("end")
+                if item_start is not None:
+                    item["start"] = item_start + char_offset
+                if item_end is not None:
+                    item["end"] = item_end + char_offset
+                remapped.append(item)
+
+        def merge_span(
+            accumulated: tuple[PresidioAnalyzeResponseItem, ...], item: PresidioAnalyzeResponseItem
+        ) -> tuple[PresidioAnalyzeResponseItem, ...]:
+            if not accumulated:
+                return (item,)
+            previous: Final = accumulated[-1]
+            if previous.get("entity_type") != item.get("entity_type") or (item.get("start") or 0) >= (
+                previous.get("end") or 0
+            ):
+                return (*accumulated, item)
+            combined: Final[PresidioAnalyzeResponseItem] = {
+                **previous,
+                "end": max(previous.get("end") or 0, item.get("end") or 0),
+                "score": max(previous.get("score") or 0.0, item.get("score") or 0.0),
+            }
+            return (*accumulated[:-1], combined)
+
+        merged: Final = reduce(
+            merge_span,
+            sorted(remapped, key=lambda item: (str(item.get("entity_type")), item.get("start") or 0)),
+            (),
+        )
+        return sorted(merged, key=lambda item: (item.get("start") or 0, item.get("end") or 0))
 
     async def _post_presidio_anonymize(
         self,
@@ -2603,3 +2838,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             self.presidio_score_thresholds = litellm_params.presidio_score_thresholds
         if litellm_params.presidio_entities_deny_list:
             self.presidio_entities_deny_list = litellm_params.presidio_entities_deny_list
+        if litellm_params.presidio_analyze_chunk_size_bytes is not None:
+            # Same validation as __init__: a non-positive value from a guardrail
+            # update must not silently disable detection via degenerate chunking.
+            self.presidio_analyze_chunk_size_bytes = self._coerce_analyze_chunk_size(
+                litellm_params.presidio_analyze_chunk_size_bytes
+            )

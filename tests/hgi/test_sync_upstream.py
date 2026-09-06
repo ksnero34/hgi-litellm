@@ -64,7 +64,7 @@ def test_load_manifest_rejects_duplicate_path_ownership(tmp_path):
 def test_load_project_manifest():
     manifest = sync_upstream.load_manifest(Path(__file__).parents[2] / "customizations" / "manifest.json")
 
-    assert manifest["base_ref"] == "10f4033437df30b91b5dbf2b64711d0a8683fc52"
+    assert manifest["base_ref"] == "e4f25265704e2b2c6cf6e81be2e4c5cffff896f4"
     assert {group["name"] for group in manifest["groups"]} == {
         "license-boundary",
         "oidc",

@@ -14,16 +14,14 @@ import React, { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import { useForm } from "react-hook-form";
 import { toast } from "@/lib/toast";
 import { Logo } from "@/components/molecules/logo/Logo";
-import { MultiSelect } from "@/components/shared/MultiSelect";
-import { FieldGroup } from "@/components/shared/form/field";
+import { GuardrailExecutionFields } from "./GuardrailExecutionFields";
+import { FieldGroup } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { SimpleTooltip, TooltipProvider } from "@/components/ui/tooltip";
 import {
-  asStringArray,
   asText,
   GuardrailField,
   labelWithHint,
@@ -35,6 +33,7 @@ import {
 import ContentFilterManager, { formatContentFilterDataForAPI } from "./content_filter/ContentFilterManager";
 import CustomCodeModal, { EditGuardrailData } from "./custom_code/CustomCodeModal";
 import {
+  formatGuardrailMode,
   getGuardrailLogoAndName,
   getSupportedModesForProvider,
   guardrail_provider_map,
@@ -49,22 +48,7 @@ import GuardrailProviderFields from "./guardrail_provider_fields";
 import PiiConfiguration from "./pii_configuration";
 import ToolPermissionRulesEditor, { ToolPermissionConfig } from "./tool_permission/ToolPermissionRulesEditor";
 
-const DEFAULT_ON_ITEMS = [
-  { label: "Yes", value: true },
-  { label: "No", value: false },
-];
-
 const DEFAULT_MODES = ["pre_call", "during_call", "post_call", "logging_only"];
-
-const modeDescriptions: Record<string, string> = {
-  pre_call: "Before LLM Call - Runs before the LLM call and checks the input",
-  during_call: "During LLM Call - Runs in parallel with the LLM call, with response held until check completes",
-  post_call: "After LLM Call - Runs after the LLM call and checks the output",
-  logging_only: "Logging Only - Runs on logging callbacks without changing the request or response",
-  pre_mcp_call: "Before MCP Tool Call - Runs before MCP tool execution and validates tool calls",
-  during_mcp_call: "During MCP Tool Call - Runs in parallel with MCP tool execution for monitoring",
-  post_mcp_call: "After MCP Tool Call - Runs after MCP tool execution and checks the tool result",
-};
 
 const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="my-6 flex items-center gap-3">
@@ -550,7 +534,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
             variant="ghost"
             size="icon-xs"
             onClick={() => copyToClipboard(guardrailData.guardrail_id, "guardrail-id")}
-            className={`left-2 z-10 transition-all duration-200 ${
+            className={`left-2 z-raised transition-all duration-200 ${
               copiedStates["guardrail-id"]
                 ? "text-success bg-success/10 border-success/20"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -588,7 +572,9 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
               <Card className="block p-6">
                 <p>Mode</p>
                 <div className="mt-2">
-                  <h3 className="text-lg font-medium">{guardrailData.litellm_params?.mode || "-"}</h3>
+                  <h3 className="text-lg font-medium">
+                    {formatGuardrailMode(guardrailData.litellm_params?.mode) || "-"}
+                  </h3>
                   <Badge variant={guardrailData.litellm_params?.default_on ? "secondary" : "outline"}>
                     {guardrailData.litellm_params?.default_on ? "Default On" : "Default Off"}
                   </Badge>
@@ -728,49 +714,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                           )}
                         </GuardrailField>
 
-                        <GuardrailField control={form.control} name="default_on" label="Default On">
-                          {({ id, value, onChange, "aria-invalid": ariaInvalid, "aria-describedby": describedBy }) => (
-                            <Select
-                              items={DEFAULT_ON_ITEMS}
-                              value={typeof value === "boolean" ? value : null}
-                              onValueChange={(next: boolean | null) => onChange(next)}
-                            >
-                              <SelectTrigger
-                                id={id}
-                                aria-invalid={ariaInvalid}
-                                aria-describedby={describedBy}
-                                className="w-full"
-                              >
-                                <SelectValue placeholder="Select an option" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={true}>Yes</SelectItem>
-                                <SelectItem value={false}>No</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </GuardrailField>
-
-                        <GuardrailField
-                          control={form.control}
-                          name="mode"
-                          label={labelWithHint("Mode", "When the guardrail should run")}
-                          rules={requiredRule("Please select at least one mode")}
-                        >
-                          {({ id, value, onChange }) => (
-                            <MultiSelect
-                              id={id}
-                              options={supportedModes.map((mode) => ({
-                                label: mode,
-                                value: mode,
-                                description: modeDescriptions[mode],
-                              }))}
-                              value={asStringArray(value)}
-                              onValueChange={onChange}
-                              placeholder="Select modes"
-                            />
-                          )}
-                        </GuardrailField>
+                        <GuardrailExecutionFields control={form.control} supportedModes={supportedModes} />
 
                         <GuardrailField
                           control={form.control}
@@ -906,7 +850,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                     </div>
                     <div>
                       <p className="font-medium">Mode</p>
-                      <div>{guardrailData.litellm_params?.mode || "-"}</div>
+                      <div>{formatGuardrailMode(guardrailData.litellm_params?.mode) || "-"}</div>
                     </div>
                     <div>
                       <p className="font-medium">Default On</p>

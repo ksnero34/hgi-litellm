@@ -5,9 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from litellm.proxy.spend_tracking.ptu_feature_flag import PTU_COST_ATTRIBUTION_ENV_VAR
-
-
 from litellm.proxy.management_endpoints.common_daily_activity import (
     _adjust_dates_for_timezone,
     _build_aggregated_sql_query,
@@ -19,6 +16,7 @@ from litellm.proxy.management_endpoints.common_daily_activity import (
     get_daily_activity_aggregated,
     update_metrics,
 )
+from litellm.proxy.spend_tracking.ptu_feature_flag import PTU_COST_ATTRIBUTION_ENV_VAR
 from litellm.types.proxy.management_endpoints.common_daily_activity import (
     DailySpendMetadata,
     SpendMetrics,
@@ -185,6 +183,7 @@ async def test_get_daily_activity_aggregated_with_endpoint_breakdown():
         "compression_saved_tokens": 0,
         "compression_savings_spend": 0.0,
         "prompt_caching_savings_spend": 0.0,
+        "gateway_injected_caching_savings_spend": 0.0,
         "autorouter_savings_spend": 0.0,
         "failed_requests": 0,
     }
@@ -515,6 +514,7 @@ async def test_tag_daily_activity_metadata_totals_not_zero():
     mock_record_1.compression_saved_tokens = 0
     mock_record_1.compression_savings_spend = 0.0
     mock_record_1.prompt_caching_savings_spend = 0.0
+    mock_record_1.gateway_injected_caching_savings_spend = 0.0
     mock_record_1.autorouter_savings_spend = 0.0
     mock_record_1.api_requests = 10
     mock_record_1.successful_requests = 9
@@ -538,6 +538,7 @@ async def test_tag_daily_activity_metadata_totals_not_zero():
     mock_record_2.compression_saved_tokens = 0
     mock_record_2.compression_savings_spend = 0.0
     mock_record_2.prompt_caching_savings_spend = 0.0
+    mock_record_2.gateway_injected_caching_savings_spend = 0.0
     mock_record_2.autorouter_savings_spend = 0.0
     mock_record_2.api_requests = 5
     mock_record_2.successful_requests = 5
@@ -601,6 +602,7 @@ async def test_aggregated_activity_preserves_metadata_for_deleted_keys():
         "compression_saved_tokens": 0,
         "compression_savings_spend": 0.0,
         "prompt_caching_savings_spend": 0.0,
+        "gateway_injected_caching_savings_spend": 0.0,
         "autorouter_savings_spend": 0.0,
         "failed_requests": 0,
     }
@@ -687,6 +689,7 @@ def _daily_user_spend_record(*, user_id, api_key, spend, model="gpt-4", model_gr
         compression_saved_tokens=0,
         compression_savings_spend=0.0,
         prompt_caching_savings_spend=0.0,
+        gateway_injected_caching_savings_spend=0.0,
         autorouter_savings_spend=0.0,
         api_requests=1,
         successful_requests=1,
@@ -1119,6 +1122,7 @@ async def test_get_daily_activity_aggregated_empty_result_set():
             "compression_saved_tokens": None,
             "compression_savings_spend": None,
             "prompt_caching_savings_spend": None,
+            "gateway_injected_caching_savings_spend": None,
             "autorouter_savings_spend": None,
             "api_requests": None,
             "successful_requests": None,
@@ -1163,6 +1167,7 @@ def _no_spend_record():
         compression_saved_tokens=None,
         compression_savings_spend=None,
         prompt_caching_savings_spend=None,
+        gateway_injected_caching_savings_spend=None,
         autorouter_savings_spend=None,
         api_requests=None,
         successful_requests=None,
@@ -1272,6 +1277,7 @@ def _spend_record(api_key, *, model="gpt-4o-mini-ptu", spend=0.0, ptu_flat_cost=
         compression_saved_tokens=0,
         compression_savings_spend=0,
         prompt_caching_savings_spend=0,
+        gateway_injected_caching_savings_spend=0,
         autorouter_savings_spend=0,
         total_tokens=0,
         api_requests=0,
@@ -1337,6 +1343,7 @@ def _grouping_row(
         compression_saved_tokens=0,
         compression_savings_spend=0.0,
         prompt_caching_savings_spend=0.0,
+        gateway_injected_caching_savings_spend=0.0,
         autorouter_savings_spend=0.0,
         api_requests=0,
         successful_requests=0,
@@ -1496,6 +1503,7 @@ def test_update_breakdown_metrics_covers_mcp_endpoint_and_entity(ptu_cost_attrib
         compression_saved_tokens=0,
         compression_savings_spend=0,
         prompt_caching_savings_spend=0,
+        gateway_injected_caching_savings_spend=0,
         autorouter_savings_spend=0,
         total_tokens=0,
         api_requests=0,
@@ -1847,6 +1855,10 @@ def test_entity_rollup_sql_query_and_api_key_list_filter():
         api_key=["key-1", "key-2"],
     )
     assert '"team_id" AS entity_id' in sql
+    assert "SUM(response_time_ms_sum)::float AS response_time_ms_sum" in sql
+    assert "SUM(response_time_count)::bigint AS response_time_count" in sql
+    assert "SUM(ttft_ms_sum)::float AS ttft_ms_sum" in sql
+    assert "SUM(ttft_count)::bigint AS ttft_count" in sql
     assert "GROUPING(api_key) AS api_key_rolled" in sql
     assert '(date, "team_id"),' in sql
     assert '(date, "team_id", api_key)' in sql
@@ -1899,6 +1911,7 @@ async def test_get_daily_activity_aggregated_with_entity_breakdown():
         "compression_saved_tokens": 0,
         "compression_savings_spend": 0.0,
         "prompt_caching_savings_spend": 0.0,
+        "gateway_injected_caching_savings_spend": 0.0,
         "autorouter_savings_spend": 0.0,
         "failed_requests": 0,
         "prompt_tokens": 0,

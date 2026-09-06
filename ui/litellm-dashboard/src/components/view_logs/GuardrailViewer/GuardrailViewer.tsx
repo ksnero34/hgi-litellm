@@ -6,7 +6,8 @@ import BedrockGuardrailDetails, {
 } from "@/components/view_logs/GuardrailViewer/BedrockGuardrailDetails";
 import ContentFilterDetails from "./ContentFilterDetails";
 import CompliancePanel from "./CompliancePanel";
-import { OUTCOME_PRECEDENCE } from "./compliance";
+import { complianceBadgeClass, OUTCOME_PRECEDENCE } from "./compliance";
+import { GuardrailUsageBadges } from "./GuardrailUsageBadges";
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -69,6 +70,9 @@ interface GuardrailInformation {
   guardrail_run_id?: string;
   guardrail_event?: string;
   input_source?: GuardrailInputSource;
+  guardrail_usage?: Record<string, number>;
+  guardrail_cost?: number;
+  guardrail_cost_in_spend?: boolean;
 }
 
 interface GuardrailViewerProps {
@@ -193,17 +197,6 @@ const isLoggingOnlyEntry = (entry: GuardrailInformation): boolean =>
 const getComplianceOutcome = (entry: GuardrailInformation): ComplianceOutcome => {
   const action = getEntryAction(entry);
   return action === "flagged" && isLoggingOnlyEntry(entry) ? "observed" : action;
-};
-
-const actionBadgeClass: Record<GuardrailAction, string> = {
-  passed: "bg-success/15 text-success border border-success/20",
-  flagged: "bg-warning/15 text-warning border border-warning/20",
-  blocked: "bg-destructive/15 text-destructive border border-destructive/20",
-};
-
-const complianceBadgeClass: Record<ComplianceOutcome, string> = {
-  ...actionBadgeClass,
-  observed: "bg-purple-100 text-purple-700 border border-purple-200",
 };
 
 const getRiskColor = (score: number): string => {
@@ -543,6 +536,7 @@ const EvaluationCard = ({
   const riskScore = getRiskScore(entry);
   const complianceOutcome = outcomeOverride ?? getComplianceOutcome(entry);
   const inputSourceLabel = getInputSourceLabel(entry.input_source);
+  const textRecords = entry.guardrail_usage?.["text_records"];
 
   const guardrailProvider = entry.guardrail_provider ?? "presidio";
   const guardrailResponse = entry.guardrail_response;
@@ -621,6 +615,12 @@ const EvaluationCard = ({
               </Tooltip>
             </TooltipProvider>
           )}
+
+          <GuardrailUsageBadges
+            textRecords={textRecords}
+            cost={entry.guardrail_cost}
+            includedInSpend={entry.guardrail_cost_in_spend}
+          />
         </div>
 
         {/* Right side: duration + method + chevron */}

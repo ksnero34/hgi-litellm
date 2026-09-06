@@ -483,3 +483,58 @@ navigation 항목처럼 파일 경로는 그대로인데 조건문만 바뀌는 
 121건을 통과했고, 신규 개인 키 및 감사 로그 핵심 경로 14건을 다시 독립 실행했다. HGI maintenance suite
 28건, 변경 TypeScript/TSX ESLint(오류 0), Vitest typecheck와 51개 static page의 production build도 통과했다.
 build에는 기존 `enkrypt_ai.avif`를 최적화 없이 emit한다는 Turbopack 경고 1건만 남는다.
+
+
+## 15. v1.100.0 독립 worktree 통합 (2026-09-06)
+
+원본 `hgi-v1.99.1`의 `575b709d9b494eb33571aea809ca252ee08116ef`에서 검증 완료된 Presidio 캐시·세션·dedupe 변경을 `049202135a`로 먼저 커밋했다. 이후 `/home/min/hgi-litellm-v1.100.0`에 `codex/hgi-v1.100.0` worktree를 만들었다. 원본 checkout은 이동하거나 reset하지 않았다. 작업 중 원본 `docker-compose.yml`에 별도 미커밋 변경이 관찰되어 그대로 보존했으며, 통합 기준은 처음 확정한 커밋이다.
+
+Upstream `v1.100.0`은 `git ls-remote --tags upstream '*1.100.0*'`에서 `e4f25265704e2b2c6cf6e81be2e4c5cffff896f4`로 확인했고 로컬 태그와 일치했다. 암호학적 서명 검증은 하지 않았다. 자연 merge-base의 과거 계보 문제를 피하기 위해 manifest의 직전 기준 `10f4033437df30b91b5dbf2b64711d0a8683fc52`로 `git merge-tree --write-tree --merge-base=... HEAD v1.100.0`을 실행했다. 계산된 실제 통합 트리를 merge index에 반영해 두 부모의 이력을 보존했다. 결과를 통째로 ours/theirs로 선택하지 않고 기능별로 충돌과 clean merge를 검토했다.
+
+### 15.1 기능 보존 및 추가 수정
+
+§14의 20개 기능 목록과 14개 manifest 그룹을 재검토했다. Enterprise 소스·배포 의존성 제거, OSS OAuth2/OIDC/discovery/SSO, 5명 사용자 제한 제거, claim/team 동기화, 관리형 개인 키와 IP/CIDR, 72시간 회전·연쇄 토큰, 조직·팀 권한, opt-in 감사 및 로그 접근 범위, Purview, 한국어 UI·폐쇄망·역할별 메뉴를 유지했다. 새 upstream의 공용 repository protocol, Entra 역할 우선순위, 팀 삭제 advisory lock, partitioned SpendLogs 보호는 수용했다.
+
+새 daily entity rollup SQL에서 기존 응답시간·TTFT sum/count가 빠지는 문제를 찾아 4개 projection을 복구하고 시험했다. Presidio는 upstream HTTP 청크 처리를 실제 청크 payload별 캐시에 연결하고, 부분·연쇄 중첩 탐지 범위를 합집합으로 보존한다. 청크 큐 대기에도 요청 deadline을 적용하고 종료 시 루프 참조를 정리한다. 캐시의 raw entity 객체를 바꾸지 않고 현재 threshold/BLOCK 정책을 재평가한다. 실제 NER tensor batching이나 운영 tokenizer 완전성은 검증하지 않았다.
+
+신규 UI 비용·usage 표시와 실행 설정 입력을 작은 컴포넌트로 분리해 파일 크기 제한을 충족했다. manifest에 신규 캐시·UI 모듈과 빠졌던 기존 UI 회귀시험을 등록했으며 lazy OpenAPI snapshot을 생성물로 명시했다. Dashboard API 타입과 lazy snapshot은 현재 통합 backend에서 재생성했다. 기존 정책대로 `_experimental/out`은 upstream 생성물이며, 커스텀 운영 UI는 Docker build 또는 `npm run build`에서 현재 소스로 생성해야 한다.
+
+### 15.2 실행 검증
+
+독립 `.venv`에서 `uv sync --frozen --extra proxy --group proxy-dev --group e2e-dev`와 `prisma generate --schema litellm/proxy/schema.prisma`를 실행했다. DB migration이나 운영 연결은 하지 않았다. 표준 `make check`의 bootstrap이 원본 `.env`를 자동 복사했지만, 값 출력 없이 동일 파일임을 확인한 후 새 worktree의 빈 개발 설정 placeholder로 교체했다. 원본 secret은 수정하지 않았다.
+
+| 최종 실행 묶음 | 결과 |
+| --- | --- |
+| Presidio·cache·context·HTTP·pipeline·registry·logging 8개 파일 | 494 passed, 138.06s |
+| OIDC·customizations·개인 키·감사·manifest 8개 경로 | 120 passed, 40.05s |
+| Team endpoints 전체 | 334 passed, 7.11s |
+| DB spend·Prisma·daily activity·cost callback·observability 6개 파일 | 428 passed, 142.33s |
+| 새 환경 OIDC·SSO claim sync | 28 passed, 18.92s |
+| 새 환경 OIDC 제한·역할·키 회전 핵심 subset | 23 passed, 41.50s |
+| UI 주요 13개 파일 / 추가 6개 파일 | 273 passed / 263 passed |
+| UI 최종 비용 표시 / 설정 추출 | 16 passed / 22 passed |
+| 공식 Vitest typecheck | 4 passed |
+| Node 24.14.1 production build | 성공, TypeScript 및 정적 페이지 51개 생성 |
+
+위 묶음 간 중복이 있으므로 합산을 고유 시험 수로 주장하지 않는다. 초기 전체 인증 시험은 구환경에서 1128 passed/2 failed/3 skipped였고, 두 실패는 팀 삭제 선행 sweep 계약 복구 후 새 환경 전체 팀 시험으로 재검증했다. 초기 Presidio 실패도 중복 청크 concurrency fixture와 직접 policy step 호출 계약을 수정한 뒤 최종 494건에서 모두 해소했다.
+
+재현 명령은 다음과 같다.
+
+```bash
+LITELLM_LOCAL_MODEL_COST_MAP=True .venv/bin/python -m pytest -q   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio.py   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_cache.py   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_context.py   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_integration.py   tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_http.py   tests/test_litellm/proxy/policy_engine/test_pipeline_executor.py   tests/test_litellm/proxy/guardrails/test_guardrail_registry.py   tests/test_litellm/litellm_core_utils/test_litellm_logging.py
+LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONPATH=. .venv/bin/python scripts/presidio_cache_benchmark.py --local
+```
+
+실제 localhost HTTP와 임시 Redis 7.0.14 시험도 실행했다. 로컬 메모리 cold20 요청은 분석20회(p50 22.217ms/p95 23.030ms), warm20 요청은 추가0회(0.942ms/1.079ms), TTL 후1회였다. 마스킹·복원·감사를 확인했다. 격리 Redis는 cold160회, 독립 인스턴스 warm0회, Redis 종료 후 직접 분석160회였고 HTTP 최대 동시성4를 유지했다. 합성 HTTP 지연20ms 조건이며 실제 NER 성능이나 Azure Redis 지연 개선 측정이 아니다. 원시 결과는 `docs/guardrails/presidio-v1.100.0-{local,redis}-validation.json`에 보관했다.
+
+### 15.3 잔여 검증 및 운영 전제
+
+전체 `make check`를 실행했지만 최초 통합 검사에서 Python strict/type-discipline/test-quality/basedpyright budget이 실패했다. 대상은 v1.100.0 대비 이전 커스텀 코드까지 포함하며 `ANN401`, `C901`, `TID251`, `TRY300`, `LIT002`, `LIT006`, 신규 `TQ008`, `reportArgumentType`, `reportTypedDictNotRequiredAccess`가 초과했다. 일반 Ruff와 E2E 타입검사는 통과했다. 이번 청크 통합의 신규 LIT002는 수정했으며 기존 커스텀 전체를 전면 재작성하거나 상한을 높여 검사를 통과시키지는 않았다. 전체 make check가 성공했다고 간주하지 않는다. 해당 실행 로그는 `/tmp/hgi-1.100-check.log` 및 worktree 전용 Git 관리 경로의 `pre_commit_lint.log`에 있다.
+
+실제 AKS/Azure Redis, DB migration, 브라우저와 실제 IdP의 6인 이상 로그인, 외부 LLM/Purview, 운영 NER 긴 입력·경계 탐지는 미검증이다. 기존 합성 회귀시험과 구분한다. 캐시는 default-off와 completeness gate를 유지하고 `scan_raw_request`도 마스킹 Presidio에서는 false를 유지한다. 외부 push·운영 배포·기존 Redis 데이터 삭제·secret 변경은 수행하지 않았다. 원본 `hgi-v1.99.1` / `049202135a`를 계속 사용하면 이번 통합을 되돌릴 수 있다.
+
+최종 후속 검사에서 UI inline-object budget은 559/559로 통과했고 관련 테스트 15개가 통과했다. 표준 `make lint-budget-update LINT_BASE=v1.100.0`은 strict 12, test-quality 29, basedpyright 836건만큼 상한을 낮췄고 LIT 상한 추가 감축은 0이었다. 상한을 높인 항목은 없다. 신규 청크의 LIT002 수정 후 Presidio 150건을 다시 통과했다.
+
+Dashboard 전체 `eslint . --prune-suppressions`는 종료 코드 0, 오류 0이었으며 obsolete suppression 78개만 제거했다. 신규 suppression 추가나 상한 증가 없이 모든 UI budget이 통과했다. `git diff --check v1.100.0`은 통과했다. 원본 커스텀 tip 대비 staged diff의 whitespace 경고 2건은 새 upstream migration SQL의 기존 EOF 빈 줄이며, migration checksum 보존을 위해 수정하지 않았다.
+
+최종 staged `make check` 재실행에서도 Python budget만 실패했다. Dashboard Prettier/ESLint/budget, E2E 타입(0 errors), API snapshot/type 동기화는 통과했다. 최종 LIT002는 27357/27351, LIT006은 1070/1067이며 다른 Python 초과 규칙은 위 목록과 같다. 최종 로그는 `/tmp/hgi-1.100-check-final.log`다. Merge 후 공식 `python scripts/hgi/sync_upstream.py check`는 v1.100.0부터 HEAD까지 14개 그룹의 모든 변경이 포함됨을 확인했다.

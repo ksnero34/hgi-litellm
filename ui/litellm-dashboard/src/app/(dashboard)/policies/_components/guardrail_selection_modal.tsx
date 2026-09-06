@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, Info } from "lucide-react";
+import { formatGuardrailMode } from "@/app/(dashboard)/guardrails/_components/guardrail_info_helpers";
 
 interface GuardrailInfo {
   guardrail_name: string;
@@ -178,7 +179,8 @@ const GuardrailSelectionModal: React.FC<GuardrailSelectionModalProps> = ({
                         {guardrail.definition?.litellm_params?.guardrail || t("policies.guardrailSelection.unknown")}
                       </Badge>
                       <Badge variant="secondary">
-                        {guardrail.definition?.litellm_params?.mode || t("policies.guardrailSelection.unknown")}
+                        {formatGuardrailMode(guardrail.definition?.litellm_params?.mode) ||
+                          t("policies.guardrailSelection.unknown")}
                       </Badge>
                       {guardrail.definition?.litellm_params?.patterns && (
                         <Badge variant="secondary">

@@ -1,6 +1,8 @@
 # HGI LiteLLM 커스터마이징 운영 가이드
 
-현재 배포 기준은 upstream `v1.99.1`의 `10f4033437df30b91b5dbf2b64711d0a8683fc52`를 통합한 `hgi-v1.99.1` 브랜치다. 커스텀 변경은 `customizations/manifest.json`의 기능 그룹별 소유 경로로 관리한다. 업스트림 변경은 기존 브랜치에 계속 누적 병합하지 않고 새 업스트림 커밋에서 통합 브랜치를 만든 뒤 각 그룹을 순서대로 재적용한다.
+현재 통합 기준은 upstream `v1.100.0`의 `e4f25265704e2b2c6cf6e81be2e4c5cffff896f4`를 반영한 `codex/hgi-v1.100.0` 브랜치다. 원본 `hgi-v1.99.1`은 Presidio 변경을 커밋한 `049202135a`에서 보존한다. 운영 배포는 별도 절차이며, 이번 작업은 로컬 worktree에서 수행했다. 커스텀 변경은 `customizations/manifest.json`의 기능 그룹별 소유 경로로 관리한다.
+
+최근 릴리즈 통합은 기존 커스텀 tip과 새 upstream tag를 부모로 남기는 merge 방식이다. 이 저장소는 릴리즈 계보의 자연 merge-base가 manifest의 직전 upstream 기준보다 오래될 수 있으므로, 정확한 `base_ref`로 3-way tree를 계산하고 충돌과 clean merge를 함께 검토한다. 아래 `sync_upstream.py apply`는 기능별 커밋으로 재적용하는 대안이다. 두 방식을 혼합하지 않고, 어느 방식을 사용해도 manifest와 기능 회귀시험을 통과해야 한다.
 
 ## 현재 버전 테스트
 
@@ -30,7 +32,7 @@ Discovery를 제공하지 않는 IdP는 `GENERIC_AUTHORIZATION_ENDPOINT`, `GENER
 로컬 이미지를 빌드하고 실행한다.
 
 ```bash
-git switch hgi-v1.95.0
+git switch codex/hgi-v1.100.0
 git rev-parse --short HEAD
 docker compose build litellm
 docker compose up -d db litellm
@@ -73,7 +75,7 @@ pytest -q \
   tests/hgi/test_sync_upstream.py
 
 cd ui/litellm-dashboard
-npm test -- --runInBand \
+npm test -- --run \
   src/components/organisms/RegenerateKeyModal.test.tsx \
   src/components/templates/key_edit_view.test.tsx \
   src/components/Navbar/UserDropdown/UserDropdown.test.tsx \
@@ -127,3 +129,23 @@ make pre-commit
 
 기본 언어는 한국어이며 사용자가 선택한 언어는 브라우저 로컬 스토리지에 저장한다. 지원하지 않는 값이나 번역이
 누락된 키는 영어로 fallback한다. Ant Design locale과 문서의 `lang` 속성도 같은 언어 설정을 사용해야 한다.
+
+
+## v1.100.0 독립 개발환경
+
+원본 worktree는 `/home/min/hgi-litellm`, 신규 worktree는 `/home/min/hgi-litellm-v1.100.0`이다. 각 worktree는 별도 `.venv`와 `node_modules`를 사용하며 `.env`와 운영 secret을 복사하지 않는다. Node는 `>=24.14.1`, npm은 `>=11.10.0`이 필요하다.
+
+```bash
+cd /home/min/hgi-litellm-v1.100.0
+uv sync --frozen --extra proxy --group proxy-dev --group e2e-dev
+uv run --no-sync prisma generate --schema litellm/proxy/schema.prisma
+cd ui/litellm-dashboard
+npm ci
+LITELLM_PYTHON=/home/min/hgi-litellm-v1.100.0/.venv/bin/python npm run gen:api
+```
+
+이 호스트에서 검증에 사용한 Node 24.14.1은 공식 SHA-256을 확인해 `/tmp/hgi-node24/node-v24.14.1-linux-x64`에 풀었다. 해당 세션에서는 `PATH=/tmp/hgi-node24/node-v24.14.1-linux-x64/bin:$PATH`를 앞에 붙인다. `/tmp` 정리 후에는 위 버전 조건을 충족하는 Node를 다시 준비한다.
+
+롤백은 원본 worktree의 `hgi-v1.99.1` / `049202135a`를 사용하는 것으로 가능하다. 새 worktree를 지우거나 원본 브랜치를 reset할 필요는 없다. 운영 DB 마이그레이션과 AKS 배포는 수행하지 않았다.
+
+신규 upstream `scan_raw_request`는 기본 false를 유지한다. 이 옵션은 mutation 결과를 적용하지 않는 block 전용 검사 경로이므로 마스킹 Presidio에 활성화하지 않는다. Presidio 분석 캐시의 운영 활성화 조건과 긴 입력 NER 검증 조건은 `docs/guardrails/presidio-analysis-cache.md`를 계속 적용한다.

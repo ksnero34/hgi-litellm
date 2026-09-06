@@ -32,8 +32,8 @@ function OrganizationLimitsCell({ organization }: { organization: Organization }
   const { tpm_limit, rpm_limit } = getOrganizationBudget(organization);
   return (
     <div className="flex flex-col text-xs text-muted-foreground">
-      <span>TPM: {tpm_limit ? tpm_limit : t("identityAdmin.common.unlimited")}</span>
-      <span>RPM: {rpm_limit ? rpm_limit : t("identityAdmin.common.unlimited")}</span>
+      <span>TPM: {tpm_limit ?? t("identityAdmin.common.unlimited")}</span>
+      <span>RPM: {rpm_limit ?? t("identityAdmin.common.unlimited")}</span>
     </div>
   );
 }

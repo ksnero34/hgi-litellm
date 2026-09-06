@@ -84,6 +84,13 @@ export default function RequestLogsPanel({
   }, [isLiveTail]);
 
   const filterByCurrentUser = spendScopeUserId(userRole, userID) === userID && userID !== null;
+  const [excludeInternalHealthChecks, setExcludeInternalHealthChecks] = useState<boolean>(
+    () => sessionStorage.getItem("excludeInternalHealthChecks") === "true",
+  );
+
+  useEffect(() => {
+    sessionStorage.setItem("excludeInternalHealthChecks", JSON.stringify(excludeInternalHealthChecks));
+  }, [excludeInternalHealthChecks]);
 
   const { logsQuery, filteredLogs, allTeams } = useLogFilterLogic({
     accessToken,
@@ -96,6 +103,7 @@ export default function RequestLogsPanel({
     columnFilters,
     activeTab: isActive ? "request logs" : "inactive",
     isLiveTail,
+    excludeInternalHealthChecks,
     startTime,
     endTime,
     pagination,
@@ -235,6 +243,14 @@ export default function RequestLogsPanel({
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
   }, []);
 
+  const handleExcludeInternalHealthChecksChange = useCallback(
+    (value: boolean) => {
+      setExcludeInternalHealthChecks(value);
+      resetToFirstPage();
+    },
+    [resetToFirstPage],
+  );
+
   const handleResetFilters = useCallback(() => {
     setColumnFilters([]);
     setStartTime(moment().subtract(24, "hours").format("YYYY-MM-DDTHH:mm"));
@@ -329,6 +345,8 @@ export default function RequestLogsPanel({
             onSelectedTimeIntervalChange={setSelectedTimeInterval}
             isLiveTail={isLiveTail}
             onIsLiveTailChange={setIsLiveTail}
+            excludeInternalHealthChecks={excludeInternalHealthChecks}
+            onExcludeInternalHealthChecksChange={handleExcludeInternalHealthChecksChange}
             onResetToFirstPage={resetToFirstPage}
             onResetFilters={handleResetFilters}
           />

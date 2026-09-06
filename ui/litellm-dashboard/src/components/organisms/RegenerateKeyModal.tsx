@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod/v4";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import { toast } from "@/lib/toast";
-import { FieldGroup } from "@/components/shared/form/field";
+import { FieldGroup } from "@/components/ui/field";
 import { personalKeyRotateCall, regenerateKeyCall } from "../networking";
 import { FormField } from "@/components/shared/form/FormField";
 import { Input } from "@/components/ui/input";
@@ -149,7 +149,7 @@ export function RegenerateKeyModal({
       // formatted preview, otherwise downstream expiry parsing breaks.
       const updatedKeyData: Partial<KeyResponse> = {
         ...response,
-        token: response.token || response.key_id || selectedToken.token,
+        token: response.token_id || response.token || selectedToken.token,
         key_name: response.key,
         max_budget: formValues.max_budget,
         tpm_limit: formValues.tpm_limit,

@@ -15,7 +15,6 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ACTION_ITEMS } from "./action_options";
-import { NESTED_DIALOG_LAYER } from "./dialog_layering";
 
 interface PrebuiltPattern {
   name: string;
@@ -72,7 +71,7 @@ const PatternModal: React.FC<PatternModalProps> = ({
 
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className={`max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[800px] ${NESTED_DIALOG_LAYER}`}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[800px]">
         <DialogHeader>
           <DialogTitle>{t("safety.contentFilter.addPrebuiltTitle")}</DialogTitle>
         </DialogHeader>

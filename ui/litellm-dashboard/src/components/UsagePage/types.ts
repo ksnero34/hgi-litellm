@@ -16,6 +16,7 @@ export interface SpendMetrics {
   response_time_count?: number;
   average_ttft_ms?: number | null;
   ttft_count?: number;
+  gateway_injected_caching_savings_spend?: number;
   autorouter_savings_spend?: number;
 }
 

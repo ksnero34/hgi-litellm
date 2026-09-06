@@ -20,6 +20,7 @@ export interface PaginatedResponse {
 export const LOG_FILTER_IDS = {
   TEAM_ID: "team_id",
   STATUS: "status",
+  CACHE_STATUS: "cache_hit",
   KEY_ALIAS: "key_alias",
   END_USER: "end_user",
   ERROR_CODE: "error_code",
@@ -35,6 +36,7 @@ export const LOG_FILTER_IDS = {
 export const LOG_FILTER_LABELS: Record<string, string> = {
   [LOG_FILTER_IDS.TEAM_ID]: "Team ID",
   [LOG_FILTER_IDS.STATUS]: "Status",
+  [LOG_FILTER_IDS.CACHE_STATUS]: "Cache",
   [LOG_FILTER_IDS.KEY_ALIAS]: "Key Alias",
   [LOG_FILTER_IDS.USER_ID]: "User ID",
   [LOG_FILTER_IDS.END_USER]: "End User",
@@ -104,6 +106,7 @@ export function useLogFilterLogic({
   columnFilters,
   activeTab,
   isLiveTail,
+  excludeInternalHealthChecks,
   startTime,
   endTime,
   pagination,
@@ -120,6 +123,7 @@ export function useLogFilterLogic({
   columnFilters: ColumnFiltersState;
   activeTab: string;
   isLiveTail: boolean;
+  excludeInternalHealthChecks: boolean;
   startTime: string;
   endTime: string;
   pagination: PaginationState;
@@ -148,6 +152,7 @@ export function useLogFilterLogic({
       scopeReady,
       sortBy,
       sortOrder,
+      excludeInternalHealthChecks,
     ],
     queryFn: async () => {
       if (!accessToken || !token || !userRole || !userID) {
@@ -178,6 +183,7 @@ export function useLogFilterLogic({
           user_id: userIdFilter ?? (!effectiveTeamId ? implicitUserScope ?? undefined : undefined),
           end_user: getFilterValue(columnFilters, LOG_FILTER_IDS.END_USER),
           status_filter: getFilterValue(columnFilters, LOG_FILTER_IDS.STATUS),
+          cache_hit_filter: getFilterValue(columnFilters, LOG_FILTER_IDS.CACHE_STATUS),
           model_id: getFilterValue(columnFilters, LOG_FILTER_IDS.MODEL_ID),
           model: getFilterValue(columnFilters, LOG_FILTER_IDS.PUBLIC_MODEL_OR_SEARCH_TOOL),
           key_alias: getFilterValue(columnFilters, LOG_FILTER_IDS.KEY_ALIAS),
@@ -185,6 +191,7 @@ export function useLogFilterLogic({
           error_message: getFilterValue(columnFilters, LOG_FILTER_IDS.ERROR_MESSAGE),
           sort_by: sortBy,
           sort_order: sortOrder,
+          exclude_internal_health_checks: excludeInternalHealthChecks,
         },
       });
     },

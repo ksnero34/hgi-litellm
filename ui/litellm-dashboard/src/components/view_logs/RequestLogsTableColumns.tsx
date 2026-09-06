@@ -80,18 +80,18 @@ export const getRequestLogsTableColumns = ({
         if (sessionCount <= 1) return <LlmBadge />;
 
         const sessionTypeBadge = (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-[11px] font-medium whitespace-nowrap">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-info/10 text-info border border-info/20 rounded-full text-[11px] font-medium whitespace-nowrap">
             <SparkleIcon />
             <span>{sessionCount}</span>
             {sessionAgentCount > 0 && (
               <>
-                <span className="text-blue-300">·</span>
+                <span className="text-info">·</span>
                 <AgentIcon size={10} />
               </>
             )}
             {sessionMcpCount > 0 && (
               <>
-                <span className="text-blue-300">·</span>
+                <span className="text-info">·</span>
                 <WrenchIcon />
               </>
             )}
@@ -102,6 +102,7 @@ export const getRequestLogsTableColumns = ({
           sessionLlmCount > 0 && t("observabilityExtra.requestLogs.columns.llmCount", { count: sessionLlmCount }),
           sessionAgentCount > 0 && t("observabilityExtra.requestLogs.columns.agentCount", { count: sessionAgentCount }),
           sessionMcpCount > 0 && t("observabilityExtra.requestLogs.columns.mcpCount", { count: sessionMcpCount }),
+          log.session_cache_hit_count != null && `${log.session_cache_hit_count} cache hit`,
         ].filter(Boolean);
         return <CellTooltip content={tooltipParts.join(" • ")} trigger={sessionTypeBadge} />;
       },

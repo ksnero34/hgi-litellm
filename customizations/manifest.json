@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "base_ref": "10f4033437df30b91b5dbf2b64711d0a8683fc52",
+  "base_ref": "e4f25265704e2b2c6cf6e81be2e4c5cffff896f4",
   "generated_paths": [
     "litellm/proxy/_experimental/out",
-    "ui/litellm-dashboard/src/lib/http/schema.d.ts"
+    "ui/litellm-dashboard/src/lib/http/schema.d.ts",
+    "litellm/proxy/_lazy_openapi_snapshot.json"
   ],
   "groups": [
     {
@@ -147,7 +148,8 @@
         "ui/litellm-dashboard/src/components/templates/keyEditFormValues.ts",
         "ui/litellm-dashboard/src/components/templates/key_edit_view.test.tsx",
         "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
-        "ui/litellm-dashboard/src/components/templates/key_info_view.tsx"
+        "ui/litellm-dashboard/src/components/templates/key_info_view.tsx",
+        "ui/litellm-dashboard/src/components/organisms/create_key_button.integration.test.tsx"
       ],
       "remove_paths": []
     },
@@ -240,7 +242,19 @@
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.test.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailViewer.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/compliance.ts",
-        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/__tests__/fixtures.ts"
+        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/__tests__/fixtures.ts",
+        "docs/guardrails/",
+        "scripts/presidio_cache_benchmark.py",
+        "litellm/proxy/guardrails/guardrail_hooks/presidio_analysis_cache.py",
+        "litellm/proxy/guardrails/guardrail_hooks/presidio_analysis_context.py",
+        "litellm/proxy/guardrails/guardrail_hooks/presidio_http.py",
+        "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_cache.py",
+        "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_context.py",
+        "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_integration.py",
+        "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_http.py",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/GuardrailExecutionFields.tsx",
+        "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailUsageBadges.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.characterization.test.tsx"
       ],
       "remove_paths": []
     },
