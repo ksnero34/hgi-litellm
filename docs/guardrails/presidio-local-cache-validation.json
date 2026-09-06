@@ -1,0 +1,35 @@
+{
+  "local_cold": {
+    "requests": 20,
+    "p50_ms": 21.597,
+    "p95_ms": 22.835,
+    "analyze_calls": 20
+  },
+  "local_warm": {
+    "requests": 20,
+    "p50_ms": 0.641,
+    "p95_ms": 0.769,
+    "analyze_calls": 0
+  },
+  "after_ttl_analyze_calls": 1,
+  "conditions": {
+    "redis_configured": false,
+    "redis_process_started": false,
+    "real_ner": false,
+    "synthetic_http_delay_ms": 20,
+    "ttl_seconds": 1,
+    "fragments_per_request": 2
+  },
+  "mask_restore_audit_verified": true,
+  "counters": {
+    "request_dedupe": 123,
+    "cache_miss": 21,
+    "analyze_calls": 21,
+    "cache_oversize": 0,
+    "cache_hit": 20
+  },
+  "http_calls": {
+    "analyze_calls": 21,
+    "anonymize_calls": 82
+  }
+}

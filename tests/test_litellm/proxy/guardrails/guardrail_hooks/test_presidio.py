@@ -1519,8 +1519,7 @@ async def test_analyze_text_error_dict_handling():
     """
     Test that analyze_text handles error dict responses from Presidio API.
 
-    When Presidio returns {'error': 'No text provided'}, should handle gracefully
-    instead of crashing with TypeError.
+    Presidio error dictionaries must fail closed.
     """
     presidio = _OPTIONAL_PresidioPIIMasking(
         presidio_analyzer_api_base="http://mock-presidio:5002/",
@@ -1533,12 +1532,12 @@ async def test_analyze_text_error_dict_handling():
         "_get_session_iterator",
         _make_mock_session_iterator({"error": "No text provided"}),
     ):
-        result = await presidio.analyze_text(
-            text="some text",
-            presidio_config=None,
-            request_data={},
-        )
-    assert result == [], "Error dict should be handled gracefully"
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
+            await presidio.analyze_text(
+                text="some text",
+                presidio_config=None,
+                request_data={},
+            )
 
 
 @pytest.mark.asyncio
@@ -1546,8 +1545,7 @@ async def test_analyze_text_string_response_handling():
     """
     Test that analyze_text handles string responses from Presidio API.
 
-    When Presidio returns a string (e.g. error message from websearch/hosted models),
-    should handle gracefully instead of crashing with TypeError about mapping vs str.
+    Presidio string errors must fail closed without exposing response bodies.
     """
     presidio = _OPTIONAL_PresidioPIIMasking(
         presidio_analyzer_api_base="http://mock-presidio:5002/",
@@ -1560,12 +1558,12 @@ async def test_analyze_text_string_response_handling():
         "_get_session_iterator",
         _make_mock_session_iterator("Internal Server Error"),
     ):
-        result = await presidio.analyze_text(
-            text="some text",
-            presidio_config=None,
-            request_data={},
-        )
-    assert result == [], "String response should be handled gracefully"
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
+            await presidio.analyze_text(
+                text="some text",
+                presidio_config=None,
+                request_data={},
+            )
 
 
 @pytest.mark.asyncio
@@ -1588,14 +1586,14 @@ async def test_analyze_text_invalid_response_raises_when_block_configured():
     ):
         with pytest.raises(
             _PresidioServiceError,
-            match="Presidio analyzer returned invalid response",
+            match="Presidio PII analysis failed",
         ) as exc_info:
             await presidio.analyze_text(
                 text="some text",
                 presidio_config=None,
                 request_data={},
             )
-    assert "Internal Server Error" in str(exc_info.value)
+    assert "Internal Server Error" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -1618,14 +1616,14 @@ async def test_analyze_text_invalid_response_raises_when_mask_configured():
     ):
         with pytest.raises(
             _PresidioServiceError,
-            match="Presidio analyzer returned invalid response",
+            match="Presidio PII analysis failed",
         ) as exc_info:
             await presidio.analyze_text(
                 text="some text",
                 presidio_config=None,
                 request_data={},
             )
-    assert "Presidio analyzer returned invalid response" in str(exc_info.value)
+    assert "Internal Server Error" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -1646,7 +1644,7 @@ async def test_check_pii_defaults_to_fail_closed_when_presidio_is_unavailable():
             text_response="unavailable",
         ),
     ):
-        with pytest.raises(Exception, match="HTTP 503"):
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
             await presidio.check_pii(
                 text="4111-1111-1111-1111",
                 output_parse_pii=False,
@@ -1677,7 +1675,7 @@ async def test_check_pii_can_explicitly_fail_closed_when_presidio_is_unavailable
             text_response="unavailable",
         ),
     ):
-        with pytest.raises(Exception, match="HTTP 503"):
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
             await presidio.check_pii(
                 text="4111-1111-1111-1111",
                 output_parse_pii=False,
@@ -1971,10 +1969,10 @@ async def test_pre_call_masking_records_detected_pii_as_flagged():
 @pytest.mark.asyncio
 async def test_analyze_text_list_with_non_dict_items():
     """
-    Test that analyze_text skips non-dict items in the result list.
+    Test that analyze_text rejects incomplete analysis results.
 
     When Presidio returns a list containing strings (malformed response),
-    should skip invalid items and return parsed valid ones.
+    the entire analysis must fail closed.
     """
     presidio = _OPTIONAL_PresidioPIIMasking(
         presidio_analyzer_api_base="http://mock-presidio:5002/",
@@ -1988,14 +1986,12 @@ async def test_analyze_text_list_with_non_dict_items():
         {"entity_type": "EMAIL", "start": 10, "end": 25, "score": 0.85},
     ]
     with patch.object(presidio, "_get_session_iterator", _make_mock_session_iterator(json_response)):
-        result = await presidio.analyze_text(
-            text="some text",
-            presidio_config=None,
-            request_data={},
-        )
-    assert len(result) == 2, "Should parse 2 valid dict items and skip the string"
-    assert result[0].get("entity_type") == "PERSON"
-    assert result[1].get("entity_type") == "EMAIL"
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
+            await presidio.analyze_text(
+                text="some text",
+                presidio_config=None,
+                request_data={},
+            )
 
 
 @pytest.mark.asyncio
@@ -2414,22 +2410,20 @@ async def test_analyze_text_non_json_content_type_fail_closed():
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
         with pytest.raises(
             _PresidioServiceError,
-            match="expected application/json Content-Type",
+            match="Presidio PII analysis failed",
         ) as exc_info:
             await guardrail.analyze_text(
                 text="Hello world",
                 presidio_config=None,
                 request_data={},
             )
-        assert "expected application/json Content-Type" in str(exc_info.value)
-        assert "text/html" in str(exc_info.value)
+        assert "Presidio Analyzer service is up." not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
-async def test_analyze_text_non_json_content_type_fail_open():
+async def test_analyze_text_non_json_content_type_fails_closed_without_entity_policy():
     """
-    Test that analyze_text returns empty list when Presidio returns text/html
-    and fail-closed is NOT enabled.
+    Test that non-JSON analysis fails closed without an entity policy.
     """
     guardrail = _OPTIONAL_PresidioPIIMasking(
         presidio_analyzer_api_base="http://test-analyzer/",
@@ -2445,12 +2439,12 @@ async def test_analyze_text_non_json_content_type_fail_open():
     )
 
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
-        results = await guardrail.analyze_text(
-            text="Hello world",
-            presidio_config=None,
-            request_data={},
-        )
-        assert results == []
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed"):
+            await guardrail.analyze_text(
+                text="Hello world",
+                presidio_config=None,
+                request_data={},
+            )
 
 
 @pytest.mark.asyncio
@@ -2473,13 +2467,13 @@ async def test_analyze_text_http_error_status():
     )
 
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
-        with pytest.raises(_PresidioServiceError, match="HTTP 500") as exc_info:
+        with pytest.raises(_PresidioServiceError, match="Presidio PII analysis failed") as exc_info:
             await guardrail.analyze_text(
                 text="Hello world",
                 presidio_config=None,
                 request_data={},
             )
-        assert "HTTP 500" in str(exc_info.value)
+        assert "Internal Server Error" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -2501,7 +2495,7 @@ async def test_anonymize_text_non_json_content_type():
     )
 
     with patch.object(guardrail, "_get_session_iterator", mock_iterator):
-        with pytest.raises(Exception, match="Presidio anonymizer returned non-JSON Content-Type"):
+        with pytest.raises(Exception, match="Presidio anonymizer returned non-JSON content"):
             await guardrail.anonymize_text(
                 text="Hello world",
                 analyze_results=[{"start": 0, "end": 5, "entity_type": "PERSON"}],

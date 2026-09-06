@@ -30,7 +30,7 @@
     "limit": 7
   },
   "reportGeneralTypeIssues": {
-    "limit": 153
+    "limit": 152
   },
   "reportIncompatibleMethodOverride": {
     "limit": 55
@@ -99,7 +99,7 @@
     "limit": 0
   },
   "reportUnknownArgumentType": {
-    "limit": 44509
+    "limit": 44500
   },
   "reportUnknownLambdaType": {
     "limit": 109
@@ -114,7 +114,7 @@
     "limit": 30357
   },
   "reportUnnecessaryCast": {
-    "limit": 115
+    "limit": 113
   },
   "reportUnnecessaryComparison": {
     "limit": 680

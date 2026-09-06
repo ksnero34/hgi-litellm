@@ -1,0 +1,47 @@
+{
+  "cold": {
+    "requests": 20,
+    "p50_ms": 43.013,
+    "p95_ms": 45.086,
+    "analyze_calls": 160,
+    "max_active_http": 4
+  },
+  "warm_other_instance": {
+    "requests": 20,
+    "p50_ms": 0.553,
+    "p95_ms": 0.696,
+    "analyze_calls": 0,
+    "max_active_http": 0
+  },
+  "redis_failure": {
+    "requests": 20,
+    "p50_ms": 42.801,
+    "p95_ms": 43.63,
+    "analyze_calls": 160,
+    "max_active_http": 4
+  },
+  "conditions": {
+    "synthetic_http_delay_ms": 20,
+    "unique_fragments": 8,
+    "fragment_positions": 16,
+    "additional_apply_equivalent_fragments": 8,
+    "request_concurrency": 1,
+    "analysis_concurrency": 4,
+    "redis_version": "7.0.14",
+    "real_ner": false
+  },
+  "counters": [
+    {
+      "request_dedupe": 320,
+      "cache_miss": 160,
+      "analyze_calls": 160
+    },
+    {
+      "request_dedupe": 640,
+      "cache_hit": 160,
+      "cache_error": 40,
+      "fallback": 20,
+      "analyze_calls": 160
+    }
+  ]
+}

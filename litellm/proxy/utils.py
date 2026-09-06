@@ -1620,6 +1620,29 @@ class ProxyLogging:
         call_type: CallTypesLiteral,
         guardrails_only: bool = False,
     ) -> dict | None:
+        from litellm.proxy.guardrails.guardrail_hooks.presidio_analysis_context import analysis_request_scope
+
+        team_id: Final = user_api_key_dict.team_id if user_api_key_dict is not None else None
+        tenant_scope: Final = f"team:{team_id}" if isinstance(team_id, str) and team_id else None
+        with analysis_request_scope(
+            tenant_scope=tenant_scope,
+            redis_cache=self.internal_usage_cache.dual_cache.redis_cache,
+            force_new=True,
+        ):
+            return await self._pre_call_hook_impl(
+                user_api_key_dict=user_api_key_dict,
+                data=data,
+                call_type=call_type,
+                guardrails_only=guardrails_only,
+            )
+
+    async def _pre_call_hook_impl(
+        self,
+        user_api_key_dict: UserAPIKeyAuth,
+        data: dict | None,
+        call_type: CallTypesLiteral,
+        guardrails_only: bool = False,
+    ) -> dict | None:
         """
         Allows users to modify/reject the incoming request to the proxy, without having to deal with parsing Request body.
 
