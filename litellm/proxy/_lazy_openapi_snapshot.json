@@ -12254,6 +12254,17 @@
               "description": "Optional per-entity minimum confidence scores for Presidio detections. Entities below the threshold are ignored.",
               "title": "Presidio Score Thresholds"
             },
+            "presidio_streaming_output_mode": {
+              "default": "windowed",
+              "description": "How configured output checks handle streaming responses: 'off' skips streaming output analysis, 'windowed' checks bounded text windows, and 'full_buffer' checks the complete response before release. Input checks and non-streaming output checks are unchanged.",
+              "enum": [
+                "off",
+                "windowed",
+                "full_buffer"
+              ],
+              "title": "Presidio Streaming Output Mode",
+              "type": "string"
+            },
             "project_id": {
               "anyOf": [
                 {

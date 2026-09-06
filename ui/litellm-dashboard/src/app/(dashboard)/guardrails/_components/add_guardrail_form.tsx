@@ -1,3 +1,4 @@
+import PresidioStreamingOutput, { STREAMING_OUTPUT, streamingPayload } from "./PresidioStreamingOutput";
 import type { GuardrailSettings } from "@/components/guardrails/types";
 import PresidioAnalysisCache from "./PresidioAnalysisCache";
 import { CACHE_ENABLED, CACHE_TTL, cachePayload, isPresidioCacheField } from "./presidio_cache_form";
@@ -289,6 +290,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
       presidio_anonymizer_api_base: undefined,
       [CACHE_ENABLED]: null,
       [CACHE_TTL]: null,
+      [STREAMING_OUTPUT]: "windowed",
     };
     if (value === "BlockCodeExecution") {
       resetValues.confidence_threshold = 0.5;
@@ -441,7 +443,11 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
         guardrailData.litellm_params.skip_tool_message_in_guardrail = skipToolForCreate;
       }
 
-      Object.assign(guardrailData.litellm_params, cachePayload(values, guardrailProvider));
+      Object.assign(
+        guardrailData.litellm_params,
+        cachePayload(values, guardrailProvider),
+        streamingPayload(values, guardrailProvider),
+      );
 
       // For Presidio PII, add the entity and action configurations
       if (providerKey === "PresidioPII" && selectedEntities.length > 0) {
@@ -612,7 +618,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
         }
 
         allowedParams.forEach((paramName) => {
-          if (isPresidioCacheField(paramName)) return;
+          if (isPresidioCacheField(paramName) || paramName === STREAMING_OUTPUT) return;
           // Check for both direct parameter name and nested optional_params object
           const directValue = values[paramName];
           const paramValue =
@@ -796,6 +802,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
 
     return (
       <>
+        <PresidioStreamingOutput control={form.control} />
         <PresidioAnalysisCache control={form.control} settings={guardrailSettings.presidio_analysis_cache} />
         <PiiConfiguration
           entities={guardrailSettings.supported_entities}

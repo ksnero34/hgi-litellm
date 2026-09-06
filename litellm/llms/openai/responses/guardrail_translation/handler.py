@@ -42,6 +42,7 @@ from litellm.completion_extras.litellm_responses_transformation.transformation i
     OpenAiResponsesToChatCompletionStreamIterator,
 )
 from litellm.exceptions import GuardrailRaisedException
+from litellm.litellm_core_utils.core_helpers import get_or_create_metadata_bucket
 from litellm.llms.base_llm.guardrail_translation.base_translation import BaseTranslation
 from litellm.llms.base_llm.guardrail_translation.utils import effective_skip_system_message_for_guardrail
 from litellm.llms.openai.chat.guardrail_translation.handler import get_guardrail_input_scope
@@ -182,16 +183,22 @@ class OpenAIResponsesHandler(BaseTranslation):
             OpenAIChatCompletionsHandler,
         )
 
+        metadata_key, metadata_bucket = get_or_create_metadata_bucket(data)
         history_data = {
             "messages": copy.deepcopy(messages),
             "model": data.get("model"),
-            "metadata": copy.deepcopy(data.get("metadata") or {}),
-            "litellm_metadata": copy.deepcopy(data.get("litellm_metadata") or {}),
+            **{
+                key: copy.deepcopy(data[key])
+                for key in ("metadata", "litellm_metadata")
+                if key in data and key != metadata_key
+            },
+            metadata_key: metadata_bucket,
         }
         processed = await OpenAIChatCompletionsHandler().process_input_messages(
             data=history_data,
             guardrail_to_apply=guardrail_to_apply,
             litellm_logging_obj=litellm_logging_obj,
+            history_only=True,
         )
         if processed.get("messages") != messages:
             guardrail_to_apply.handle_sensitive_data_detection(

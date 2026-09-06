@@ -28,6 +28,7 @@ from litellm.types.utils import (
     GuardrailAnalysisCacheInfo,
     GuardrailEnforcementMode,
     GuardrailInputSource,
+    GuardrailSharedAnalysis,
     GuardrailStatus,
     GuardrailTracingDetail,
     GuardrailUsageAction,
@@ -1121,6 +1122,7 @@ class CustomGuardrail(CustomLogger):
         usage_action: GuardrailUsageAction | None = None,
         enforcement_mode: GuardrailEnforcementMode | None = None,
         analysis_cache: GuardrailAnalysisCacheInfo | None = None,
+        shared_analysis: GuardrailSharedAnalysis | None = None,
     ) -> None:
         """
         Builds `StandardLoggingGuardrailInformation` and adds it to the request metadata so it can be used for logging to DataDog, Langfuse, etc.
@@ -1171,7 +1173,16 @@ class CustomGuardrail(CustomLogger):
             if analysis_cache is not None
             else StandardLoggingGuardrailInformation()
         )
-        slg: Final[StandardLoggingGuardrailInformation] = {**base_slg, **optional_cache_info}
+        optional_shared_analysis: Final = (
+            StandardLoggingGuardrailInformation(shared_analysis=shared_analysis)
+            if shared_analysis is not None
+            else StandardLoggingGuardrailInformation()
+        )
+        slg: Final[StandardLoggingGuardrailInformation] = {
+            **base_slg,
+            **optional_cache_info,
+            **optional_shared_analysis,
+        }
 
         def _append_guardrail_info(container: dict) -> None:
             key: Final = "standard_logging_guardrail_information"

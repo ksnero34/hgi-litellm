@@ -1,3 +1,4 @@
+import { formatDurationMs, getMeasuredOverhead, isValidInterval, type TimingInterval } from "./guardrailTiming";
 import React, { useState, useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import PresidioDetectedEntities from "./PresidioDetectedEntities";
@@ -8,8 +9,6 @@ import ContentFilterDetails from "./ContentFilterDetails";
 import CompliancePanel from "./CompliancePanel";
 import { complianceBadgeClass, OUTCOME_PRECEDENCE } from "./compliance";
 import { GuardrailUsageBadges, type AnalysisCacheMetadata } from "./GuardrailUsageBadges";
-
-// ── Interfaces ──────────────────────────────────────────────────────────────
 
 interface RecognitionMetadata {
   recognizer_name: string;
@@ -74,6 +73,7 @@ interface GuardrailInformation {
   guardrail_cost?: number;
   guardrail_cost_in_spend?: boolean;
   analysis_cache?: AnalysisCacheMetadata;
+  shared_analysis?: TimingInterval;
 }
 
 interface GuardrailViewerProps {
@@ -89,14 +89,8 @@ interface GuardrailViewerProps {
   };
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
 const PROVIDERS_WITH_CUSTOM_RENDERERS = new Set(["presidio", "bedrock", "litellm_content_filter"]);
 
-/**
- * Extracts a plain string from guardrail_mode for display purposes.
- * Returns the first mode when multiple are present.
- */
 const resolveMode = (mode: GuardrailInformation["guardrail_mode"]): string | null => {
   if (mode == null) return null;
   if (typeof mode === "string") return mode;
@@ -115,10 +109,6 @@ const resolveMode = (mode: GuardrailInformation["guardrail_mode"]): string | nul
   return null;
 };
 
-/**
- * Checks whether guardrail_mode includes the given target stage.
- * Handles arrays (multi-stage guardrails) by checking all elements.
- */
 const modeMatches = (mode: GuardrailInformation["guardrail_mode"], target: string): boolean => {
   if (mode == null) return false;
   if (typeof mode === "string") return mode === target;
@@ -166,11 +156,6 @@ const getInputSourceLabel = (source?: GuardrailInputSource): string | null => {
   return parts.length > 0 ? parts.join(" · ") : source.path ?? null;
 };
 
-const formatDurationMs = (seconds: number): string => {
-  const ms = Math.round(seconds * 1000);
-  return `${ms}ms`;
-};
-
 const getTotalMasked = (entry: GuardrailInformation): number => {
   return Object.values(entry.masked_entity_count || {}).reduce(
     (sum, count) => sum + (typeof count === "number" ? count : 0),
@@ -178,9 +163,8 @@ const getTotalMasked = (entry: GuardrailInformation): number => {
   );
 };
 
-const isEntrySuccess = (entry: GuardrailInformation): boolean => {
-  return (entry.guardrail_status ?? "").toLowerCase() === "success";
-};
+const isEntrySuccess = (entry: GuardrailInformation): boolean =>
+  (entry.guardrail_status ?? "").toLowerCase() === "success";
 
 const hasExecutionError = (entry: GuardrailInformation): boolean => /fail|error/i.test(entry.guardrail_status ?? "");
 
@@ -228,11 +212,7 @@ const getRiskScore = (entry: GuardrailInformation): number | null => {
   return Math.min(10, Math.round(score * 10) / 10);
 };
 
-const getDisplayName = (entry: GuardrailInformation): string => {
-  return entry.policy_template || entry.guardrail_name;
-};
-
-// ── Icons (inline SVGs) ─────────────────────────────────────────────────────
+const getDisplayName = (entry: GuardrailInformation): string => entry.policy_template || entry.guardrail_name;
 
 const ShieldIcon = () => (
   <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -318,8 +298,6 @@ const DownloadIcon = () => (
   </svg>
 );
 
-// ── Sub-components ──────────────────────────────────────────────────────────
-
 const MatchDetailsTable = ({ matchDetails }: { matchDetails: MatchDetail[] }) => {
   if (!matchDetails || matchDetails.length === 0) return null;
 
@@ -391,13 +369,12 @@ const GenericGuardrailResponse = ({ response }: { response: any }) => {
   );
 };
 
-// ── Timeline entry types ────────────────────────────────────────────────────
-
 interface TimelineEntry {
-  type: "request" | "guardrail" | "llm" | "response";
+  type: "request" | "guardrail" | "analysis" | "llm" | "response";
   label: string;
   offsetMs?: number;
   status?: string;
+  duration?: string;
   executionError?: boolean;
   outcome?: ComplianceOutcome;
 }
@@ -415,30 +392,62 @@ const RequestLifecycle = ({
     const requestStart = Date.parse(logEntry?.startTime ?? "") / 1000;
     const requestEnd = Date.parse(logEntry?.endTime ?? "") / 1000;
     const hasRequestStart = Number.isFinite(requestStart);
-    const baseTime = hasRequestStart ? requestStart : Math.min(...entries.map((entry) => entry.start_time));
+    const validIntervals = entries.flatMap((entry) => [entry, entry.shared_analysis]).filter(isValidInterval);
+    const baseTime = hasRequestStart ? requestStart : Math.min(...validIntervals.map((entry) => entry.start_time));
+    const responseFloor = Math.max(
+      baseTime,
+      ...sorted
+        .filter((entry) => !isLoggingOnlyEntry(entry))
+        .filter(isValidInterval)
+        .map((entry) => entry.end_time),
+    );
     const offset = (time: number) =>
       Number.isFinite(time) && time >= baseTime ? Math.round((time - baseTime) * 1000) : undefined;
-    const guardrailItems = (stage: string, label: string): TimelineEntry[] =>
-      sorted
-        .filter((entry) => modeMatches(entry.guardrail_event ?? entry.guardrail_mode, stage))
-        .map((entry) => {
-          const outcome = getComplianceOutcome(entry);
-          return {
-            type: "guardrail",
-            label: `${label}: ${getDisplayName(entry)}`,
-            offsetMs: offset(entry.end_time),
-            status: outcome.toUpperCase(),
-            outcome,
-            executionError: hasExecutionError(entry),
+    const guardrailItems = (stage: string, label: string): TimelineEntry[] => {
+      const stageEntries = sorted.filter((entry) => modeMatches(entry.guardrail_event ?? entry.guardrail_mode, stage));
+      const shared = new Map<string, TimelineEntry>();
+      const checks: TimelineEntry[] = stageEntries.map((entry) => {
+        const outcome = getComplianceOutcome(entry);
+        const interval = entry.shared_analysis;
+        if (isValidInterval(interval)) {
+          const key = JSON.stringify([
+            entry.guardrail_run_id,
+            entry.guardrail_name,
+            interval.start_time,
+            interval.end_time,
+          ]);
+          const analysisItem: TimelineEntry = {
+            type: "analysis",
+            label: `Shared analysis: ${getDisplayName(entry)}`,
+            offsetMs: offset(interval.end_time),
+            duration: formatDurationMs(interval.end_time - interval.start_time),
           };
-        });
+          shared.set(key, analysisItem);
+        }
+        return {
+          type: "guardrail",
+          label: `${label}: ${getDisplayName(entry)}`,
+          offsetMs: isValidInterval(entry) ? offset(entry.end_time) : undefined,
+          status: outcome.toUpperCase(),
+          outcome,
+          executionError: hasExecutionError(entry),
+        };
+      });
+      return [...shared.values(), ...checks].sort(
+        (left, right) => (left.offsetMs ?? Infinity) - (right.offsetMs ?? Infinity),
+      );
+    };
     return [
       { type: "request", label: "Request received", offsetMs: hasRequestStart ? 0 : undefined },
       ...guardrailItems("pre_call", "Pre-call guardrail"),
       { type: "llm", label: "LLM call" },
       ...guardrailItems("during_call", "During-call guardrail"),
       ...guardrailItems("post_call", "Post-call guardrail"),
-      { type: "response", label: "Response returned", offsetMs: offset(requestEnd) },
+      {
+        type: "response",
+        label: "Response returned",
+        offsetMs: requestEnd >= responseFloor ? offset(requestEnd) : undefined,
+      },
       ...guardrailItems("logging_only", "Logging-only audit"),
     ] satisfies TimelineEntry[];
   }, [entries, logEntry?.startTime, logEntry?.endTime]);
@@ -449,10 +458,9 @@ const RequestLifecycle = ({
       <div className="relative">
         {timeline.map((item, idx) => (
           <div key={idx} className="flex items-start gap-3 relative">
-            {/* Vertical line */}
             <div className="flex flex-col items-center">
               <div className="shrink-0">
-                {item.type === "request" || item.type === "response" ? (
+                {item.type === "request" || item.type === "response" || item.type === "analysis" ? (
                   <GrayDotIcon />
                 ) : item.type === "llm" ? (
                   <PlayCircleIcon />
@@ -462,13 +470,12 @@ const RequestLifecycle = ({
               </div>
               {idx < timeline.length - 1 && <div className="w-0.5 bg-border grow" style={{ minHeight: "24px" }} />}
             </div>
-
-            {/* Content */}
             <div className="pb-4 flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-sm ${item.type === "llm" ? "text-info font-medium" : "text-foreground"}`}>
                   {item.label}
                 </span>
+                {item.duration && <span className="text-xs text-muted-foreground">{item.duration}</span>}
                 {item.status && (
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -489,8 +496,6 @@ const RequestLifecycle = ({
     </div>
   );
 };
-
-// ── Evaluation Card ─────────────────────────────────────────────────────────
 
 const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
   const [expanded, setExpanded] = useState(false);
@@ -525,17 +530,13 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
 
   return (
     <div className="border border-border rounded-lg bg-card">
-      {/* Collapsed header row */}
       <div
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        {/* Status icon */}
         <div className="shrink-0">
           <OutcomeIcon outcome={complianceOutcome} executionError={hasExecutionError(entry)} />
         </div>
-
-        {/* Name + badges */}
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <span className="font-semibold text-foreground text-sm truncate">{displayName}</span>
 
@@ -591,10 +592,10 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
             includedInSpend={entry.guardrail_cost_in_spend}
           />
         </div>
-
-        {/* Right side: duration + method + chevron */}
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-sm text-muted-foreground font-mono">{durationStr}</span>
+          <span className="text-sm text-muted-foreground font-mono">
+            {isValidInterval(entry.shared_analysis) ? `Individual check: ${durationStr}` : durationStr}
+          </span>
           {entry.detection_method && (
             <span className="px-2 py-0.5 bg-muted text-muted-foreground border border-border rounded-sm text-[11px] font-medium">
               {entry.detection_method.split(",")[0].trim()}
@@ -608,11 +609,8 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
           <ChevronIcon expanded={expanded} />
         </div>
       </div>
-
-      {/* Expanded details */}
       {expanded && (
         <div className="border-t border-border px-4 py-3">
-          {/* Classification details for llm-judge */}
           {entry.classification && (
             <div className="mb-3 bg-muted rounded-lg p-3 space-y-1">
               <h5 className="text-sm font-medium text-foreground mb-2">Classification</h5>
@@ -665,13 +663,9 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
               )}
             </div>
           )}
-
-          {/* Match details table */}
           {entry.match_details && entry.match_details.length > 0 && (
             <MatchDetailsTable matchDetails={entry.match_details} />
           )}
-
-          {/* Masked entity summary */}
           {totalMasked > 0 && (
             <div className="mt-3">
               <h5 className="text-sm font-medium text-foreground mb-2">Masked Entities</h5>
@@ -684,8 +678,6 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
               </div>
             </div>
           )}
-
-          {/* Provider-specific details */}
           {guardrailProvider === "presidio" && presidioEntities.length > 0 && (
             <div className="mt-3">
               <PresidioDetectedEntities entities={presidioEntities} />
@@ -709,8 +701,6 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
     </div>
   );
 };
-
-// ── Main Component ──────────────────────────────────────────────────────────
 
 const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) => {
   const guardrailEntries = useMemo(() => {
@@ -756,9 +746,7 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
   const evaluatedCount = outcomesByRun.size;
   const allPassed = outcomeCounts.passed === evaluatedCount;
 
-  const totalOverheadMs = useMemo(() => {
-    return Math.round(guardrailEntries.reduce((sum, e) => sum + (e.duration ?? 0), 0) * 1000);
-  }, [guardrailEntries]);
+  const totalOverhead = useMemo(() => getMeasuredOverhead(guardrailEntries), [guardrailEntries]);
 
   if (guardrailEntries.length === 0) {
     return null;
@@ -778,7 +766,6 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-xs w-full max-w-full overflow-hidden mb-6">
-      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-4">
           <ShieldIcon />
@@ -833,7 +820,11 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
 
         <div className="flex items-center gap-6">
           <div className="text-right">
-            <div className="text-sm font-medium text-foreground">Total: {totalOverheadMs}ms overhead</div>
+            <div className="text-sm font-medium text-foreground">
+              {totalOverhead == null
+                ? "Measured guardrail time unavailable"
+                : `Measured guardrail time: ${formatDurationMs(totalOverhead)}`}
+            </div>
           </div>
 
           <button
@@ -845,22 +836,15 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
           </button>
         </div>
       </div>
-
-      {/* ── Compliance Panel ──────────────────────────────────── */}
       {accessToken && logEntry && (
         <div className="px-6 py-4 border-b border-border">
           <CompliancePanel accessToken={accessToken} logEntry={logEntry} />
         </div>
       )}
-
-      {/* ── Body: stacked ──────────────────────────────────────── */}
       <div className="flex flex-col">
-        {/* Request Lifecycle */}
         <div className="border-b border-border px-6 py-5">
           <RequestLifecycle entries={guardrailEntries} logEntry={logEntry} />
         </div>
-
-        {/* Evaluation Details */}
         <div className="px-6 py-5">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
             Evaluation Details

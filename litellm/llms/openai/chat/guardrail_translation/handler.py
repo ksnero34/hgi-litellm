@@ -109,6 +109,8 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
         data: dict,
         guardrail_to_apply: "CustomGuardrail",
         litellm_logging_obj: "LiteLLMLoggingObj | None" = None,
+        *,
+        history_only: bool = False,
     ) -> Any:
         """
         Process input messages by applying guardrails to text content.
@@ -164,7 +166,9 @@ class OpenAIChatCompletionsHandler(BaseTranslation):
                         if content_index is None
                         else f"messages[{message_index}].content[{content_index}].text"
                     ),
-                    "scope": get_guardrail_input_scope(
+                    "scope": "conversation_history"
+                    if history_only
+                    else get_guardrail_input_scope(
                         role=_get_message_role(messages[message_index]),
                         message_index=message_index,
                         content_index=content_index,

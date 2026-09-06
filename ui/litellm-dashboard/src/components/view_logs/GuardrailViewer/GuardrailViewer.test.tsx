@@ -1,3 +1,4 @@
+import { getMeasuredOverhead } from "./guardrailTiming";
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -18,6 +19,16 @@ const BedrockPath = "@/components/view_logs/GuardrailViewer/BedrockGuardrailDeta
 describe("GuardrailViewer", () => {
   beforeEach(() => {
     vi.resetModules();
+  });
+
+  it("merges nested intervals while excluding gaps and repeated shared analysis", () => {
+    const shared = { start_time: 1, end_time: 2 };
+    const entries = [
+      { start_time: 1.2, end_time: 1.8, shared_analysis: shared },
+      { start_time: 1.3, end_time: 1.4, shared_analysis: shared },
+      { start_time: 3, end_time: 3.5 },
+    ];
+    expect(getMeasuredOverhead(entries)).toBe(1.5);
   });
 
   it("shows header, status pill, and duration", () => {
@@ -61,6 +72,68 @@ describe("GuardrailViewer", () => {
     expect(icons).toHaveLength(2);
     for (const icon of icons) expect(icon).toHaveClass("text-warning");
     expect(screen.queryByRole("img", { name: "Blocked" })).not.toBeInTheDocument();
+  });
+
+  it("counts shared analysis once and measures the union of concurrent check intervals", () => {
+    const common: Partial<GuardrailInformation> = {
+      guardrail_event: "pre_call",
+      guardrail_run_id: "shared-run",
+      shared_analysis: { start_time: 100, end_time: 101 },
+      start_time: 101,
+      end_time: 101.003,
+      duration: 0.003,
+    };
+    const overlap = { ...common, start_time: 101.001, end_time: 101.004 };
+    renderWithProviders(
+      <GuardrailViewer data={[makeGuardrailInformation(common), makeGuardrailInformation(overlap)]} />,
+    );
+    expect(screen.getByText("Shared analysis: pii-rail")).toBeVisible();
+    expect(screen.getByText("1000ms")).toBeVisible();
+    expect(screen.getByText("Measured guardrail time: 1004ms")).toBeVisible();
+    expect(screen.getAllByText("Individual check: 3ms")).toHaveLength(2);
+    expect(screen.getAllByText(/^T\+/).map((element) => element.textContent)).toEqual([
+      "T+1000ms",
+      "T+1003ms",
+      "T+1004ms",
+    ]);
+  });
+
+  it("measures overlapping legacy checks without adding their durations", () => {
+    const first = { start_time: 100, end_time: 100.003, duration: 0.003 };
+    const second = { start_time: 100.001, end_time: 100.004, duration: 0.003 };
+    renderWithProviders(<GuardrailViewer data={[makeGuardrailInformation(first), makeGuardrailInformation(second)]} />);
+    expect(screen.getByText("Measured guardrail time: 4ms")).toBeVisible();
+    expect(screen.getAllByText("3ms")).toHaveLength(2);
+    expect(screen.queryByText(/Shared analysis:/)).not.toBeInTheDocument();
+  });
+
+  it("ignores invalid intervals and does not show a response before pre-call checks finish", () => {
+    const valid: Partial<GuardrailInformation> = {
+      guardrail_event: "pre_call",
+      start_time: 100,
+      end_time: 101.233,
+      duration: 0.0001,
+      shared_analysis: { start_time: 102, end_time: 100 },
+    };
+    const invalid = { ...valid, start_time: NaN, end_time: NaN };
+    renderWithProviders(
+      <GuardrailViewer
+        data={[makeGuardrailInformation(valid), makeGuardrailInformation(invalid)]}
+        logEntry={{ request_id: "bad-end", startTime: "1970-01-01T00:01:40Z", endTime: "1970-01-01T00:01:40Z" }}
+      />,
+    );
+    expect(screen.getByText("Measured guardrail time: 1233ms")).toBeVisible();
+    expect(screen.getAllByText("<1ms")).toHaveLength(2);
+    expect(screen.getAllByText(/^T\+/).map((element) => element.textContent)).toEqual(["T+0ms", "T+1233ms"]);
+    expect(screen.queryByText(/Shared analysis:/)).not.toBeInTheDocument();
+  });
+
+  it("does not invent measured time when legacy logs have no valid intervals", () => {
+    const invalid = { start_time: NaN, end_time: NaN, duration: 0.002 };
+    renderWithProviders(<GuardrailViewer data={makeGuardrailInformation(invalid)} />);
+    expect(screen.getByText("Measured guardrail time unavailable")).toBeVisible();
+    expect(screen.getByText("2ms")).toBeVisible();
+    expect(screen.queryByText(/^T\+/)).not.toBeInTheDocument();
   });
 
   it("shows cached analysis on a blocked evaluation without changing its policy outcome", async () => {

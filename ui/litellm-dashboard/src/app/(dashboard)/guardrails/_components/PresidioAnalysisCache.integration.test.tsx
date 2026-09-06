@@ -1,3 +1,4 @@
+import PresidioStreamingOutput from "./PresidioStreamingOutput";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
@@ -43,4 +44,13 @@ describe("Presidio cache controls", () => {
     expect(screen.getByText("20")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
+});
+
+it("shows saved streaming mode and the legacy default in read-only details", () => {
+  const { rerender } = render(<PresidioStreamingOutput values={{ presidio_streaming_output_mode: "full_buffer" }} />);
+  expect(screen.getByText("Inspect complete response before delivery")).toBeInTheDocument();
+  expect(screen.getByText(/Off leaves input and non-streaming inspection unchanged/)).toBeInTheDocument();
+  rerender(<PresidioStreamingOutput />);
+  expect(screen.getByText("Windowed inspection (default)")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 });

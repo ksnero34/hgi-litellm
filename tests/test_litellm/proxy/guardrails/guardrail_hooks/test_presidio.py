@@ -1329,6 +1329,7 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
             presidio_filter_scope: str = "both",
             expand_event_hook_for_output_processing: bool = True,
             unreachable_fallback: str = "fail_closed",
+            presidio_streaming_output_mode: str = "windowed",
             **kwargs,
         ):
             self.apply_to_output = apply_to_output
@@ -1338,6 +1339,7 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
             self.logging_only = logging_only
             self.presidio_filter_scope = presidio_filter_scope
             self.unreachable_fallback = unreachable_fallback
+            self.presidio_streaming_output_mode = presidio_streaming_output_mode
             created.append(self)
 
         def update_in_memory_litellm_params(self, litellm_params):
@@ -1367,6 +1369,7 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     cb = initialize_presidio(params_input, guardrail_dict)
     assert cb is created[0]
     assert created[0].apply_to_output is False
+    assert created[0].presidio_streaming_output_mode == "windowed"
     assert created[0].unreachable_fallback == "fail_closed"
 
     created.clear()
@@ -1441,6 +1444,21 @@ async def test_presidio_filter_scope_initializer(monkeypatch):
     )
     initialize_presidio(params_fail_closed, guardrail_dict)
     assert created[0].unreachable_fallback == "fail_closed"
+
+
+    for streaming_mode in ("off", "windowed", "full_buffer"):
+        created.clear()
+        initialize_presidio(
+            LitellmParams(
+                guardrail="presidio", mode="pre_call", presidio_filter_scope="input",
+                presidio_streaming_output_mode=streaming_mode,
+            ),
+            guardrail_dict,
+        )
+        assert len(created) == 1
+        assert created[0].event_hook == "pre_call"
+        assert created[0].apply_to_output is False
+        assert created[0].presidio_streaming_output_mode == streaming_mode
 
 
 @pytest.mark.asyncio
@@ -3627,7 +3645,7 @@ async def test_output_parse_pii_streaming_responses_completed_event_unmasked(
     """
     When output_parse_pii=True, a /v1/responses ``response.completed`` event
     (a Pydantic ResponseCompletedEvent, as produced in production) must have its
-    output text unmasked in-place before being forwarded to the client.
+    output text unmasked in a client copy while retaining the masked source.
     """
     from litellm.types.llms.openai import (
         ResponseCompletedEvent,
@@ -3682,7 +3700,9 @@ async def test_output_parse_pii_streaming_responses_completed_event_unmasked(
     ):
         collected.append(chunk)
 
-    assert collected == [completed_event]
+    assert len(collected) == 1
+    assert completed_event.response.output[0].content[0].text == "Reach me at <EMAIL_ADDRESS_1> today."
+    assert collected[0] is not completed_event
     assert collected[0].response.output[0].content[0].text == "Reach me at john@example.com today."
 
 
@@ -3731,7 +3751,188 @@ async def test_output_parse_pii_streaming_mixed_chunks_flushes_buffered(
     ):
         collected.append(chunk)
 
-    assert collected == [model_chunk, response_completed]
+    assert len(collected) == 2
+    assert collected[0] == model_chunk
+    assert collected[1].type == response_completed.type
+
+
+@pytest.mark.asyncio
+async def test_token_restoration_streams_before_completion_and_preserves_masked_log_source():
+    import asyncio
+
+    from litellm.main import stream_chunk_builder
+
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+    release = asyncio.Event()
+    source = [
+        ModelResponseStream(id="restore-chat", model="synthetic", choices=[{"index": 0, "delta": {"role": "assistant", "content": "Hello <PER"}}]),
+        ModelResponseStream(id="restore-chat", model="synthetic", choices=[{"index": 0, "delta": {"content": "SON_1>, <UNKNOWN_2> and <PERS"}}]),
+        ModelResponseStream(id="restore-chat", model="synthetic", choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}], usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+    ]
+
+    async def upstream():
+        yield source[0]
+        await release.wait()
+        yield source[1]
+        yield source[2]
+
+    iterator = guardrail._stream_pii_unmasking(upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane"}}})
+    first = await asyncio.wait_for(anext(iterator), 0.5)
+    assert first.choices[0].delta.content == "Hello "
+    assert source[0].choices[0].delta.content == "Hello <PER"
+    release.set()
+    delivered = [first] + [chunk async for chunk in iterator]
+    restored = stream_chunk_builder(delivered)
+    logged = stream_chunk_builder(source)
+    assert restored.choices[0].message.content == "Hello Jane, <UNKNOWN_2> and <PERS"
+    assert logged.choices[0].message.content == "Hello <PERSON_1>, <UNKNOWN_2> and <PERS"
+    assert restored.usage == logged.usage
+    assert delivered[-1].choices[0].finish_reason == "stop"
+    assert all(choice.finish_reason is None for chunk in delivered[:-1] for choice in chunk.choices)
+    assert all(chunk.id == "restore-chat" for chunk in delivered)
+
+
+@pytest.mark.asyncio
+async def test_token_restoration_isolated_choices_and_tool_argument_indices():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+    source = [
+        ModelResponseStream(id="restore-tools", model="synthetic", choices=[
+            {"index": 0, "delta": {"content": "<PER"}},
+            {"index": 1, "delta": {"tool_calls": [{"index": 2, "id": "call_two", "type": "function", "function": {"name": "lookup", "arguments": '{"name":"<PER'}}]}},
+        ]),
+        ModelResponseStream(id="restore-tools", model="synthetic", choices=[
+            {"index": 0, "delta": {"content": "SON_1>"}, "finish_reason": "stop"},
+            {"index": 1, "delta": {"tool_calls": [{"index": 2, "function": {"arguments": 'SON_2>"}'}}]}},
+        ]),
+        ModelResponseStream(id="restore-tools", model="synthetic", choices=[{"index": 1, "delta": {}, "finish_reason": "tool_calls"}]),
+    ]
+
+    async def upstream():
+        for chunk in source:
+            yield chunk
+
+    delivered = [chunk async for chunk in guardrail._stream_pii_unmasking(
+        upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane", "<PERSON_2>": "Alex"}}}
+    )]
+    assert delivered[0].choices[1].delta.tool_calls[0].index == 2
+    assert delivered[0].choices[1].delta.tool_calls[0].id == "call_two"
+    assert delivered[0].choices[1].delta.tool_calls[0].function.name == "lookup"
+    assert delivered[1].choices[0].delta.content == "Jane"
+    arguments = "".join(
+        tool.function.arguments
+        for chunk in delivered for choice in chunk.choices
+        for tool in choice.delta.tool_calls or []
+    )
+    assert arguments == '{"name":"Alex"}'
+    assert source[0].choices[0].delta.content == "<PER"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("as_model", [False, True])
+async def test_token_restoration_responses_delta_done_item_and_completed_agree(as_model):
+    import asyncio
+
+    from litellm.types.llms.openai import OutputTextDeltaEvent, OutputTextDoneEvent
+
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+    release = asyncio.Event()
+    shared = {"item_id": "msg_one", "output_index": 0, "content_index": 0}
+    first_data = {"type": "response.output_text.delta", "delta": "Hello <PER", **shared}
+    second_data = {"type": "response.output_text.delta", "delta": "SON_1> and <UNKNOWN_1>", **shared}
+    done_data = {"type": "response.output_text.done", "text": "Hello <PERSON_1> and <UNKNOWN_1>", **shared}
+    source = [
+        OutputTextDeltaEvent(**first_data) if as_model else first_data,
+        OutputTextDeltaEvent(**second_data) if as_model else second_data,
+        OutputTextDoneEvent(**done_data) if as_model else done_data,
+        {"type": "response.output_item.done", "output_index": 0, "item": {
+            "id": "msg_one", "type": "message", "content": [{"type": "output_text", "text": done_data["text"]}],
+        }},
+        {"type": "response.completed", "response": {"id": "resp_one", "output": [
+            {"id": "msg_one", "type": "message", "content": [{"type": "output_text", "text": done_data["text"]}]},
+        ]}},
+    ]
+
+    async def upstream():
+        yield source[0]
+        await release.wait()
+        for event in source[1:]:
+            yield event
+
+    iterator = guardrail._stream_pii_unmasking(upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane"}}})
+    first = await asyncio.wait_for(anext(iterator), 0.5)
+    read = guardrail._response_field
+    assert read(first, "delta") == "Hello "
+    release.set()
+    delivered = [first] + [event async for event in iterator]
+    assert "".join(read(event, "delta") for event in delivered if read(event, "type") == "response.output_text.delta") == "Hello Jane and <UNKNOWN_1>"
+    assert read(delivered[2], "text") == "Hello Jane and <UNKNOWN_1>"
+    assert delivered[3]["item"]["content"][0]["text"] == "Hello Jane and <UNKNOWN_1>"
+    assert delivered[4]["response"]["output"][0]["content"][0]["text"] == "Hello Jane and <UNKNOWN_1>"
+    assert read(source[0], "delta") == "Hello <PER"
+    assert read(source[2], "text") == "Hello <PERSON_1> and <UNKNOWN_1>"
+    assert source[4]["response"]["output"][0]["content"][0]["text"] == "Hello <PERSON_1> and <UNKNOWN_1>"
+
+
+@pytest.mark.asyncio
+async def test_token_restoration_cancellation_closes_upstream_without_releasing_pending_prefix():
+    import asyncio
+
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def upstream():
+        try:
+            yield ModelResponseStream(choices=[{"index": 0, "delta": {"content": "Visible <PER"}}])
+            entered.set()
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    iterator = guardrail._stream_pii_unmasking(upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane"}}})
+    assert (await anext(iterator)).choices[0].delta.content == "Visible "
+    waiting = asyncio.create_task(anext(iterator))
+    await asyncio.wait_for(entered.wait(), 0.5)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert closed.is_set()
+    with pytest.raises(StopAsyncIteration):
+        await anext(iterator)
+
+
+@pytest.mark.asyncio
+async def test_token_restoration_client_close_closes_suspended_upstream():
+    import asyncio
+
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+    closed = asyncio.Event()
+
+    async def upstream():
+        try:
+            yield ModelResponseStream(choices=[{"index": 0, "delta": {"content": "Visible <PER"}}])
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    iterator = guardrail._stream_pii_unmasking(upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane"}}})
+    assert (await anext(iterator)).choices[0].delta.content == "Visible "
+    await iterator.aclose()
+    assert closed.is_set()
+
+
+@pytest.mark.asyncio
+async def test_token_restoration_propagates_upstream_failure_without_raw_fallback():
+    guardrail = _OPTIONAL_PresidioPIIMasking(mock_testing=True, output_parse_pii=True)
+
+    async def upstream():
+        yield ModelResponseStream(choices=[{"index": 0, "delta": {"content": "<PER"}}])
+        raise RuntimeError("synthetic upstream failure")
+
+    iterator = guardrail._stream_pii_unmasking(upstream(), {"metadata": {"pii_tokens": {"<PERSON_1>": "Jane"}}})
+    assert (await anext(iterator)).choices[0].delta.content == ""
+    with pytest.raises(RuntimeError, match="synthetic upstream failure"):
+        await anext(iterator)
 
 
 @pytest.mark.asyncio
@@ -5155,6 +5356,7 @@ def test_presidio_cache_initializer_all_callbacks(monkeypatch, mode, expected_co
                 presidio_anonymizer_api_base="http://127.0.0.1:1",
                 presidio_analysis_cache_enabled=False,
                 presidio_analysis_cache_ttl_seconds=77,
+                presidio_streaming_output_mode="full_buffer",
             ),
             {"guardrail_name": guardrail_name},
         )
@@ -5164,6 +5366,7 @@ def test_presidio_cache_initializer_all_callbacks(monkeypatch, mode, expected_co
         for callback in callbacks:
             assert callback._analysis_cache.config.enabled is False
             assert callback._analysis_cache.config.ttl_seconds == 77
+            assert callback.presidio_streaming_output_mode == "full_buffer"
     finally:
         for callback in registered_callbacks():
             litellm.logging_callback_manager.remove_callback_from_all_lists(callback)
@@ -5430,3 +5633,376 @@ async def test_unified_blocked_request_persists_entity_tokens_for_all_checked_me
     assert "person@example.com" not in str(request)
     assert "홍길동" not in str(logging_obj.model_call_details)
     assert "person@example.com" not in str(logging_obj.model_call_details)
+
+
+@asynccontextmanager
+async def _bounded_stream_http_guardrail(mode="windowed", action=PiiAction.MASK):
+    from tests.test_litellm.proxy.guardrails.guardrail_hooks.test_presidio_analysis_integration import (
+        SyntheticRedis,
+        cache_for,
+        local_presidio,
+    )
+
+    async with local_presidio() as (server, url):
+        server.delay = 0
+        redis = SyntheticRedis()
+        guardrail = _OPTIONAL_PresidioPIIMasking(
+            presidio_analyzer_api_base=url,
+            presidio_anonymizer_api_base=url,
+            guardrail_name="bounded-stream-test",
+            apply_to_output=True,
+            presidio_streaming_output_mode=mode,
+            pii_entities_config={"PERSON": action},
+            presidio_analysis_cache=cache_for(redis),
+        )
+        yield server, guardrail, redis
+
+
+def _bounded_stream_chat_chunk(text="", finish=False, tool_arguments=None):
+    delta = (
+        {"content": text}
+        if tool_arguments is None
+        else {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": "call-test",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": tool_arguments},
+                }
+            ]
+        }
+    )
+    return ModelResponseStream(
+        id="chatcmpl-bounded",
+        choices=[
+            {
+                "index": 0,
+                "delta": delta,
+                "finish_reason": "tool_calls" if finish and tool_arguments is not None else "stop" if finish else None,
+            }
+        ],
+        created=1,
+        model="synthetic-model",
+        object="chat.completion.chunk",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delta_size", [1, 10000])
+async def test_bounded_stream_http_analysis_is_batched_and_never_uses_cross_request_cache(delta_size):
+    text = "x" * 382 + "홍길동" + "y" * 4000
+
+    async def source():
+        for offset in range(0, len(text), delta_size):
+            yield _bounded_stream_chat_chunk(text[offset : offset + delta_size])
+        yield _bounded_stream_chat_chunk(finish=True)
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, redis):
+        chunks = [chunk async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+        content = "".join(choice.delta.content or "" for chunk in chunks for choice in chunk.choices)
+        assert content == text.replace("홍길동", "<PERSON>")
+        assert 0 < len(server.payloads) <= 20
+        assert max(len(payload["text"]) for payload in server.payloads) <= 1024
+        assert redis.reads == redis.writes == 0
+        assert chunks[-1].choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_timer_releases_content_while_upstream_is_stalled():
+    resume = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def source():
+        try:
+            yield _bounded_stream_chat_chunk("x" * 256)
+            await resume.wait()
+            yield _bounded_stream_chat_chunk("홍길동", finish=True)
+        finally:
+            closed.set()
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, _):
+        stream = guardrail._stream_apply_output_masking(source(), {"metadata": {}})
+        try:
+            first = await asyncio.wait_for(anext(stream), 2)
+            assert first.choices[0].delta.content == ""
+            released = await asyncio.wait_for(anext(stream), 2)
+            assert released.choices[0].delta.content == "x" * 128
+            assert not resume.is_set()
+            assert not closed.is_set()
+            assert len(server.payloads) == 1
+            resume.set()
+            remaining = [chunk async for chunk in stream]
+            content = "".join(choice.delta.content or "" for chunk in remaining for choice in chunk.choices)
+            assert content == "x" * 128 + "<PERSON>"
+            assert closed.is_set()
+        finally:
+            resume.set()
+            await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_responses_completion_snapshots_reuse_sanitized_analysis():
+    import copy
+
+    text = "x" * 382 + "홍길동" + "y" * 1500
+    identity = {"item_id": "item-stream", "output_index": 0, "content_index": 0}
+    item = {
+        "id": "item-stream",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": text}],
+    }
+    calls_at_done = []
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, _):
+
+        async def source():
+            for offset in range(0, len(text), 64):
+                yield {"type": "response.output_text.delta", **identity, "delta": text[offset : offset + 64]}
+            yield {"type": "response.output_text.done", **identity, "text": text}
+            yield {"type": "response.output_item.done", "output_index": 0, "item": copy.deepcopy(item)}
+            yield {
+                "type": "response.completed",
+                "response": {"id": "resp-stream", "output": [copy.deepcopy(item)], "output_text": text},
+            }
+
+        events = []
+        async for event in guardrail._stream_apply_output_masking(source(), {"metadata": {}}):
+            events.append(event)
+            if event["type"] == "response.output_text.done":
+                calls_at_done.append(len(server.payloads))
+        expected = text.replace("홍길동", "<PERSON>")
+        deltas = "".join(event["delta"] for event in events if event["type"] == "response.output_text.delta")
+        assert deltas == expected
+        assert next(event["text"] for event in events if event["type"] == "response.output_text.done") == expected
+        assert events[-2]["item"]["content"][0]["text"] == expected
+        assert events[-1]["response"]["output"][0]["content"][0]["text"] == expected
+        assert events[-1]["response"]["output_text"] == expected
+        assert len(server.payloads) == calls_at_done[0]
+        assert max(len(payload["text"]) for payload in server.payloads) <= 1024
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_tool_arguments_remain_atomic_valid_json():
+    import json
+
+    resume = asyncio.Event()
+    original = '{"person":"홍길동","nested":["safe"],"count":2}'
+
+    async def source():
+        yield _bounded_stream_chat_chunk(tool_arguments=original[:15])
+        await resume.wait()
+        yield _bounded_stream_chat_chunk(tool_arguments=original[15:], finish=True)
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, _):
+        stream = guardrail._stream_apply_output_masking(source(), {"metadata": {}})
+        try:
+            first = await asyncio.wait_for(anext(stream), 2)
+            assert first.choices[0].delta.tool_calls[0].function.arguments == ""
+            assert server.payloads == []
+            resume.set()
+            rest = [chunk async for chunk in stream]
+            arguments = [
+                call.function.arguments
+                for chunk in rest
+                for choice in chunk.choices
+                for call in choice.delta.tool_calls or []
+                if call.function.arguments
+            ]
+            assert len(arguments) == 1
+            assert json.loads(arguments[0]) == {"person": "<PERSON>", "nested": ["safe"], "count": 2}
+            assert rest[-1].choices[0].finish_reason == "tool_calls"
+        finally:
+            resume.set()
+            await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_full_buffer_blocks_without_emitting_prior_events():
+    emitted = []
+
+    async def source():
+        yield _bounded_stream_chat_chunk("safe prefix " * 100)
+        yield _bounded_stream_chat_chunk("홍길동", finish=True)
+
+    async with _bounded_stream_http_guardrail("full_buffer", PiiAction.BLOCK) as (server, guardrail, _):
+        async def consume():
+            async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}}):
+                emitted.append(chunk)
+
+        with pytest.raises(BlockedPiiEntityError):
+            await consume()
+        assert emitted == []
+        assert len(server.payloads) == 1
+        assert server.payloads[0]["text"] == "safe prefix " * 100 + "홍길동"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,tool_arguments", [("full_buffer", False), ("windowed", True)])
+async def test_bounded_stream_http_full_output_and_atomic_tool_size_caps_fail_closed(mode, tool_arguments):
+    from litellm.proxy.guardrails.guardrail_hooks.presidio_streaming import StreamingInspectionError
+
+    emitted = []
+
+    async def source():
+        yield (
+            _bounded_stream_chat_chunk(tool_arguments="x" * 65537)
+            if tool_arguments
+            else _bounded_stream_chat_chunk("x" * 262145)
+        )
+
+    async with _bounded_stream_http_guardrail(mode) as (server, guardrail, _):
+        async def consume():
+            async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}}):
+                emitted.append(chunk)
+
+        with pytest.raises(StreamingInspectionError, match="limit exceeded"):
+            await consume()
+        assert emitted == []
+        assert server.payloads == []
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_off_passes_events_without_analysis():
+    original = _bounded_stream_chat_chunk("홍길동", finish=True)
+
+    async def source():
+        yield original
+
+    async with _bounded_stream_http_guardrail("off") as (server, guardrail, redis):
+        received = [chunk async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+        assert received == [original]
+        assert received[0] is original
+        assert received[0].choices[0].delta.content == "홍길동"
+        assert server.payloads == []
+        assert redis.reads == redis.writes == 0
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_full_buffer_waits_for_eof_before_analysis():
+    at_finish = asyncio.Event()
+    eof = asyncio.Event()
+
+    async def source():
+        yield _bounded_stream_chat_chunk("홍길동", finish=True)
+        at_finish.set()
+        await eof.wait()
+
+    async with _bounded_stream_http_guardrail("full_buffer") as (server, guardrail, _):
+        async def consume():
+            return [chunk async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+
+        consumer = asyncio.create_task(consume())
+        try:
+            await asyncio.wait_for(at_finish.wait(), 2)
+            assert server.payloads == []
+            assert not consumer.done()
+            eof.set()
+            chunks = await asyncio.wait_for(consumer, 2)
+            assert len(server.payloads) == 1
+            assert "".join(choice.delta.content or "" for chunk in chunks for choice in chunk.choices) == "<PERSON>"
+        finally:
+            eof.set()
+            consumer.cancel()
+            await asyncio.gather(consumer, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_timer_flushes_remainder_after_same_delta_batch():
+    resume = asyncio.Event()
+
+    async def source():
+        yield _bounded_stream_chat_chunk("x" * 712)
+        await resume.wait()
+        yield _bounded_stream_chat_chunk(finish=True)
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, _):
+        stream = guardrail._stream_apply_output_masking(source(), {"metadata": {}})
+        try:
+            first = await asyncio.wait_for(anext(stream), 2)
+            assert first.choices[0].delta.content == "x" * 384
+            remainder = await asyncio.wait_for(anext(stream), 2)
+            assert remainder.choices[0].delta.content == "x" * 200
+            assert not resume.is_set()
+            assert len(server.payloads) == 2
+            resume.set()
+            rest = [chunk async for chunk in stream]
+            assert "".join(choice.delta.content or "" for chunk in rest for choice in chunk.choices) == "x" * 128
+        finally:
+            resume.set()
+            await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_atomic_tool_flush_does_not_repeat_name_or_id():
+    import json
+
+    async def source():
+        yield _bounded_stream_chat_chunk(tool_arguments='{"person":"홍길동"}')
+        yield _bounded_stream_chat_chunk(finish=True)
+
+    async with _bounded_stream_http_guardrail() as (_, guardrail, _):
+        chunks = [chunk async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+        calls = [call for chunk in chunks for choice in chunk.choices for call in choice.delta.tool_calls or []]
+        assert [call.id for call in calls if call.id] == ["call-test"]
+        assert [call.function.name for call in calls if call.function.name] == ["lookup"]
+        assert json.loads("".join(call.function.arguments or "" for call in calls)) == {"person": "<PERSON>"}
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_masks_pii_in_atomic_json_object_keys():
+    import json
+
+    async def source():
+        yield _bounded_stream_chat_chunk(tool_arguments='{"홍길동":"ok"}', finish=True)
+
+    async with _bounded_stream_http_guardrail() as (_, guardrail, _):
+        chunks = [chunk async for chunk in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+        arguments = "".join(
+            call.function.arguments or ""
+            for chunk in chunks
+            for choice in chunk.choices
+            for call in choice.delta.tool_calls or []
+        )
+        assert json.loads(arguments) == {"<PERSON>": "ok"}
+        assert "홍길동" not in arguments
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_masks_responses_error_message():
+    async def source():
+        yield {"type": "error", "code": "bad_request", "message": "홍길동"}
+
+    async with _bounded_stream_http_guardrail() as (server, guardrail, _):
+        events = [event async for event in guardrail._stream_apply_output_masking(source(), {"metadata": {}})]
+        assert events == [{"type": "error", "code": "bad_request", "message": "<PERSON>"}]
+        assert len(server.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_bounded_stream_http_hot_update_preserves_active_stream_mode_and_text():
+    resume = asyncio.Event()
+
+    async def source():
+        yield _bounded_stream_chat_chunk("x" * 256)
+        await resume.wait()
+        yield _bounded_stream_chat_chunk("홍길동", finish=True)
+
+    async with _bounded_stream_http_guardrail("windowed") as (_, guardrail, _):
+        stream = guardrail._stream_apply_output_masking(source(), {"metadata": {}})
+        try:
+            first = await asyncio.wait_for(anext(stream), 2)
+            assert first.choices[0].delta.content == ""
+            guardrail.update_in_memory_litellm_params(
+                LitellmParams(guardrail="presidio", mode="pre_call", presidio_streaming_output_mode="full_buffer")
+            )
+            assert guardrail.presidio_streaming_output_mode == "full_buffer"
+            resume.set()
+            rest = [chunk async for chunk in stream]
+            content = "".join(choice.delta.content or "" for chunk in rest for choice in chunk.choices)
+            assert content == "x" * 256 + "<PERSON>"
+            assert rest[-1].choices[0].finish_reason == "stop"
+        finally:
+            resume.set()
+            await stream.aclose()

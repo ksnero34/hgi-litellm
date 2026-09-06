@@ -1181,16 +1181,22 @@ async def test_update_guardrail_endpoint(
 
 
 @pytest.mark.parametrize(
-    "scenario,expected_result,expected_exception",
+    "scenario,expected_result,expected_exception,streaming_mode",
     [
-        ("success_with_sync", "test-db-guardrail", None),
-        ("success_sync_fails_unexpected_error", "test-db-guardrail", None),
-        ("sync_fails_invalid_config", None, HTTPException),
-        ("database_failure", None, HTTPException),
-        ("no_prisma_client", None, HTTPException),
+        ("success_with_sync", "test-db-guardrail", None, None),
+        ("success_with_sync", "test-db-guardrail", None, "off"),
+        ("success_with_sync", "test-db-guardrail", None, "windowed"),
+        ("success_with_sync", "test-db-guardrail", None, "full_buffer"),
+        ("success_sync_fails_unexpected_error", "test-db-guardrail", None, None),
+        ("sync_fails_invalid_config", None, HTTPException, None),
+        ("database_failure", None, HTTPException, None),
+        ("no_prisma_client", None, HTTPException, None),
     ],
     ids=[
         "success_with_immediate_sync",
+        "presidio_streaming_off",
+        "presidio_streaming_windowed",
+        "presidio_streaming_full_buffer",
         "success_but_sync_fails_with_unexpected_error",
         "sync_rejects_invalid_config",
         "database_error",
@@ -1202,6 +1208,7 @@ async def test_patch_guardrail_endpoint(
     scenario,
     expected_result,
     expected_exception,
+    streaming_mode,
     mocker,
     mock_guardrail_registry,
     mock_in_memory_handler,
@@ -1279,12 +1286,25 @@ async def test_patch_guardrail_endpoint(
     elif scenario == "no_prisma_client":
         mocker.patch("litellm.proxy.proxy_server.prisma_client", None)
 
+    if streaming_mode is not None:
+        mock_guardrail_registry.get_guardrail_by_id_from_db.return_value = {
+            "guardrail_name": "streaming-config", "guardrail_id": "streaming-config-id",
+            "litellm_params": {
+                "guardrail": "presidio", "mode": "pre_call", "presidio_filter_scope": "input",
+                "presidio_streaming_output_mode": "full_buffer", "presidio_analysis_cache_enabled": False,
+            },
+        }
+    patch_request = (
+        PatchGuardrailRequest(litellm_params=BaseLitellmParams(presidio_streaming_output_mode=streaming_mode))
+        if streaming_mode is not None else MOCK_PATCH_REQUEST
+    )
+
     # Run the test
     if expected_exception:
         with pytest.raises(expected_exception) as exc_info:
             await patch_guardrail(
                 "test-guardrail-id",
-                MOCK_PATCH_REQUEST,
+                patch_request,
                 user_api_key_dict=MOCK_ADMIN_USER,
             )
 
@@ -1301,7 +1321,7 @@ async def test_patch_guardrail_endpoint(
 
     else:
         result = await patch_guardrail(
-            "test-guardrail-id", MOCK_PATCH_REQUEST, user_api_key_dict=MOCK_ADMIN_USER
+            "test-guardrail-id", patch_request, user_api_key_dict=MOCK_ADMIN_USER
         )
 
         assert result["guardrail_id"] == expected_result
@@ -1312,6 +1332,15 @@ async def test_patch_guardrail_endpoint(
         mock_in_memory_handler.sync_guardrail_from_db.assert_called_once_with(
             guardrail=mocker.ANY
         )
+
+        if streaming_mode is not None:
+            persisted = mock_guardrail_registry.update_guardrail_in_db.call_args.kwargs["guardrail"]
+            assert persisted["litellm_params"].presidio_streaming_output_mode == streaming_mode
+            assert persisted["litellm_params"].mode == "pre_call"
+            assert persisted["litellm_params"].presidio_filter_scope == "input"
+            assert persisted["litellm_params"].presidio_analysis_cache_enabled is False
+            synchronized = mock_in_memory_handler.sync_guardrail_from_db.call_args.kwargs["guardrail"]
+            assert synchronized["litellm_params"].presidio_streaming_output_mode == streaming_mode
 
         if scenario == "success_sync_fails_unexpected_error":
             assert mock_logger is not None
@@ -2681,3 +2710,32 @@ async def test_presidio_cache_ui_readiness_excludes_server_secrets(monkeypatch):
     monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_TTL_SECONDS", "invalid")
     invalid = await get_guardrail_ui_settings()
     assert "invalid_configuration" in invalid.presidio_analysis_cache.unavailable_reasons
+
+
+@pytest.mark.parametrize("streaming_mode", ("off", "windowed", "full_buffer"))
+def test_presidio_streaming_output_configuration_roundtrip(streaming_mode):
+    from litellm.types.guardrails import PresidioPresidioConfigModelUserInterface
+
+    params = LitellmParams(
+        guardrail="presidio", mode="pre_call", presidio_filter_scope="input",
+        presidio_streaming_output_mode=streaming_mode,
+    )
+    request = CreateGuardrailRequest(
+        guardrail=Guardrail(guardrail_name="streaming-config", litellm_params=params)
+    )
+    restored = CreateGuardrailRequest.model_validate_json(request.model_dump_json())
+    assert restored.guardrail["litellm_params"].presidio_streaming_output_mode == streaming_mode
+    assert restored.guardrail["litellm_params"].mode == "pre_call"
+    assert restored.guardrail["litellm_params"].presidio_filter_scope == "input"
+    assert LitellmParams(guardrail="presidio", mode="pre_call").presidio_streaming_output_mode == "windowed"
+    schema = PresidioPresidioConfigModelUserInterface.model_json_schema()["properties"]["presidio_streaming_output_mode"]
+    assert schema["enum"] == ["off", "windowed", "full_buffer"]
+    assert schema["default"] == "windowed"
+
+
+@pytest.mark.parametrize("invalid_mode", (None, "", "disabled", "FULL_BUFFER", True, 1, []))
+def test_presidio_streaming_output_configuration_rejects_invalid_mode(invalid_mode):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="presidio_streaming_output_mode"):
+        LitellmParams(guardrail="presidio", mode="pre_call", presidio_streaming_output_mode=invalid_mode)

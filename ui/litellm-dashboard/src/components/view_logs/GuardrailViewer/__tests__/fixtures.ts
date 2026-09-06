@@ -34,6 +34,7 @@ export interface GuardrailInformation {
   guardrail_cost?: number;
   guardrail_cost_in_spend?: boolean;
   analysis_cache?: AnalysisCacheMetadata;
+  shared_analysis?: { start_time: number; end_time: number };
   guardrail_provider?: string;
   guardrail_run_id?: string;
   guardrail_event?: string;

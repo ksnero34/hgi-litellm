@@ -374,6 +374,14 @@ class PresidioPresidioConfigModelUserInterface(BaseModel):
         ),
         json_schema_extra={"min": 1, "max": 64, "step": 1},
     )
+    presidio_streaming_output_mode: Literal["off", "windowed", "full_buffer"] = Field(
+        default="windowed",
+        description=(
+            "How configured output checks handle streaming responses: 'off' skips streaming output analysis, "
+            "'windowed' checks bounded text windows, and 'full_buffer' checks the complete response before release. "
+            "Input checks and non-streaming output checks are unchanged."
+        ),
+    )
     presidio_analysis_cache_enabled: bool | None = Field(
         default=None,
         strict=True,

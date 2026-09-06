@@ -19,7 +19,7 @@ from typing_extensions import ReadOnly
 
 from litellm.caching.redis_cache import RedisCache
 from litellm.secret_managers.main import get_secret
-from litellm.types.utils import GuardrailAnalysisCacheInfo
+from litellm.types.utils import GuardrailAnalysisCacheInfo, GuardrailSharedAnalysis
 
 Entity: TypeAlias = dict[str, object]
 
@@ -193,6 +193,9 @@ class RequestAnalysisContext:
     redis_cache: RedisCache | None = field(default=None, repr=False)
     results: dict[str, list[Entity]] = field(default_factory=dict, repr=False)
     cache_hits: dict[str, bool] = field(default_factory=dict, repr=False)
+    shared_analysis: Mapping[str, GuardrailSharedAnalysis] = field(
+        default_factory=lambda: MappingProxyType({}), repr=False
+    )
     pending: dict[str, asyncio.Future[list[Entity]]] = field(default_factory=dict, repr=False)
     semaphore: asyncio.Semaphore = field(init=False, repr=False)
     analysis_semaphore: asyncio.Semaphore = field(init=False, repr=False)
@@ -214,6 +217,7 @@ class RequestAnalysisContext:
         self.pending.clear()
         self.results.clear()
         self.cache_hits.clear()
+        self.shared_analysis = MappingProxyType({})
         self.engine_semaphores.clear()
         self.http_semaphores.clear()
         self.tenant_scope = None

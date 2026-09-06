@@ -10,6 +10,7 @@
 
 import asyncio
 import copy
+import hashlib
 import json
 import re
 import threading
@@ -33,7 +34,7 @@ from typing import (
 from uuid import uuid4
 
 import aiohttp
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from typing_extensions import NotRequired, ReadOnly
 
 import litellm
@@ -62,6 +63,12 @@ from litellm.proxy.guardrails.guardrail_hooks.presidio_analysis_context import (
     analysis_request_scope,
     current_analysis_context,
 )
+from litellm.proxy.guardrails.guardrail_hooks.presidio_streaming import (
+    Span,
+    StreamingInspectionError,
+    TokenRestorationBuffer,
+    WindowState,
+)
 from litellm.types.guardrails import (
     GuardrailEventHooks,
     LitellmParams,
@@ -74,7 +81,7 @@ from litellm.types.proxy.guardrails.guardrail_hooks.presidio import (
     PresidioAnalyzeRequest,
     PresidioAnalyzeResponseItem,
 )
-from litellm.types.utils import GuardrailAnalysisCacheInfo, GuardrailStatus, StreamingChoices
+from litellm.types.utils import GuardrailAnalysisCacheInfo, GuardrailSharedAnalysis, GuardrailStatus, StreamingChoices
 from litellm.utils import (
     EmbeddingResponse,
     ImageResponse,
@@ -107,9 +114,67 @@ class _PresidioServiceError(Exception):
 
 @dataclass(slots=True)
 class _StreamingPiiState:
+    mode: Literal["off", "windowed", "full_buffer"] = "windowed"
     pending: str = ""
     emitted: str = ""
     template: object | None = None
+    window: WindowState | None = None
+    queued_at: float | None = None
+    atomic: bool = False
+    completed: bool = False
+    source_length: int = 0
+    source_digest: str = ""
+
+    async def finalize(
+        self,
+        mask_json_value: Callable[[object, Mapping[str, object]], Awaitable[object]],
+        mask_complete: Callable[[str, Mapping[str, object]], Awaitable[str]],
+        request_data: Mapping[str, object],
+        *,
+        force: bool,
+    ) -> str:
+        if self.window is not None:
+            released: Final = await self.window.feed("", final=not force, force=force)
+            self.emitted = self.window.emitted
+            return released
+        self.source_digest = hashlib.sha256(self.pending.encode()).hexdigest()
+        if self.atomic:
+            try:
+                parsed: Final = _STREAM_JSON_ADAPTER.validate_json(self.pending)
+            except (ValidationError, RecursionError) as exc:
+                raise StreamingInspectionError("Invalid streaming tool arguments JSON") from exc
+            self.emitted = json.dumps(
+                await mask_json_value(parsed, request_data), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+            )
+        else:
+            self.emitted = await mask_complete(self.pending, request_data)
+        self.pending = ""
+        return self.emitted
+
+
+@dataclass(slots=True)
+class _StreamingPiiBudget:
+    events: int = 0
+    bytes: int = 0
+
+    def add(self, event: object, full_buffer: bool) -> None:
+        if isinstance(event, bytes):
+            raise _PresidioServiceError("Presidio cannot safely inspect raw streaming bytes")
+        serialized: Final = event.model_dump_json() if isinstance(event, BaseModel) else json.dumps(event, default=vars)
+        size: Final = len(serialized.encode())
+        self.events += 1
+        self.bytes += size
+        if size > 1048576 or (full_buffer and (self.events > 4096 or self.bytes > 2097152)):
+            raise StreamingInspectionError("Streaming inspection event buffer limit exceeded")
+
+
+_STREAM_JSON_ADAPTER: Final = TypeAdapter(object)
+_STREAM_SEQUENCE_ADAPTER: Final = TypeAdapter(tuple[object, ...])
+
+
+def _stream_sequence(value: object) -> tuple[object, ...] | None:
+    original: Final = value
+    return _STREAM_SEQUENCE_ADAPTER.validate_python(original) if isinstance(value, (list, tuple)) else None
 
 
 _LoopSemaphores = dict[asyncio.AbstractEventLoop, asyncio.Semaphore]
@@ -282,6 +347,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_anonymizer_api_base: str | None = None,
         output_parse_pii: bool | None = False,
         apply_to_output: bool = False,
+        presidio_streaming_output_mode: Literal["off", "windowed", "full_buffer"] = "windowed",
         expand_event_hook_for_output_processing: bool = True,
         presidio_ad_hoc_recognizers: str | None = None,
         logging_only: bool | None = None,
@@ -309,6 +375,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.mock_redacted_text = mock_redacted_text
         self.output_parse_pii = output_parse_pii or False
         self.apply_to_output = apply_to_output
+        if presidio_streaming_output_mode not in ("off", "windowed", "full_buffer"):
+            raise ValueError("Invalid Presidio streaming output mode")
+        self.presidio_streaming_output_mode: Literal["off", "windowed", "full_buffer"] = presidio_streaming_output_mode
         self.presidio_filter_scope = presidio_filter_scope
         if (
             isinstance(presidio_max_parallel_requests, bool)
@@ -830,11 +899,26 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     input_source=log_context.get("input_source"),
                     enforcement_mode="observe" if self.logging_only else "enforce",
                     analysis_cache=self._analysis_cache_info(texts[index], presidio_config, request_data),
+                    shared_analysis=GuardrailSharedAnalysis(start_time=started, end_time=ended),
                 )
             self.mark_guardrail_information_recorded()
             if isinstance(error, (asyncio.CancelledError, _PresidioServiceError)):
                 raise
             raise _PresidioServiceError(f"Presidio PII analysis failed: {type(error).__name__}") from None
+        finally:
+            shared_analysis: Final = GuardrailSharedAnalysis(
+                start_time=started, end_time=datetime.now(timezone.utc).timestamp()
+            )
+            context.shared_analysis = MappingProxyType(
+                {
+                    **context.shared_analysis,
+                    **{
+                        run_id: shared_analysis
+                        for log_context in log_contexts
+                        if (run_id := log_context.get("guardrail_run_id"))
+                    },
+                }
+            )
 
     async def _bounded_checks(self, checks: Sequence[Awaitable[str]]) -> list[str | BaseException]:
         results: Final[
@@ -1442,6 +1526,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             else:
                 guardrail_json_response = exception_str
             log_context = _PRESIDIO_LOG_CONTEXT.get() or {}
+            analysis_context: Final = current_analysis_context()
             self.add_standard_logging_guardrail_information_to_request_data(
                 guardrail_provider=self.guardrail_provider,
                 guardrail_json_response=guardrail_json_response,
@@ -1461,6 +1546,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 ),
                 enforcement_mode="observe" if self.logging_only else "enforce",
                 analysis_cache=self._analysis_cache_info(text, presidio_config, request_data),
+                shared_analysis=(
+                    analysis_context.shared_analysis.get(log_context.get("guardrail_run_id", ""))
+                    if analysis_context is not None
+                    else None
+                ),
             )
 
     async def async_pre_call_hook(
@@ -1546,7 +1636,12 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             fragments: Final = tuple(
                 fragment for message in messages for fragment in self._content_texts(message.get("content"))
             )
-            await self._prepare_analysis(fragments, presidio_config, data)
+            native_log_context: Final = PresidioLogContext(
+                guardrail_run_id=str(uuid4()), guardrail_event=GuardrailEventHooks.pre_call
+            )
+            await self._prepare_analysis(
+                fragments, presidio_config, data, log_contexts=(native_log_context,) * len(fragments)
+            )
             for msg_idx, m in enumerate(messages):
                 content = m.get("content", None)
                 if content is None:
@@ -1559,6 +1654,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                             output_parse_pii=self.output_parse_pii,
                             presidio_config=presidio_config,
                             request_data=data,
+                            log_context=native_log_context,
                         )
                     )
                     task_mappings.append((msg_idx, None))  # None indicates string content
@@ -1574,6 +1670,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                                 output_parse_pii=self.output_parse_pii,
                                 presidio_config=presidio_config,
                                 request_data=data,
+                                log_context=native_log_context,
                             )
                         )
                         task_mappings.append((msg_idx, int(content_idx)))
@@ -2247,75 +2344,326 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         )
         return response
 
+    async def _stream_analyze(self, text: str, request_data: Mapping[str, object]) -> Sequence[Span]:
+        if not text.strip() or self._mock_testing or self.mock_redacted_text is not None:
+            return ()
+        data: Final = MappingProxyType(request_data).copy()
+        chunks: Final = self._analysis_text_chunks(self._text_for_pii_analysis(text))
+        results: Final = tuple(
+            [
+                (offset, await self._analyze_payload(self._get_presidio_analyze_request_payload(chunk, None, data)))
+                for offset, chunk in chunks
+            ]
+        )
+        filtered: Final = tuple((offset, self.filter_analyze_results_by_score(items)) for offset, items in results)
+        return tuple(
+            dict.fromkeys(
+                self._stream_span(item, offset)
+                for offset, items in filtered
+                if isinstance(items, list)
+                for item in items
+            )
+        )
+
+    @staticmethod
+    def _stream_span(item: PresidioAnalyzeResponseItem, offset: int) -> Span:
+        start: Final = item.get("start")
+        end: Final = item.get("end")
+        entity: Final = item.get("entity_type")
+        score: Final = item.get("score")
+        if not isinstance(start, int) or not isinstance(end, int) or entity is None or score is None:
+            raise StreamingInspectionError("Invalid streaming analysis result")
+        return Span(offset + start, offset + end, _OPTIONAL_PresidioPIIMasking._entity_type_value(entity), score)
+
+    async def _stream_mask_slice(
+        self,
+        text: str,
+        spans: Sequence[Span],
+        request_data: Mapping[str, object],
+        shared_analysis: GuardrailSharedAnalysis | None = None,
+    ) -> str:
+        if self._mock_testing or self.mock_redacted_text is not None:
+            return await self.check_pii(text, False, None, MappingProxyType(request_data).copy())
+        items: Final = tuple(
+            PresidioAnalyzeResponseItem(start=span.start, end=span.end, entity_type=span.entity_type, score=span.score)
+            for span in spans
+        )
+        mutable_items: Final = list(items)
+        started: Final = time.time()
+        empty_counts: Final[Mapping[str, int]] = MappingProxyType({})
+        masked_counts: Final = MappingProxyType(empty_counts).copy()
+        try:
+            if self._blocked_entity_type(mutable_items) is not None:
+                masked_text, _ = self._mask_detected_entities_for_logging(text, mutable_items)
+                self._sanitize_blocked_content_for_logging(request_data, text, masked_text)
+                self.raise_exception_if_blocked_entities_detected(mutable_items)
+            masked: Final = await self.anonymize_text(
+                text, mutable_items, False, masked_counts, MappingProxyType(request_data).copy()
+            )
+        except Exception as error:
+            self._stream_log_result(
+                spans,
+                request_data,
+                started,
+                shared_analysis,
+                masked_counts,
+                "guardrail_intervened" if isinstance(error, BlockedPiiEntityError) else "guardrail_failed_to_respond",
+            )
+            raise
+        self._stream_log_result(spans, request_data, started, shared_analysis, masked_counts, "success")
+        return masked
+
+    def _stream_log_result(
+        self,
+        spans: Sequence[Span],
+        request_data: Mapping[str, object],
+        started: float,
+        shared_analysis: GuardrailSharedAnalysis | None,
+        masked_counts: Mapping[str, int],
+        status: GuardrailStatus,
+    ) -> None:
+        ended: Final = time.time()
+        self.add_standard_logging_guardrail_information_to_request_data(
+            guardrail_provider=self.guardrail_provider,
+            guardrail_json_response=[
+                MappingProxyType(
+                    {"start": span.start, "end": span.end, "entity_type": span.entity_type, "score": span.score}
+                ).copy()
+                for span in spans
+            ],
+            request_data=MappingProxyType(request_data).copy(),
+            guardrail_status=status,
+            start_time=started,
+            end_time=ended,
+            duration=ended - started,
+            masked_entity_count=MappingProxyType(masked_counts).copy(),
+            event_type=GuardrailEventHooks.post_call,
+            input_source=GuardrailInputSource(type="response", path="stream.output"),
+            usage_action="blocked" if status == "guardrail_intervened" else "flagged" if spans else None,
+            shared_analysis=shared_analysis,
+        )
+
+    async def _stream_mask_complete(self, text: str, request_data: Mapping[str, object]) -> str:
+        if len(text) > 262144:
+            raise StreamingInspectionError("Streaming inspection text limit exceeded")
+        scanner: Final = _PresidioStreamingScanner(
+            self._stream_analyze, self._stream_mask_slice, self._stream_log_result, request_data
+        )
+        return await scanner.mask(text, await scanner.analyze(text))
+
+    async def _stream_mask_json_value(self, value: object, request_data: Mapping[str, object]) -> object:
+        if isinstance(value, str):
+            return await self._stream_mask_complete(value, request_data)
+        mapping: Final = self._logging_mapping(value)
+        if mapping is not None:
+            pairs: Final = tuple(
+                [
+                    (
+                        await self._stream_mask_complete(key, request_data),
+                        await self._stream_mask_json_value(item, request_data),
+                    )
+                    for key, item in mapping.items()
+                ]
+            )
+            if len(frozenset(key for key, _ in pairs)) != len(pairs):
+                raise StreamingInspectionError("Streaming tool argument keys collide after masking")
+            return MappingProxyType({key: item for key, item in pairs}).copy()
+        values: Final = _stream_sequence(value)
+        if values is not None:
+            return tuple([await self._stream_mask_json_value(item, request_data) for item in values])
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            original: Final = str(value)
+            masked: Final = await self._stream_mask_complete(original, request_data)
+            return value if masked == original else masked
+        return value
+
     async def _stream_apply_output_masking(
         self,
         response: AsyncIterable[object],
-        request_data: dict,
+        request_data: dict[str, object],
     ) -> AsyncGenerator[object, None]:
-        states: dict[tuple[object, ...], _StreamingPiiState] = {}
+        mode: Final = self.presidio_streaming_output_mode
+        if mode == "off":
+            async for chunk in response:
+                yield chunk
+            return
+        if not isinstance(request_data.get("metadata"), dict):
+            request_data["metadata"] = MappingProxyType({}).copy()
+        if mode == "full_buffer":
+            raw: Final = tuple([chunk async for chunk in self._stream_bounded_events(response)])
+
+            async def replay() -> AsyncGenerator[object, None]:
+                for chunk in raw:
+                    yield chunk
+
+            completed: Final = tuple(
+                [
+                    chunk
+                    async for chunk in self._stream_bounded_events(
+                        self._stream_masked_events(replay(), request_data, mode)
+                    )
+                ]
+            )
+            for chunk in completed:
+                yield chunk
+            return
+        async for chunk in self._stream_masked_events(response, request_data, mode):
+            yield chunk
+
+    @staticmethod
+    async def _stream_bounded_events(response: AsyncIterable[object]) -> AsyncGenerator[object, None]:
+        budget: Final = _StreamingPiiBudget()
         async for chunk in response:
             if isinstance(chunk, bytes):
                 raise _PresidioServiceError("Presidio cannot safely inspect raw streaming bytes")
-            if isinstance(chunk, ModelResponseStream):
-                async for masked_chunk in self._mask_chat_stream_chunk(chunk, states, request_data):
-                    yield masked_chunk
-                continue
-            event_type = self._response_field(chunk, "type")
-            if not isinstance(event_type, str):
-                raise _PresidioServiceError("Presidio received an unsupported streaming event")
-            async for masked_event in self._mask_responses_stream_event(chunk, event_type, states, request_data):
-                yield masked_event
-        async for masked_chunk in self._flush_stream_states(states, request_data):
-            yield masked_chunk
+            budget.add(chunk, True)
+            yield chunk
+
+    async def _stream_masked_events(
+        self,
+        response: AsyncIterable[object],
+        request_data: Mapping[str, object],
+        mode: Literal["off", "windowed", "full_buffer"],
+    ) -> AsyncGenerator[object, None]:
+        empty_states: Final[Mapping[tuple[object, ...], _StreamingPiiState]] = MappingProxyType({})
+        states: Final = MappingProxyType(empty_states).copy()
+        data: Final = MappingProxyType(request_data).copy()
+        queue: Final[asyncio.Queue[object]] = asyncio.Queue(maxsize=1)
+        end: Final = object()
+        budget: Final = _StreamingPiiBudget()
+
+        reader: Final = asyncio.create_task(self._stream_receive_events(response, queue, end))
+        try:
+            while True:
+                (timeout,) = (
+                    max(
+                        0.001,
+                        min(
+                            (
+                                state.queued_at + 0.1 - time.monotonic()
+                                for state in states.values()
+                                if state.queued_at is not None
+                            ),
+                            default=0.1,
+                        ),
+                    ),
+                )
+                try:
+                    (event,) = (await asyncio.wait_for(queue.get(), timeout=timeout),)
+                except asyncio.TimeoutError:
+                    if reader.done():
+                        await reader
+                    async for released in self._flush_stream_states(states, data, force=True):
+                        yield released
+                    continue
+                if event is end:
+                    await reader
+                    break
+                budget.add(event, mode == "full_buffer")
+                async for released in self._flush_stream_states(states, data, force=True):
+                    yield released
+                async for masked_event in self._mask_stream_event(event, states, data, mode):
+                    yield masked_event
+            async for masked_chunk in self._flush_stream_states(states, data):
+                yield masked_chunk
+        finally:
+            reader.cancel()
+            await asyncio.gather(reader, return_exceptions=True)
+            if isinstance(response, AsyncGenerator):
+                await response.aclose()
+
+    @staticmethod
+    async def _stream_receive_events(
+        response: AsyncIterable[object], queue: asyncio.Queue[object], end: object
+    ) -> None:
+        async for chunk in response:
+            await queue.put(chunk)
+        await queue.put(end)
+
+    async def _mask_stream_event(
+        self,
+        event: object,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: Mapping[str, object],
+        mode: Literal["off", "windowed", "full_buffer"],
+    ) -> AsyncGenerator[object, None]:
+        if isinstance(event, ModelResponseStream):
+            async for masked_chunk in self._mask_chat_stream_chunk(event, states, request_data, mode):
+                yield masked_chunk
+            return
+        event_type: Final = self._response_field(event, "type")
+        if not isinstance(event_type, str):
+            raise _PresidioServiceError("Presidio received an unsupported streaming event")
+        async for masked_event in self._mask_responses_stream_event(event, event_type, states, request_data, mode):
+            yield masked_event
 
     async def _mask_stream_text(
         self,
         key: tuple[object, ...],
         text: str,
         states: dict[tuple[object, ...], _StreamingPiiState],
-        request_data: dict,
+        request_data: Mapping[str, object],
+        mode: Literal["off", "windowed", "full_buffer"],
     ) -> str:
-        state = states.setdefault(key, _StreamingPiiState())
-        pending = state.pending + text
-        presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
-        masked = await self.check_pii(
-            text=pending,
-            output_parse_pii=False,
-            presidio_config=presidio_config,
-            request_data=request_data,
+        if key not in states and len(states) >= 128:
+            raise StreamingInspectionError("Streaming inspection field limit exceeded")
+        if sum(state.source_length for state in states.values()) + len(text) > 262144:
+            raise StreamingInspectionError("Streaming inspection response limit exceeded")
+        state: Final = states.setdefault(key, _StreamingPiiState(mode=mode))
+        if state.completed:
+            raise StreamingInspectionError("Text received after streaming inspection completed")
+        state.atomic = (key[0] == "chat" and key[2] in ("function_call", "tool_call")) or (
+            key[0] == "responses" and key[1] in ("response.function_call_arguments", "response.mcp_call_arguments")
         )
-        if len(pending) <= self._STREAM_PII_HOLDBACK_CHARS:
-            state.pending = pending
+        if state.atomic or mode == "full_buffer":
+            if state.atomic and len(state.pending) + len(text) > 65536:
+                raise StreamingInspectionError("Streaming tool arguments limit exceeded")
+            state.pending += text
+            state.source_length += len(text)
             return ""
-        suffix = pending[-self._STREAM_PII_HOLDBACK_CHARS :]
-        if not masked.endswith(suffix):
-            state.pending = pending
-            return ""
-        released = masked[: -self._STREAM_PII_HOLDBACK_CHARS]
-        state.pending = suffix
-        state.emitted += released
+        if state.window is None:
+            state.window = WindowState(
+                _PresidioStreamingScanner(
+                    self._stream_analyze, self._stream_mask_slice, self._stream_log_result, request_data
+                )
+            )
+        released: Final = await state.window.feed(text)
+        state.source_length = state.window.source_length
+        state.source_digest = state.window.source_digest
+        state.emitted = state.window.emitted
+        state.queued_at = (
+            (state.queued_at or time.monotonic())
+            if len(state.window.pending) > self._STREAM_PII_HOLDBACK_CHARS
+            else None
+        )
         return released
 
     async def _flush_stream_state(
         self,
         key: tuple[object, ...],
-        states: dict[tuple[object, ...], _StreamingPiiState],
-        request_data: dict,
+        states: Mapping[tuple[object, ...], _StreamingPiiState],
+        request_data: Mapping[str, object],
+        *,
+        force: bool = False,
     ) -> object | None:
-        state = states.pop(key, None)
-        if state is None:
+        state: Final = states.get(key)
+        if state is None or state.completed:
             return None
-        presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
-        masked = await self.check_pii(
-            text=state.pending,
-            output_parse_pii=False,
-            presidio_config=presidio_config,
-            request_data=request_data,
+        if force and (state.atomic or state.mode == "full_buffer" or state.queued_at is None):
+            return None
+        if force and state.queued_at is not None and time.monotonic() - state.queued_at < 0.1:
+            return None
+        masked: Final = await state.finalize(
+            self._stream_mask_json_value, self._stream_mask_complete, request_data, force=force
         )
-        state.emitted += masked
+        state.queued_at = None
+        if not force:
+            state.completed = True
         if not masked or state.template is None:
             return None
-        chunk = copy.deepcopy(state.template)
+        chunk: Final = copy.deepcopy(state.template)
+        if not force:
+            state.template = None
         if key[0] == "chat" and isinstance(chunk, ModelResponseStream):
             self._set_chat_stream_text(chunk, key, masked)
         else:
@@ -2326,15 +2674,16 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     async def _flush_stream_states(
         self,
-        states: dict[tuple[object, ...], _StreamingPiiState],
-        request_data: dict,
+        states: Mapping[tuple[object, ...], _StreamingPiiState],
+        request_data: Mapping[str, object],
         predicate: Callable[[tuple[object, ...]], bool] | None = None,
+        *,
+        force: bool = False,
     ) -> AsyncGenerator[object, None]:
-        keys = tuple(states)
-        for key in keys:
+        for key in tuple(states):
             if predicate is not None and not predicate(key):
                 continue
-            chunk = await self._flush_stream_state(key, states, request_data)
+            (chunk,) = (await self._flush_stream_state(key, states, request_data, force=force),)
             if chunk is not None:
                 yield chunk
 
@@ -2361,8 +2710,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
     @classmethod
     def _set_chat_stream_text(cls, chunk: ModelResponseStream, key: tuple[object, ...], text: str) -> None:
-        choice = cls._chat_stream_choice(chunk, cast(int, key[1]))
-        field = cast(str, key[2])
+        choice_index: Final = key[1]
+        field: Final = key[2]
+        if not isinstance(choice_index, int) or not isinstance(field, str):
+            raise StreamingInspectionError("Invalid streaming field identifier")
+        choice: Final = cls._chat_stream_choice(chunk, choice_index)
         if field in {"content", "reasoning_content", "refusal"}:
             setattr(choice.delta, field, text)
             return
@@ -2371,7 +2723,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             if function_call is not None:
                 function_call.arguments = text
             return
-        tool_index = cast(int, key[3])
+        tool_index: Final = key[3]
+        if not isinstance(tool_index, int):
+            raise StreamingInspectionError("Invalid streaming tool identifier")
         for tool_call in getattr(choice.delta, "tool_calls", None) or []:
             if tool_call.index == tool_index:
                 tool_call.function.arguments = text
@@ -2400,18 +2754,17 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self,
         chunk: ModelResponseStream,
         states: dict[tuple[object, ...], _StreamingPiiState],
-        request_data: dict,
+        request_data: Mapping[str, object],
+        mode: Literal["off", "windowed", "full_buffer"],
     ) -> AsyncGenerator[ModelResponseStream, None]:
         finished_choices = frozenset(choice.index for choice in chunk.choices if choice.finish_reason is not None)
         fields = self._chat_stream_fields(chunk)
         for key, text in fields:
-            self._set_chat_stream_text(chunk, key, await self._mask_stream_text(key, text, states, request_data))
+            self._set_chat_stream_text(chunk, key, await self._mask_stream_text(key, text, states, request_data, mode))
         for key, _ in fields:
-            template = copy.deepcopy(chunk)
-            self._clear_chat_stream_text(template)
-            for choice in template.choices:
-                choice.finish_reason = None
-            states[key].template = template
+            template = self._chat_stream_tail_template(chunk)
+            (stream_state,) = (states[key],)
+            stream_state.template = template
         if finished_choices:
             async for flushed in self._flush_stream_states(
                 states,
@@ -2438,7 +2791,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         event: object,
         event_type: str,
         states: dict[tuple[object, ...], _StreamingPiiState],
-        request_data: dict,
+        request_data: Mapping[str, object],
+        mode: Literal["off", "windowed", "full_buffer"],
     ) -> AsyncGenerator[object, None]:
         delta_types = frozenset(
             (
@@ -2465,79 +2819,233 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             delta = self._response_field(event, "delta")
             if not isinstance(delta, str):
                 raise _PresidioServiceError("Presidio received a text delta without text")
-            masked = await self._mask_stream_text(key, delta, states, request_data)
+            masked = await self._mask_stream_text(key, delta, states, request_data, mode)
             self._set_response_field(event, "delta", masked)
             template = copy.deepcopy(event)
             self._set_response_field(template, "delta", "")
-            states[key].template = template
+            delta_state: Final = states[key]
+            delta_state.template = template
             yield event
             return
         if event_type in done_fields:
-            state = states.get(key)
-            flushed = await self._flush_stream_state(key, states, request_data)
-            if flushed is not None:
-                yield flushed
-            if state is not None:
-                self._set_response_field(event, done_fields[event_type], state.emitted)
-            else:
-                state_text = self._response_field(event, done_fields[event_type])
-                if not isinstance(state_text, str):
-                    yield event
-                    return
-                presidio_config = self.get_presidio_settings_from_request_data(request_data or {})
-                masked = await self.check_pii(state_text, False, presidio_config, request_data)
-                self._set_response_field(event, done_fields[event_type], masked)
+            raw: Final = self._response_field(event, done_fields[event_type])
+            if not isinstance(raw, str):
+                raise StreamingInspectionError("Streaming completion text is missing")
+            state: Final = states.get(key)
+            if state is None:
+                await self._mask_stream_text(key, raw, states, request_data, mode)
+            elif state.window is not None:
+                if not state.window.matches_source_prefix(raw):
+                    raise StreamingInspectionError("Streaming completion text differs from inspected deltas")
+                if len(raw) > state.source_length:
+                    extra: Final = await self._mask_stream_text(
+                        key, raw[state.source_length :], states, request_data, mode
+                    )
+                    if extra and state.template is not None:
+                        extra_event: Final = copy.deepcopy(state.template)
+                        self._set_response_field(extra_event, "delta", extra)
+                        yield extra_event
+            elif not state.completed and raw != state.pending:
+                if not raw.startswith(state.pending):
+                    raise StreamingInspectionError("Streaming completion text differs from inspected deltas")
+                await self._mask_stream_text(key, raw[len(state.pending) :], states, request_data, mode)
+            elif state.completed and not self._stream_source_matches(state, raw):
+                raise StreamingInspectionError("Streaming completion text differs from inspected deltas")
+            done_flush: Final = await self._flush_stream_state(key, states, request_data)
+            if done_flush is not None:
+                yield done_flush
+            self._set_response_field(event, done_fields[event_type], states[key].emitted)
             yield event
             return
         if event_type in {
             "response.completed",
             "response.failed",
             "response.incomplete",
+            "response.done",
             "response.created",
             "response.in_progress",
             "response.queued",
-            "response.done",
         }:
-            async for flushed in self._flush_stream_states(states, request_data):
-                yield flushed
-            nested_response = self._response_field(event, "response")
-            if nested_response is not None:
-                await self._process_responses_api_response_for_pii(nested_response, request_data)
-            yield event
-            return
-        if event_type in {"response.output_item.added", "response.output_item.done"}:
-            item = self._response_field(event, "item")
-            if item is not None:
-                await self._mask_responses_blocks(self._response_field(item, "content"), request_data)
-                await self._mask_responses_blocks(self._response_field(item, "summary"), request_data)
-                for field in ("reasoning_content", "arguments", "input", "output"):
-                    await self._mask_responses_payload_field(item, field, request_data)
+            if event_type in {"response.completed", "response.failed", "response.incomplete", "response.done"}:
+                async for flushed in self._flush_stream_states(states, request_data):
+                    yield flushed
+            nested: Final = self._response_field(event, "response")
+            if nested is not None:
+                await self._stream_mask_structure(nested, states, request_data)
             yield event
             return
         if event_type in {
+            "response.output_item.added",
+            "response.output_item.done",
             "response.content_part.added",
             "response.content_part.done",
             "response.reasoning_summary_part.added",
             "response.reasoning_summary_part.done",
         }:
-            part = self._response_field(event, "part")
-            if part is not None:
-                await self._mask_responses_text_field(part, "text", request_data)
-                await self._mask_responses_text_field(part, "refusal", request_data)
+            if event_type.endswith(".done"):
+                item_id: Final = self._response_field(event, "item_id")
+                output_index: Final = self._response_field(event, "output_index")
+                async for flushed in self._flush_stream_states(
+                    states,
+                    request_data,
+                    lambda candidate: (
+                        candidate[0] == "responses"
+                        and (
+                            (item_id is not None and candidate[2] == item_id)
+                            or (output_index is not None and candidate[3] == output_index)
+                        )
+                    ),
+                ):
+                    yield flushed
+            for field in ("item", "part"):
+                (nested_item,) = (self._response_field(event, field),)
+                if nested_item is not None:
+                    await self._stream_mask_structure(nested_item, states, request_data)
             yield event
             return
         if event_type == "response.output_text.annotation.added":
-            await self._mask_responses_payload_field(event, "annotation", request_data)
+            annotation: Final = self._response_field(event, "annotation")
+            self._set_response_field(
+                event, "annotation", await self._stream_mask_payload(annotation, states, request_data)
+            )
             yield event
             return
+        if event_type == "error":
+            message: Final = self._response_field(event, "message")
+            if message is not None:
+                self._set_response_field(
+                    event, "message", await self._stream_mask_payload(message, states, request_data)
+                )
         if event_type.startswith("response.") or event_type == "error":
-            for field in ("delta", "text", "arguments", "input", "output", "error"):
+            for field in (
+                "delta",
+                "text",
+                "arguments",
+                "input",
+                "output",
+                "error",
+                "message",
+            ):
+                if field == "message" and event_type == "error":
+                    continue
                 value = self._response_field(event, field)
                 if value is not None:
                     raise _PresidioServiceError(f"Presidio does not support text-bearing event {event_type}")
             yield event
             return
         raise _PresidioServiceError(f"Presidio does not support streaming event {event_type}")
+
+    @staticmethod
+    def _stream_source_matches(state: _StreamingPiiState, text: str) -> bool:
+        return state.source_length == len(text) and state.source_digest == hashlib.sha256(text.encode()).hexdigest()
+
+    async def _stream_reuse_text(
+        self,
+        text: str,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: Mapping[str, object],
+        *,
+        atomic: bool = False,
+    ) -> str:
+        if not text:
+            return text
+        existing: Final = next(
+            (
+                state
+                for state in states.values()
+                if state.completed and (state.emitted == text or self._stream_source_matches(state, text))
+            ),
+            None,
+        )
+        if existing is not None:
+            return existing.emitted
+        if len(states) >= 128 or sum(state.source_length for state in states.values()) + len(text) > 262144:
+            raise StreamingInspectionError("Streaming completion inspection limit exceeded")
+        digest: Final = hashlib.sha256(text.encode()).hexdigest()
+        atomic_state: Final = _StreamingPiiState(pending=text, atomic=True, source_length=len(text))
+        if atomic and len(text) > 65536:
+            raise StreamingInspectionError("Streaming tool arguments limit exceeded")
+        masked: Final = (
+            await atomic_state.finalize(
+                self._stream_mask_json_value, self._stream_mask_complete, request_data, force=False
+            )
+            if atomic
+            else await self._stream_mask_complete(text, request_data)
+        )
+        states.setdefault(
+            ("memo", digest),
+            _StreamingPiiState(emitted=masked, completed=True, source_length=len(text), source_digest=digest),
+        )
+        return masked
+
+    async def _stream_mask_payload(
+        self, value: object, states: dict[tuple[object, ...], _StreamingPiiState], request_data: Mapping[str, object]
+    ) -> object:
+        if isinstance(value, str):
+            return await self._stream_reuse_text(value, states, request_data)
+        mapping: Final = self._logging_mapping(value)
+        if mapping is not None:
+            return MappingProxyType(
+                {key: await self._stream_mask_payload(item, states, request_data) for key, item in mapping.items()}
+            ).copy()
+        values: Final = _stream_sequence(value)
+        if values is not None:
+            return tuple([await self._stream_mask_payload(item, states, request_data) for item in values])
+        return value
+
+    async def _stream_mask_structure(
+        self, value: object, states: dict[tuple[object, ...], _StreamingPiiState], request_data: Mapping[str, object]
+    ) -> None:
+        values: Final = _stream_sequence(value)
+        if values is not None:
+            for item in values:
+                await self._stream_mask_structure(item, states, request_data)
+            return
+        for field in (
+            "text",
+            "refusal",
+            "arguments",
+            "code",
+            "output_text",
+            "reasoning_content",
+            "input",
+            "error",
+            "message",
+        ):
+            await self._stream_mask_structure_field(value, field, states, request_data)
+        for field in ("output", "content", "summary", "reasoning", "reasoning_items"):
+            (nested,) = (self._response_field(value, field),)
+            if (
+                field == "output"
+                and (nested_mapping := self._logging_mapping(nested)) is not None
+                and "type" not in nested_mapping
+            ):
+                self._set_response_field(
+                    value, field, await self._stream_mask_payload(nested_mapping, states, request_data)
+                )
+                continue
+            if isinstance(nested, str):
+                self._set_response_field(value, field, await self._stream_reuse_text(nested, states, request_data))
+            elif nested is not None:
+                await self._stream_mask_structure(nested, states, request_data)
+
+    async def _stream_mask_structure_field(
+        self,
+        value: object,
+        field: str,
+        states: dict[tuple[object, ...], _StreamingPiiState],
+        request_data: Mapping[str, object],
+    ) -> None:
+        if field == "output_text" and self._logging_mapping(value) is None:
+            return
+        text: Final = self._response_field(value, field)
+        if field == "arguments" and isinstance(text, str):
+            self._set_response_field(
+                value, field, await self._stream_reuse_text(text, states, request_data, atomic=True)
+            )
+            return
+        if text is not None:
+            self._set_response_field(value, field, await self._stream_mask_payload(text, states, request_data))
 
     @staticmethod
     def _unmask_sse_bytes_chunk(chunk: bytes, pii_tokens: dict[str, str]) -> bytes:
@@ -2570,109 +3078,145 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
 
         return "\n".join(result_lines).encode("utf-8")
 
-    def _unmask_responses_api_completed_chunk(self, chunk: Any, pii_tokens: dict[str, str]) -> None:
-        """
-        Unmask PII tokens in-place for a ``response.completed`` Responses API event.
+    @classmethod
+    def _chat_stream_tail_template(cls, chunk: ModelResponseStream) -> ModelResponseStream:
+        template: Final = copy.deepcopy(chunk)
+        cls._clear_chat_stream_text(template)
+        for choice in template.choices:
+            choice.finish_reason = None
+            choice.logprobs = None
+            choice.delta.role = None
+            if choice.delta.function_call is not None:
+                choice.delta.function_call.name = None
+            for tool_call in choice.delta.tool_calls or ():
+                tool_call.id = None
+                if (function := cls._response_field(tool_call, "function")) is not None:
+                    cls._set_response_field(function, "name", None)
+        if cls._response_field(template, "usage") is not None:
+            cls._set_response_field(template, "usage", None)
+        return template
 
-        The chunk carries a ``response`` attribute (ResponsesAPIResponse) whose
-        ``output`` list holds message items.  Each item has a ``content`` list of
-        blocks; text blocks expose a ``.text`` string attribute.  We walk the tree
-        and replace every PII token with its original value.
-        """
-        response_obj: Final = getattr(chunk, "response", None)
-        if response_obj is None:
+    @classmethod
+    def _restore_responses_stream_structure(cls, value: object, buffer: TokenRestorationBuffer) -> None:
+        if isinstance(value, (list, tuple)):
+            values: Final = cast(Sequence[object], value)
+            for item in values:
+                cls._restore_responses_stream_structure(item, buffer)
             return
+        for field in ("text", "refusal", "arguments", "input", "output_text", "reasoning_content"):
+            if field == "output_text" and cls._logging_mapping(value) is None:
+                continue
+            if isinstance(text := cls._response_field(value, field), str):
+                cls._set_response_field(value, field, buffer.restore(text))
+        for field in ("response", "item", "part", "output", "content", "summary", "reasoning", "reasoning_items"):
+            if isinstance(nested := cls._response_field(value, field), str):
+                cls._set_response_field(value, field, buffer.restore(nested))
+            elif nested is not None:
+                cls._restore_responses_stream_structure(nested, buffer)
 
-        output: Final = getattr(response_obj, "output", None) or []
-        for output_item in output:
-            content = getattr(output_item, "content", None) or []
-            for content_block in content:
-                if isinstance(content_block, dict):
-                    if isinstance(content_block.get("text"), str):
-                        content_block["text"] = self._unmask_pii_text(content_block["text"], pii_tokens)
-                elif hasattr(content_block, "text") and isinstance(content_block.text, str):
-                    content_block.text = self._unmask_pii_text(content_block.text, pii_tokens)
+    @classmethod
+    def _flush_restored_stream_prefixes(
+        cls, buffer: TokenRestorationBuffer, predicate: Callable[[tuple[object, ...]], bool]
+    ) -> Iterable[object]:
+        for pending in buffer.flush(predicate):
+            if isinstance(pending.template, ModelResponseStream):
+                cls._set_chat_stream_text(pending.template, pending.key, pending.text)
+            else:
+                cls._set_response_field(pending.template, "delta", pending.text)
+            yield pending.template
 
     async def _stream_pii_unmasking(
         self,
-        response: Any,
+        response: AsyncIterable[object],
         request_data: dict,
-    ) -> AsyncGenerator[ModelResponseStream | bytes, None]:
-        """Apply PII unmasking to streaming output (output_parse_pii=True path)."""
-        from litellm.llms.base_llm.base_model_iterator import (
-            convert_model_response_to_streaming,
-        )
-        from litellm.main import stream_chunk_builder
-        from litellm.types.utils import ModelResponse
-
-        pii_tokens = self._get_restorable_pii_tokens(request_data)
-
-        remaining_chunks: list[ModelResponseStream] = []
-        saw_non_chat_chunk = False
+    ) -> AsyncGenerator[object, None]:
+        pii_tokens: Final = self._get_restorable_pii_tokens(request_data)
+        buffer: Final = TokenRestorationBuffer(pii_tokens)
         try:
-            async for chunk in response:
-                if isinstance(chunk, ModelResponseStream):
-                    if saw_non_chat_chunk:
-                        yield chunk
-                    else:
-                        remaining_chunks.append(chunk)
-                elif isinstance(chunk, bytes):
-                    if pii_tokens:
-                        yield self._unmask_sse_bytes_chunk(chunk, pii_tokens)
-                    else:
-                        yield chunk
+            async for original in response:
+                if isinstance(original, bytes):
+                    yield self._unmask_sse_bytes_chunk(original, pii_tokens) if pii_tokens else original
                     continue
-                else:
-                    # /v1/responses events: unmask response.completed text in-place.
-                    # A mixed stream can't be reassembled, so flush buffered chat
-                    # chunks in order before passthrough instead of dropping them.
-                    if remaining_chunks and not saw_non_chat_chunk:
-                        for buffered_chunk in remaining_chunks:
-                            yield buffered_chunk
-                        remaining_chunks = []
-                    chunk_type = getattr(chunk, "type", None)
-                    if chunk_type == "response.completed" and pii_tokens:
-                        self._unmask_responses_api_completed_chunk(chunk, pii_tokens)
-                    saw_non_chat_chunk = True
+                if isinstance(chunk := copy.deepcopy(original), ModelResponseStream):
+                    (finished,) = (
+                        frozenset(choice.index for choice in chunk.choices if choice.finish_reason is not None),
+                    )
+                    for key, text in self._chat_stream_fields(chunk):
+                        self._set_chat_stream_text(
+                            chunk,
+                            key,
+                            buffer.push(key, text, self._chat_stream_tail_template(chunk), final=key[1] in finished),
+                        )
+                    for flushed in self._flush_restored_stream_prefixes(
+                        buffer, lambda key: key[0] == "chat" and key[1] in finished
+                    ):
+                        yield flushed
                     yield chunk
-
-            if saw_non_chat_chunk:
-                return
-
-            if not remaining_chunks:
-                return
-
-            assembled_model_response: Final = stream_chunk_builder(
-                chunks=remaining_chunks, messages=request_data.get("messages")
-            )
-
-            if not isinstance(assembled_model_response, ModelResponse):
-                for chunk in remaining_chunks:
+                    continue
+                if not isinstance(event_type := self._response_field(chunk, "type"), str):
                     yield chunk
-                return
-
-            self._preserve_usage_from_last_chunk(assembled_model_response, remaining_chunks)
-
-            await self._process_response_for_pii(
-                response=assembled_model_response,
-                request_data=request_data,
-                mode="unmask",
-            )
-
-            mock_response_stream: Final = convert_model_response_to_streaming(assembled_model_response)
-            yield mock_response_stream
-
-        except Exception as e:
-            verbose_proxy_logger.error("Error in PII streaming processing: %s", e)
-            for chunk in remaining_chunks:
+                    continue
+                if event_type.endswith(".delta"):
+                    if isinstance(delta := self._response_field(chunk, "delta"), str):
+                        (template,) = (copy.deepcopy(chunk),)
+                        self._set_response_field(template, "delta", "")
+                        self._set_response_field(
+                            chunk, "delta", buffer.push(self._responses_stream_key(chunk, event_type), delta, template)
+                        )
+                    yield chunk
+                    continue
+                if event_type.endswith(".done") or event_type in (
+                    "response.completed",
+                    "response.failed",
+                    "response.incomplete",
+                    "response.cancelled",
+                    "error",
+                ):
+                    matching_key, item_id, output_index = (
+                        self._responses_stream_key(chunk, event_type),
+                        self._response_field(chunk, "item_id"),
+                        self._response_field(chunk, "output_index"),
+                    )
+                    for flushed in self._flush_restored_stream_prefixes(
+                        buffer,
+                        lambda key: (
+                            key[0] == "responses"
+                            and (
+                                event_type
+                                in (
+                                    "response.completed",
+                                    "response.failed",
+                                    "response.incomplete",
+                                    "response.cancelled",
+                                    "error",
+                                )
+                                or key == matching_key
+                                or (
+                                    event_type == "response.output_item.done"
+                                    and (
+                                        (item_id is not None and key[2] == item_id)
+                                        or (output_index is not None and key[3] == output_index)
+                                    )
+                                )
+                                or (event_type == "response.content_part.done" and key[3:5] == matching_key[3:5])
+                            )
+                        ),
+                    ):
+                        yield flushed
+                self._restore_responses_stream_structure(chunk, buffer)
                 yield chunk
+            for flushed in self._flush_restored_stream_prefixes(buffer, lambda key: True):
+                yield flushed
+        finally:
+            if isinstance(response, AsyncGenerator):
+                await response.aclose()
 
     async def async_post_call_streaming_iterator_hook(
         self,
         user_api_key_dict: UserAPIKeyAuth,
         response: Any,
         request_data: dict,
-    ) -> AsyncGenerator[ModelResponseStream | bytes, None]:
+    ) -> AsyncGenerator[object, None]:
         """
         Process streaming response chunks to unmask PII tokens when needed.
 
@@ -2954,3 +3498,41 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         self.presidio_language = self.presidio_language or "en"
         self.presidio_filter_scope = self.presidio_filter_scope or "both"
         self.presidio_analyze_chunk_size_bytes = self._coerce_analyze_chunk_size(self.presidio_analyze_chunk_size_bytes)
+
+
+class _PresidioStreamingScanner:
+    def __init__(
+        self,
+        analyze: Callable[[str, Mapping[str, object]], Awaitable[Sequence[Span]]],
+        mask: Callable[[str, Sequence[Span], Mapping[str, object], GuardrailSharedAnalysis | None], Awaitable[str]],
+        log_result: Callable[
+            [
+                Sequence[Span],
+                Mapping[str, object],
+                float,
+                GuardrailSharedAnalysis | None,
+                Mapping[str, int],
+                GuardrailStatus,
+            ],
+            None,
+        ],
+        request_data: Mapping[str, object],
+    ) -> None:
+        self._analyze = analyze
+        self._mask = mask
+        self._log_result = log_result
+        self.request_data = request_data
+        self.shared_analysis: GuardrailSharedAnalysis | None = None
+
+    async def analyze(self, text: str) -> Sequence[Span]:
+        started: Final = time.time()
+        try:
+            return await self._analyze(text, self.request_data)
+        except Exception:
+            self._log_result((), self.request_data, started, None, MappingProxyType({}), "guardrail_failed_to_respond")
+            raise
+        finally:
+            self.shared_analysis = GuardrailSharedAnalysis(start_time=started, end_time=time.time())
+
+    async def mask(self, text: str, spans: Sequence[Span]) -> str:
+        return await self._mask(text, spans, self.request_data, self.shared_analysis)

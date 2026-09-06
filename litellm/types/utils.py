@@ -3050,8 +3050,14 @@ class GuardrailAnalysisCacheInfo(TypedDict):
     total_count: ReadOnly[int]
 
 
+class GuardrailSharedAnalysis(TypedDict):
+    start_time: ReadOnly[float]
+    end_time: ReadOnly[float]
+
+
 class StandardLoggingGuardrailInformation(TypedDict, total=False):
     analysis_cache: ReadOnly[GuardrailAnalysisCacheInfo]
+    shared_analysis: ReadOnly[GuardrailSharedAnalysis]
     guardrail_name: str | None
     guardrail_provider: str | None
     guardrail_mode: GuardrailEventHooks | list[GuardrailEventHooks] | GuardrailMode | None

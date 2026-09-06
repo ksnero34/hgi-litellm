@@ -30037,6 +30037,13 @@ export interface components {
                 [key: string]: number;
             } | null;
             /**
+             * Presidio Streaming Output Mode
+             * @description How configured output checks handle streaming responses: 'off' skips streaming output analysis, 'windowed' checks bounded text windows, and 'full_buffer' checks the complete response before release. Input checks and non-streaming output checks are unchanged.
+             * @default windowed
+             * @enum {string}
+             */
+            presidio_streaming_output_mode: "off" | "windowed" | "full_buffer";
+            /**
              * Project Id
              * @description Project ID for the Lakera AI project
              */

@@ -25,6 +25,7 @@ describe("Presidio cache edit persistence", () => {
         default_on: false,
         presidio_analysis_cache_enabled: true,
         presidio_analysis_cache_ttl_seconds: 90,
+        presidio_streaming_output_mode: "full_buffer",
       },
     };
     vi.mocked(networking.getGuardrailInfo).mockResolvedValue(savedGuardrail);
@@ -41,12 +42,16 @@ describe("Presidio cache edit persistence", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
     expect(screen.getByLabelText("Cache mode")).toHaveValue("enabled");
     expect(screen.getByLabelText("TTL (seconds)")).toHaveValue(90);
+    expect(screen.getByLabelText("Streaming output inspection")).toHaveValue("full_buffer");
+    fireEvent.change(screen.getByLabelText("Streaming output inspection"), { target: { value: "off" } });
     fireEvent.change(screen.getByLabelText("Cache mode"), { target: { value: "disabled" } });
     fireEvent.change(screen.getByLabelText("TTL (seconds)"), { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
     expect(screen.getByLabelText("Cache mode")).toHaveValue("enabled");
     expect(screen.getByLabelText("TTL (seconds)")).toHaveValue(90);
+    expect(screen.getByLabelText("Streaming output inspection")).toHaveValue("full_buffer");
+    fireEvent.change(screen.getByLabelText("Streaming output inspection"), { target: { value: "windowed" } });
     fireEvent.change(screen.getByLabelText("Cache mode"), { target: { value: "inherit" } });
     fireEvent.change(screen.getByLabelText("TTL (seconds)"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /Save Changes/ }));
@@ -58,6 +63,7 @@ describe("Presidio cache edit persistence", () => {
           litellm_params: expect.objectContaining({
             presidio_analysis_cache_enabled: null,
             presidio_analysis_cache_ttl_seconds: null,
+            presidio_streaming_output_mode: "windowed",
           }),
         }),
       ),
@@ -94,6 +100,8 @@ describe("Presidio cache creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.change(await screen.findByLabelText("Cache mode"), { target: { value: "enabled" } });
     fireEvent.change(screen.getByLabelText("TTL (seconds)"), { target: { value: "45" } });
+    expect(screen.getByLabelText("Streaming output inspection")).toHaveValue("windowed");
+    fireEvent.change(screen.getByLabelText("Streaming output inspection"), { target: { value: "off" } });
     fireEvent.click(screen.getByText("PERSON"));
     fireEvent.click(await screen.findByRole("button", { name: "Create Guardrail" }));
     await waitFor(() =>
@@ -103,6 +111,7 @@ describe("Presidio cache creation", () => {
           litellm_params: expect.objectContaining({
             presidio_analysis_cache_enabled: true,
             presidio_analysis_cache_ttl_seconds: 45,
+            presidio_streaming_output_mode: "off",
           }),
         }),
       ),

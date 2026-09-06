@@ -68,6 +68,24 @@ class SourceCaptureGuardrail(CustomGuardrail):
         return inputs
 
 
+class HistoryAuditGuardrail(SourceCaptureGuardrail):
+    def __init__(self, block_history: bool):
+        super().__init__()
+        self.block_history = block_history
+
+    async def apply_guardrail(self, inputs, request_data, input_type, logging_obj=None):
+        for source in inputs.get("text_sources", []):
+            self.add_standard_logging_guardrail_information_to_request_data(
+                guardrail_json_response=[],
+                request_data=request_data,
+                guardrail_status="guardrail_intervened" if self.block_history else "success",
+                input_source=source,
+            )
+        if self.block_history:
+            self.handle_sensitive_data_detection(request_data=request_data)
+        return await super().apply_guardrail(inputs, request_data, input_type, logging_obj)
+
+
 class HistoryBlockingGuardrail(MockGuardrail):
     requires_guardrailed_previous_response_history = True
 
@@ -135,6 +153,48 @@ class TestOpenAIResponsesHandlerInputProcessing:
         assert guardrail.captured_inputs[1]["texts"] == ["Current question"]
         assert result["input"] == "Current question"
         assert result["previous_response_id"] == "resp_previous"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("metadata_key", [None, "metadata", "litellm_metadata"])
+    @pytest.mark.parametrize("block_history", [False, True])
+    async def test_history_audits_survive_inspection_without_replaying_history(self, metadata_key, block_history):
+        guardrail = HistoryAuditGuardrail(block_history)
+        history_messages = [
+            {"role": "user", "content": "Historical question"},
+            {"role": "assistant", "content": "Historical answer"},
+        ]
+        loader = AsyncMock(return_value={"messages": history_messages, "litellm_session_id": "synthetic-session"})
+        handler = OpenAIResponsesHandler(previous_response_loader=loader)
+        new_input = [{"role": "user", "content": "New question"}]
+        data = {"input": new_input, "previous_response_id": "resp_previous", "instructions": "Be concise"}
+        if metadata_key:
+            data[metadata_key] = {"request_marker": "preserved"}
+        if metadata_key == "litellm_metadata":
+            data["metadata"] = {"provider_marker": "preserved"}
+
+        if block_history:
+            with pytest.raises(GuardrailRaisedException):
+                await handler.process_input_messages(data, guardrail)
+        else:
+            await handler.process_input_messages(data, guardrail)
+
+        audit_bucket = data[metadata_key or "metadata"]
+        audits = audit_bucket["standard_logging_guardrail_information"]
+        assert [entry["input_source"]["scope"] for entry in audits[:2]] == [
+            "conversation_history",
+            "conversation_history",
+        ]
+        assert len(audits) == (2 if block_history else 4)
+        if not block_history:
+            assert [entry["input_source"]["scope"] for entry in audits[2:]] == ["system_prompt", "current_user_prompt"]
+        assert data["input"] == [{"role": "user", "content": "New question"}]
+        assert data["previous_response_id"] == "resp_previous"
+        assert "messages" not in data
+        assert history_messages[0]["content"] == "Historical question"
+        if metadata_key:
+            assert audit_bucket["request_marker"] == "preserved"
+        if metadata_key == "litellm_metadata":
+            assert data["metadata"] == {"provider_marker": "preserved"}
 
     @pytest.mark.asyncio
     async def test_previous_response_history_is_loaded_once_per_request(self):

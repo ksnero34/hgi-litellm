@@ -1,6 +1,14 @@
 import type { MessageCatalog } from "../types";
 
 export const guardrailsMessages: MessageCatalog = {
+  "guardrails.streamingOutput.title": "Streaming output inspection",
+  "guardrails.streamingOutput.off": "Off",
+  "guardrails.streamingOutput.windowed": "Windowed inspection (default)",
+  "guardrails.streamingOutput.full_buffer": "Inspect complete response before delivery",
+  "guardrails.streamingOutput.help":
+    "Applies only to streaming responses when output/post-call inspection is enabled. Off leaves input and non-streaming inspection unchanged.",
+  "guardrails.streamingOutput.tradeoff":
+    "Windowed inspection cannot recall content already delivered. Full response inspection waits until generation finishes before sending any output.",
   "guardrails.cache.title": "Analysis result cache",
   "guardrails.cache.mode": "Cache mode",
   "guardrails.cache.inherit": "Use server default",

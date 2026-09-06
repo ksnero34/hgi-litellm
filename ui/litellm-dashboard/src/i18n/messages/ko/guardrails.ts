@@ -1,6 +1,14 @@
 import type { MessageCatalog } from "../types";
 
 export const guardrailsMessages: MessageCatalog = {
+  "guardrails.streamingOutput.title": "스트리밍 출력 검사",
+  "guardrails.streamingOutput.off": "끄기",
+  "guardrails.streamingOutput.windowed": "구간별 검사 (기본값)",
+  "guardrails.streamingOutput.full_buffer": "전체 응답 검사 후 전달",
+  "guardrails.streamingOutput.help":
+    "출력(post-call) 검사가 활성화된 스트리밍 응답에만 적용됩니다. 꺼도 입력과 비스트리밍 응답 검사는 유지됩니다.",
+  "guardrails.streamingOutput.tradeoff":
+    "구간별 검사는 이미 전달한 내용을 회수할 수 없습니다. 전체 응답 검사는 생성이 끝날 때까지 출력을 기다립니다.",
   "guardrails.cache.title": "분석 결과 캐시",
   "guardrails.cache.mode": "캐시 사용",
   "guardrails.cache.inherit": "서버 기본값 사용",

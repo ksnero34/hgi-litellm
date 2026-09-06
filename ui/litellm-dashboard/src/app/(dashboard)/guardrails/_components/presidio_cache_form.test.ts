@@ -1,3 +1,4 @@
+import { STREAMING_OUTPUT, streamingMode, streamingPayload } from "./PresidioStreamingOutput";
 import { describe, expect, it } from "vitest";
 import { CACHE_ENABLED, CACHE_TTL, cacheFormValues, cachePayload, validCacheTtl } from "./presidio_cache_form";
 
@@ -22,4 +23,12 @@ describe("Presidio cache form persistence", () => {
   it.each([0, -1, 86401, 1.5, Number.NaN, "300"])("rejects invalid TTL %s", (value) => {
     expect(validCacheTtl(value)).toBe(false);
   });
+});
+
+it("defaults absent streaming settings and excludes them from other providers", () => {
+  expect(streamingMode(undefined)).toBe("windowed");
+  expect(streamingPayload({ [STREAMING_OUTPUT]: "full_buffer" }, "presidio")).toEqual({
+    [STREAMING_OUTPUT]: "full_buffer",
+  });
+  expect(streamingPayload({ [STREAMING_OUTPUT]: "off" }, "bedrock")).toEqual({});
 });
