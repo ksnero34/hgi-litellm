@@ -47,6 +47,7 @@ from litellm.types.guardrails import (
     PatchGuardrailRequest,
     PiiAction,
     PiiEntityType,
+    PresidioAnalysisCacheUISettings,
     PresidioPresidioConfigModelUserInterface,
     SupportedGuardrailIntegrations,
     ToolPermissionGuardrailConfigModel,
@@ -1371,8 +1372,10 @@ async def get_guardrail_ui_settings():
         get_available_content_categories,
         get_pattern_metadata,
     )
+    from litellm.proxy.guardrails.guardrail_hooks.presidio_analysis_cache import AnalysisCacheConfig
     from litellm.proxy.guardrails.guardrail_registry import guardrail_class_registry
 
+    cache_config: Final = AnalysisCacheConfig.from_env()
     category_maps: Final = [
         {
             "category": category.value,
@@ -1388,6 +1391,12 @@ async def get_guardrail_ui_settings():
     }
 
     return GuardrailUIAddGuardrailSettings(
+        presidio_analysis_cache=PresidioAnalysisCacheUISettings(
+            enabled_by_default=cache_config.enabled,
+            ttl_seconds=cache_config.ttl_seconds,
+            prerequisites_ready=not cache_config.unavailable_reasons,
+            unavailable_reasons=cache_config.unavailable_reasons,
+        ),
         supported_entities=[entity.value for entity in PiiEntityType],
         supported_actions=[action.value for action in PiiAction],
         supported_modes=[mode.value for mode in GuardrailEventHooks],

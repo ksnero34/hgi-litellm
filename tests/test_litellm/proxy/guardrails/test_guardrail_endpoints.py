@@ -2651,3 +2651,33 @@ def test_field_type_inference_handles_pep604_unions():
     assert _get_field_type_from_annotation(list[str] | None) == "array"
     assert _get_field_type_from_annotation(bool | None) == "boolean"
     assert _unwrap_optional_type(str | None) is str
+
+
+@pytest.mark.asyncio
+async def test_presidio_cache_ui_readiness_excludes_server_secrets(monkeypatch):
+    secret = "synthetic-ui-secret-that-is-over-32-bytes"
+    for name, value in {
+        "ENABLED": "false",
+        "COMPLETE_ANALYSIS_VERIFIED": "true",
+        "HMAC_SECRET": secret,
+        "KEY_VERSION": "synthetic-k1",
+        "ANALYSIS_VERSION": "synthetic-v1",
+        "TTL_SECONDS": "123",
+    }.items():
+        monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_" + name, value)
+    response = await get_guardrail_ui_settings()
+    assert response.presidio_analysis_cache.model_dump(mode="json") == {
+        "enabled_by_default": False,
+        "ttl_seconds": 123,
+        "prerequisites_ready": True,
+        "unavailable_reasons": [],
+    }
+    assert secret not in response.model_dump_json()
+    assert "synthetic-k1" not in response.model_dump_json()
+    monkeypatch.delenv("PRESIDIO_ANALYSIS_CACHE_HMAC_SECRET")
+    missing = await get_guardrail_ui_settings()
+    assert missing.presidio_analysis_cache.unavailable_reasons == ("hmac_secret_missing_or_invalid",)
+    assert not missing.presidio_analysis_cache.prerequisites_ready
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_TTL_SECONDS", "invalid")
+    invalid = await get_guardrail_ui_settings()
+    assert "invalid_configuration" in invalid.presidio_analysis_cache.unavailable_reasons

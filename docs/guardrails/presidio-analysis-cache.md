@@ -32,13 +32,13 @@ Redis lookup/storage errors bypass cache and preserve the same queue/concurrency
 
 ## Rollback and follow-up
 
-Disable the cache feature flag and restart/reload all participating gateway workers. Existing keys expire by TTL; do not flush Redis or rotate secrets to roll back. Preserve the bounded HTTP execution and fail-closed setting. Reverting this patch restores the earlier serialized shared-session behavior and removes these performance protections, so prefer the feature flag for operational cache rollback
+Set the guardrail cache setting to disabled, or restore server inheritance and disable the server cache flag, then restart/reload all participating gateway workers. A guardrail explicitly enabled in the GUI overrides the server enabled default; changing that default alone does not disable an explicit per-guardrail override. Existing keys expire by TTL; do not flush Redis or rotate secrets to roll back. Preserve the bounded HTTP execution and fail-closed setting. Reverting this patch restores the earlier serialized shared-session behavior and removes these performance protections, so prefer the feature flag for operational cache rollback
 
 HTTP batch requests and model tensor batching are separate follow-ups. Current clients must continue sending one analyzer payload object per HTTP request; never concatenate fragments and never send arrays without a verified server API. A future HTTP batch endpoint should receive only cache misses, retain individual offsets/errors and enforce maximum batch size and deadlines. Actual NER tensor batching requires the deployed model server to batch compatible tokenized chunks with attention masks, padding limits, overflow/stride correctness, per-input offset restoration, fair admission and measured GPU/CPU memory behavior. Measure end-to-end latency and full-text detection equivalence independently of HTTP request-count reduction
 
 ## Configuration reference
 
-Set `PRESIDIO_ANALYSIS_CACHE_ENABLED=true` only after the preceding gates pass, and explicitly attest them with `PRESIDIO_ANALYSIS_CACHE_COMPLETE_ANALYSIS_VERIFIED=true`. Both default to `false`. With no configured Redis client, enabled caching uses a bounded instance-local memory store. Untrusted/absent authenticated tenant, missing secret or invalid cache configuration bypass result caching; no public fallback tenant is used
+Enable caching through the Presidio GUI setting or the inherited `PRESIDIO_ANALYSIS_CACHE_ENABLED=true` default only after the preceding gates pass, and explicitly attest them server-side with `PRESIDIO_ANALYSIS_CACHE_COMPLETE_ANALYSIS_VERIFIED=true`. Without a guardrail override the enabled default remains `false`; the completeness flag also defaults to `false`. With no configured Redis client, enabled caching uses a bounded instance-local memory store. Untrusted/absent authenticated tenant, missing secret or invalid cache configuration bypass result caching; no public fallback tenant is used
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -96,3 +96,35 @@ LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONPATH=. .venv/bin/python scripts/presidio
 ```
 
 This command supplies synthetic test credentials/version/completeness settings in memory and runs actual localhost analyzer/anonymizer HTTP endpoints through the guardrail. It verifies repeated requests, duplicate fragments, masking/restoration/audit equivalence and real TTL expiry. Those synthetic settings do not verify or enable the deployed Korean NER. See [local results](presidio-local-cache-validation.json)
+
+
+## Presidio GUI 설정
+
+Guardrails에서 Presidio 가드레일을 생성하거나 선택하여 수정하면 분석 결과 캐시 설정을 볼 수 있다. 모드는 `서버 기본값 사용`, `사용`, `사용 안 함`이다. `서버 기본값 사용`은 `PRESIDIO_ANALYSIS_CACHE_ENABLED`를 상속하고, 나머지 두 선택은 해당 가드레일에만 명시적으로 적용한다. TTL은 1–86400초 범위이며 빈 값은 서버의 `PRESIDIO_ANALYSIS_CACHE_TTL_SECONDS`를 상속한다. 기존 가드레일은 새 필드가 없어도 이전 환경설정 동작을 유지한다.
+
+저장되는 필드는 `litellm_params.presidio_analysis_cache_enabled`와 `litellm_params.presidio_analysis_cache_ttl_seconds`다. `null`은 서버 설정 상속을 뜻한다. 변경값은 저장·재조회와 런타임 갱신에 반영된다. 런타임에서 캐시 엔진을 교체하므로 로컬 메모리 결과는 초기화된다. 기존 Redis 항목의 남은 TTL은 변경하지 않으며 새로 저장되는 항목부터 변경된 TTL을 사용한다.
+
+화면에는 서버 기본값과 캐시 준비 여부를 표시한다. 준비되지 않았다면 분석기 완전성 미검증, HMAC 비밀키 또는 키·분석 버전 누락/오류 등을 고정된 사유로 표시한다. 비밀키 값은 UI/API 응답에 포함하지 않으며 비밀키, 버전과 분석기 검증 확인은 기존 서버 secret/env 주입으로 관리한다. GUI에서 사용을 선택해도 서버 안전 조건이 부족하면 캐시는 우회하고 Presidio 직접 검사를 계속한다.
+
+준비 여부는 UI 설정 API를 처리한 worker의 구성 상태이며 실제 cache hit, Redis 연결 성공, 모든 Pod의 일치 여부를 보장하지 않는다. 요청에 신뢰할 수 있는 인증 team이 없으면 캐시를 우회한다. Redis 미설정은 준비 실패 사유가 아니며 이 경우 로컬 메모리를 사용한다. Redis가 설정되어 있으면 Redis를 사용하고, Redis 장애 때는 직접 분석한다. 현재 hit/miss 카운터는 내부 메모리 계측이므로 이 화면의 설정 상태와 구분한다.
+
+UI에서 끄거나 상속으로 되돌리는 경우에도 마스킹, 정책, 감사와 fail-closed 동작은 유지한다. 실제 분석기 검증 없이 GUI 활성화만으로 긴 입력 전체 검사 성공을 가정하지 않는다.
+
+
+### GUI 변경 검증
+
+관련 backend 4개 파일 시험은 305 passed(67.97초), UI 5개 파일은 28 passed였다. 실제 localhost HTTP 시험은 같은 합성 입력을 두 번씩 보냈을 때 GUI와 동일한 `사용` 설정에서 분석1회, `사용 안 함`으로 변경 후 추가2회, 서버 기본값 상속으로 다시 사용한 뒤 추가1회를 확인했다. 여섯 요청 모두 마스킹·감사 처리는 유지됐다. 생성 API의 명시값 저장, 편집의 null 상속 복귀, 취소 후 원래 값 복원, 다른 provider로 전환 시 Presidio 필드 제외도 시험했다.
+
+```bash
+LITELLM_LOCAL_MODEL_COST_MAP=True .venv/bin/python -m pytest -q \
+  tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_cache.py \
+  tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio.py \
+  tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_analysis_integration.py \
+  tests/test_litellm/proxy/guardrails/test_guardrail_endpoints.py
+```
+
+Node 24.14.1 production build와 TypeScript 검사 및 정적 페이지 생성도 통과했다. API snapshot과 TypeScript API 타입은 backend에서 재생성했다. 실제 운영 Redis/NER/IdP 또는 AKS 배포 시험은 아니다. 실행 중인 기존 컨테이너에는 새 소스의 GUI가 자동으로 반영되지 않으므로 기존 배포 절차에 따라 새 이미지를 빌드해야 한다.
+
+현재 브랜치 HEAD 대비 strict Ruff, LIT 타입 규율, basedpyright 및 테스트 품질 게이트를 확인했다. 이는 기존 코드 전체의 타입 오류가 0이라는 의미가 아니라 이번 변경이 해당 기준을 악화시키지 않았다는 의미다. 필수 budget 갱신 명령은 상한을 높이지 않았으며 이번 변경에서 감축 대상은 0건이었다. 설정 입력 검증의 타입 경계를 명확히 한 후 캐시 단위시험 51건을 재실행해 통과했다. 입력·출력·복원·감사 callback 초기화도 SDK 내부 mock 없이 실제 등록된 인스턴스로 검증한다.
+
+최종 실제 callback 등록 시험으로 변경한 후 Presidio·HTTP 전체 169건과 생성·편집 UI API 연결 2건을 재실행해 통과했다. Dashboard 전체 ESLint 및 budget도 통과했으며 inline-object 상한은 기존 559를 유지했다. 예산 파일, suppression과 운영 설정은 변경하지 않았다.

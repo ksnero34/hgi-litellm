@@ -128,6 +128,8 @@ def initialize_presidio(litellm_params: LitellmParams, guardrail: Guardrail):
         # its precise int | None type.
         callback: Final = _OPTIONAL_PresidioPIIMasking(
             presidio_analyze_chunk_size_bytes=litellm_params.presidio_analyze_chunk_size_bytes,
+            presidio_analysis_cache_enabled=litellm_params.presidio_analysis_cache_enabled,
+            presidio_analysis_cache_ttl_seconds=litellm_params.presidio_analysis_cache_ttl_seconds,
             **params,
         )
         litellm.logging_callback_manager.add_litellm_callback(callback)

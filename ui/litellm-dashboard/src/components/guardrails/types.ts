@@ -43,3 +43,38 @@ export enum GuardrailDefinitionLocation {
   DB = "db",
   CONFIG = "config",
 }
+
+export interface PresidioCacheSettings {
+  enabled_by_default: boolean;
+  ttl_seconds: number;
+  prerequisites_ready: boolean;
+  unavailable_reasons: string[];
+}
+
+export interface GuardrailSettings {
+  presidio_analysis_cache?: PresidioCacheSettings;
+  supported_entities: string[];
+  supported_actions: string[];
+  supported_modes: string[];
+  supported_modes_by_provider?: Record<string, string[]>;
+  pii_entity_categories: Array<{
+    category: string;
+    entities: string[];
+  }>;
+  content_filter_settings?: {
+    prebuilt_patterns: Array<{
+      name: string;
+      display_name: string;
+      category: string;
+      description: string;
+    }>;
+    pattern_categories: string[];
+    supported_actions: string[];
+    content_categories?: Array<{
+      name: string;
+      display_name: string;
+      description: string;
+      default_action: string;
+    }>;
+  };
+}

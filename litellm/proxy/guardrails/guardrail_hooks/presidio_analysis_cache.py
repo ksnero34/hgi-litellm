@@ -100,6 +100,7 @@ def canonical_json(value: object) -> str:
 @dataclass(frozen=True)
 class AnalysisCacheConfig:
     enabled: bool = False
+    configuration_valid: bool = True
     complete_analysis_verified: bool = False
     secret: str = field(default="", repr=False)
     key_version: str = ""
@@ -135,16 +136,25 @@ class AnalysisCacheConfig:
                 analyze_timeout_seconds=float(os.getenv("PRESIDIO_PRE_CALL_TIMEOUT_SECONDS", "30")),
             )
         except Exception:  # noqa: BLE001  # Secret-provider failures must disable caching and retain direct inspection
-            return cls()
+            return cls(configuration_valid=False)
+
+    def with_guardrail_overrides(self, enabled: object = None, ttl_seconds: object = None) -> "AnalysisCacheConfig":
+        if enabled is not None and not isinstance(enabled, bool):
+            raise ValueError("presidio_analysis_cache_enabled must be a boolean or null")
+        if ttl_seconds is not None and (
+            isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or not 1 <= ttl_seconds <= 86400
+        ):
+            raise ValueError("presidio_analysis_cache_ttl_seconds must be between 1 and 86400")
+        return replace(
+            self,
+            enabled=self.enabled if enabled is None else enabled,
+            ttl_seconds=self.ttl_seconds if ttl_seconds is None else ttl_seconds,
+        )
 
     @property
-    def safe_to_enable(self) -> bool:
-        return bool(
-            self.enabled
-            and self.complete_analysis_verified
-            and len(self.secret.encode()) >= 32
-            and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", self.key_version)
-            and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", self.analysis_version)
+    def unavailable_reasons(self) -> tuple[str, ...]:
+        valid_limits: Final = (
+            self.configuration_valid
             and self.ttl_seconds > 0
             and self.max_entry_bytes > 0
             and math.isfinite(self.redis_timeout_seconds)
@@ -153,9 +163,25 @@ class AnalysisCacheConfig:
             and self.analyze_timeout_seconds > 0
             and self.max_singleflight > 0
             and self.batch_size > 0
+            and self.max_request_fragments > 0
             and self.local_max_entries > 0
             and self.local_max_bytes > 0
         )
+        checks: Final = (
+            (self.complete_analysis_verified, "analysis_not_verified"),
+            (len(self.secret.encode()) >= 32, "hmac_secret_missing_or_invalid"),
+            (bool(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", self.key_version)), "key_version_missing_or_invalid"),
+            (
+                bool(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", self.analysis_version)),
+                "analysis_version_missing_or_invalid",
+            ),
+            (valid_limits, "invalid_configuration"),
+        )
+        return tuple(reason for valid, reason in checks if not valid)
+
+    @property
+    def safe_to_enable(self) -> bool:
+        return self.enabled and not self.unavailable_reasons
 
 
 @dataclass

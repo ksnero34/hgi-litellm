@@ -5069,3 +5069,101 @@ async def test_close_session_releases_chunk_loop_references():
     assert guardrail._loop_chunk_semaphores
     await guardrail._close_http_session()
     assert not guardrail._loop_chunk_semaphores
+
+
+def test_presidio_cache_constructor_and_live_update(monkeypatch):
+    for name, value in {
+        "ENABLED": "true",
+        "COMPLETE_ANALYSIS_VERIFIED": "true",
+        "HMAC_SECRET": "synthetic-secret-for-constructor-over-32-bytes",
+        "KEY_VERSION": "k1",
+        "ANALYSIS_VERSION": "synthetic-v1",
+        "TTL_SECONDS": "123",
+    }.items():
+        monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_" + name, value)
+    callback = _OPTIONAL_PresidioPIIMasking(
+        mock_testing=True,
+        presidio_analysis_cache_enabled=False,
+        presidio_language="ko",
+        presidio_analyze_chunk_size_bytes=1024,
+        pii_entities_config={"PERSON": PiiAction.BLOCK},
+    )
+    assert not callback._analysis_cache.config.enabled
+    callback.update_in_memory_litellm_params(
+        LitellmParams(
+            guardrail="presidio",
+            mode="pre_call",
+            presidio_analysis_cache_enabled=True,
+            presidio_analysis_cache_ttl_seconds=60,
+        )
+    )
+    assert callback._analysis_cache.config.safe_to_enable
+    assert callback._analysis_cache.config.ttl_seconds == 60
+    old_cache = callback._analysis_cache
+    injected_redis = MagicMock()
+    old_cache.redis_cache = injected_redis
+    callback.update_in_memory_litellm_params(LitellmParams(guardrail="presidio", mode="pre_call"))
+    assert callback._analysis_cache is not old_cache
+    assert callback._analysis_cache.redis_cache is injected_redis
+    assert callback._analysis_cache.config.enabled
+    assert callback._analysis_cache.config.ttl_seconds == 123
+    assert callback.presidio_language == "ko"
+    assert callback.presidio_analyze_chunk_size_bytes == 1024
+    assert callback.pii_entities_config == {"PERSON": PiiAction.BLOCK}
+    callback.update_in_memory_litellm_params(
+        LitellmParams(
+            guardrail="presidio",
+            mode="pre_call",
+            presidio_language=None,
+            presidio_analyze_chunk_size_bytes=None,
+            pii_entities_config=None,
+            presidio_score_thresholds=None,
+            presidio_entities_deny_list=None,
+        )
+    )
+    assert callback.presidio_language == "en"
+    assert callback.presidio_analyze_chunk_size_bytes > 0
+    assert callback.pii_entities_config == {}
+    assert callback.presidio_score_thresholds == {}
+    assert callback.presidio_entities_deny_list == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_count"),
+    [("pre_call", 3), ("post_call", 3), ("logging_only", 1), (["pre_call", "post_call", "logging_only"], 4)],
+)
+def test_presidio_cache_initializer_all_callbacks(monkeypatch, mode, expected_count):
+    from litellm.proxy.guardrails.guardrail_initializers import initialize_presidio
+
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_ENABLED", "true")
+    guardrail_name = "synthetic-cache-initializer"
+
+    def registered_callbacks():
+        return tuple(
+            callback
+            for callback in litellm.logging_callback_manager.get_custom_loggers_for_type(_OPTIONAL_PresidioPIIMasking)
+            if callback.guardrail_name == guardrail_name
+        )
+
+    try:
+        primary = initialize_presidio(
+            LitellmParams(
+                guardrail="presidio",
+                mode=mode,
+                output_parse_pii=True,
+                presidio_analyzer_api_base="http://127.0.0.1:1",
+                presidio_anonymizer_api_base="http://127.0.0.1:1",
+                presidio_analysis_cache_enabled=False,
+                presidio_analysis_cache_ttl_seconds=77,
+            ),
+            {"guardrail_name": guardrail_name},
+        )
+        callbacks = registered_callbacks()
+        assert len(callbacks) == expected_count
+        assert primary in callbacks
+        for callback in callbacks:
+            assert callback._analysis_cache.config.enabled is False
+            assert callback._analysis_cache.config.ttl_seconds == 77
+    finally:
+        for callback in registered_callbacks():
+            litellm.logging_callback_manager.remove_callback_from_all_lists(callback)

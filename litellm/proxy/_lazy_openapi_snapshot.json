@@ -12097,6 +12097,32 @@
               "description": "Path to a JSON file containing ad-hoc recognizers for Presidio",
               "title": "Presidio Ad Hoc Recognizers"
             },
+            "presidio_analysis_cache_enabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Enable analysis caching for this guardrail. Null inherits the server default; server safety prerequisites still apply.",
+              "title": "Presidio Analysis Cache Enabled"
+            },
+            "presidio_analysis_cache_ttl_seconds": {
+              "anyOf": [
+                {
+                  "maximum": 86400.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Analysis cache TTL in seconds. Null inherits the server default.",
+              "title": "Presidio Analysis Cache Ttl Seconds"
+            },
             "presidio_analyze_chunk_size_bytes": {
               "anyOf": [
                 {

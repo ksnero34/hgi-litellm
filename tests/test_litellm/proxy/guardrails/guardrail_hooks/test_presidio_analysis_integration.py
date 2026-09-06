@@ -13,7 +13,7 @@ from aiohttp import web
 from litellm.exceptions import BlockedPiiEntityError
 from litellm.proxy.guardrails.guardrail_hooks.presidio import _OPTIONAL_PresidioPIIMasking, _PresidioServiceError
 from litellm.proxy.guardrails.guardrail_hooks.presidio_analysis_cache import AnalysisCache, AnalysisCacheConfig
-from litellm.types.guardrails import PiiAction
+from litellm.types.guardrails import LitellmParams, PiiAction
 
 
 @dataclass
@@ -155,6 +155,58 @@ async def tenant_request(tenant="team:synthetic", **kwargs):
     from litellm.proxy.guardrails.guardrail_hooks.presidio_analysis_context import analysis_request_scope
     with analysis_request_scope(tenant_scope=tenant, max_concurrency=2, **kwargs) as context:
         yield context
+
+
+@pytest.mark.asyncio
+async def test_guardrail_cache_settings_control_live_http_reuse(monkeypatch):
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_ENABLED", "false")
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_COMPLETE_ANALYSIS_VERIFIED", "true")
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_HMAC_SECRET", "synthetic-gui-test-secret-at-least-32-bytes")
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_KEY_VERSION", "test-k1")
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_ANALYSIS_VERSION", "synthetic-gui-v1")
+    monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_TTL_SECONDS", "300")
+
+    async with local_presidio() as (server, url):
+        guardrail = _OPTIONAL_PresidioPIIMasking(
+            presidio_analyzer_api_base=url,
+            presidio_anonymizer_api_base=url,
+            guardrail_name="synthetic-gui-presidio",
+            pii_entities_config={"PERSON": PiiAction.MASK},
+            presidio_analysis_cache_enabled=True,
+            presidio_analysis_cache_ttl_seconds=17,
+        )
+
+        async def inspect_twice():
+            for _ in range(2):
+                data = {"metadata": {}}
+                async with tenant_request():
+                    result = await guardrail.apply_guardrail({"texts": ["홍길동"]}, data, "request")
+                assert result["texts"] == ["<PERSON>"]
+                assert len(data["metadata"]["standard_logging_guardrail_information"]) == 1
+
+        try:
+            await inspect_twice()
+            assert len(server.payloads) == 1
+            assert guardrail._analysis_cache.config.ttl_seconds == 17
+
+            guardrail.update_in_memory_litellm_params(LitellmParams(
+                guardrail="presidio", mode="pre_call", presidio_analysis_cache_enabled=False,
+                presidio_analysis_cache_ttl_seconds=17,
+            ))
+            await inspect_twice()
+            assert len(server.payloads) == 3
+
+            monkeypatch.setenv("PRESIDIO_ANALYSIS_CACHE_ENABLED", "true")
+            guardrail.update_in_memory_litellm_params(LitellmParams(
+                guardrail="presidio", mode="pre_call", presidio_analysis_cache_enabled=None,
+                presidio_analysis_cache_ttl_seconds=None,
+            ))
+            await inspect_twice()
+            assert len(server.payloads) == 4
+            assert guardrail._analysis_cache.config.ttl_seconds == 300
+            assert server.anonymize_calls == 6
+        finally:
+            await guardrail._close_http_session()
 
 
 @pytest.mark.asyncio

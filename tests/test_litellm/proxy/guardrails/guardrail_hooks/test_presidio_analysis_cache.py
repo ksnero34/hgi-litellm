@@ -569,3 +569,42 @@ def test_local_store_concurrent_threads_preserve_bounds_and_ttl():
     engine._local_store.read(())
     assert engine._local_store._bytes == 0
     assert not engine._local_store._entries
+
+
+def test_guardrail_cache_overrides_preserve_server_safety():
+    inherited = config(enabled=False, ttl_seconds=123)
+    assert inherited.with_guardrail_overrides() == inherited
+    enabled = inherited.with_guardrail_overrides(True, 60)
+    assert enabled.safe_to_enable and enabled.ttl_seconds == 60
+    assert not enabled.with_guardrail_overrides(False).safe_to_enable
+    for unsafe in (
+        config(secret=""),
+        config(complete_analysis_verified=False),
+        config(key_version=""),
+        config(analysis_version=""),
+    ):
+        assert not unsafe.with_guardrail_overrides(True, 60).safe_to_enable
+    assert not enabled.with_guardrail_overrides().unavailable_reasons
+    assert not config(enabled=False).unavailable_reasons
+
+
+@pytest.mark.parametrize("value", [0, -1, 86401, True, "60", 1.5])
+def test_guardrail_cache_ttl_validation(value):
+    from pydantic import ValidationError
+    from litellm.types.guardrails import LitellmParams
+
+    with pytest.raises(ValueError, match="presidio_analysis_cache_ttl_seconds"):
+        config().with_guardrail_overrides(ttl_seconds=value)
+    with pytest.raises(ValidationError):
+        LitellmParams(guardrail="presidio", mode="pre_call", presidio_analysis_cache_ttl_seconds=value)
+
+
+@pytest.mark.parametrize("value", ["false", 1, 0])
+def test_guardrail_cache_enabled_validation(value):
+    from pydantic import ValidationError
+    from litellm.types.guardrails import LitellmParams
+
+    with pytest.raises(ValueError, match="presidio_analysis_cache_enabled"):
+        config().with_guardrail_overrides(enabled=value)
+    with pytest.raises(ValidationError):
+        LitellmParams(guardrail="presidio", mode="pre_call", presidio_analysis_cache_enabled=value)

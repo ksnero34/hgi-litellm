@@ -1,3 +1,6 @@
+import type { GuardrailSettings } from "@/components/guardrails/types";
+import PresidioAnalysisCache from "./PresidioAnalysisCache";
+import { CACHE_ENABLED, CACHE_TTL, cacheFormValues, cachePayload, isPresidioCacheField } from "./presidio_cache_form";
 import {
   getGuardrailInfo,
   getGuardrailProviderSpecificParams,
@@ -72,32 +75,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
   const form = useForm<GuardrailFormValues>({ defaultValues: {} });
   const [selectedPiiEntities, setSelectedPiiEntities] = useState<string[]>([]);
   const [selectedPiiActions, setSelectedPiiActions] = useState<{ [key: string]: string }>({});
-  const [guardrailSettings, setGuardrailSettings] = useState<{
-    supported_entities: string[];
-    supported_actions: string[];
-    pii_entity_categories: Array<{
-      category: string;
-      entities: string[];
-    }>;
-    supported_modes: string[];
-    supported_modes_by_provider?: Record<string, string[]>;
-    content_filter_settings?: {
-      prebuilt_patterns: Array<{
-        name: string;
-        display_name: string;
-        category: string;
-        description: string;
-      }>;
-      pattern_categories: string[];
-      supported_actions: string[];
-      content_categories?: Array<{
-        name: string;
-        display_name: string;
-        description: string;
-        default_action: string;
-      }>;
-    };
-  } | null>(null);
+  const [guardrailSettings, setGuardrailSettings] = useState<GuardrailSettings | null>(null);
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   const [hasUnsavedContentFilterChanges, setHasUnsavedContentFilterChanges] = useState(false);
   const emptyToolPermissionConfig: ToolPermissionConfig = {
@@ -217,6 +195,9 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
   // binds are seeded: an unbound key would otherwise be submitted as if the user had set it.
   useEffect(() => {
     if (!guardrailData) return;
+    const cacheValues = cacheFormValues(guardrailData.litellm_params ?? {});
+    form.setValue(CACHE_ENABLED, cacheValues[CACHE_ENABLED]);
+    form.setValue(CACHE_TTL, cacheValues[CACHE_TTL]);
     form.setValue("guardrail_name", guardrailData.guardrail_name);
     form.setValue("mode", toModeArray(guardrailData.litellm_params?.mode));
     form.setValue("default_on", guardrailData.litellm_params?.default_on);
@@ -424,6 +405,7 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
         }
 
         allowedParams.forEach((paramName) => {
+          if (isPresidioCacheField(paramName)) return;
           if (paramName === "patterns" || paramName === "blocked_words" || paramName === "categories") {
             return;
           }
@@ -452,6 +434,8 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
           }
         });
       }
+
+      Object.assign(updateData.litellm_params, cachePayload(values, guardrailData.litellm_params?.guardrail));
 
       // Remove empty litellm_params object if no parameters were changed
       if (Object.keys(updateData.litellm_params).length === 0) {
@@ -590,6 +574,12 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
               </Card>
             </div>
 
+            {guardrailData.litellm_params?.guardrail === "presidio" && (
+              <PresidioAnalysisCache
+                settings={guardrailSettings?.presidio_analysis_cache}
+                values={guardrailData.litellm_params}
+              />
+            )}
             {guardrailData.litellm_params?.pii_entities_config &&
               Object.keys(guardrailData.litellm_params.pii_entities_config).length > 0 && (
                 <Card className="block mt-6 p-6">
@@ -739,6 +729,10 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                         </GuardrailField>
                         {guardrailData.litellm_params?.guardrail === "presidio" && (
                           <>
+                            <PresidioAnalysisCache
+                              control={form.control}
+                              settings={guardrailSettings?.presidio_analysis_cache}
+                            />
                             <SectionHeading>PII Protection</SectionHeading>
                             <div className="mb-6">
                               {guardrailSettings && (
@@ -822,6 +816,9 @@ const GuardrailInfoView: React.FC<GuardrailInfoProps> = ({ guardrailId, onClose,
                             type="button"
                             variant="outline"
                             onClick={() => {
+                              const savedCache = cacheFormValues(guardrailData.litellm_params ?? {});
+                              form.setValue(CACHE_ENABLED, savedCache[CACHE_ENABLED]);
+                              form.setValue(CACHE_TTL, savedCache[CACHE_TTL]);
                               setIsEditing(false);
                               setHasUnsavedContentFilterChanges(false);
                               resetToolPermissionEditor();

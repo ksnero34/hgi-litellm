@@ -1,3 +1,6 @@
+import type { GuardrailSettings } from "@/components/guardrails/types";
+import PresidioAnalysisCache from "./PresidioAnalysisCache";
+import { CACHE_ENABLED, CACHE_TTL, cachePayload, isPresidioCacheField } from "./presidio_cache_form";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { toast } from "@/lib/toast";
@@ -83,33 +86,6 @@ interface AddGuardrailFormProps {
   accessToken: string | null;
   onSuccess: () => void;
   preset?: GuardrailPreset;
-}
-
-interface GuardrailSettings {
-  supported_entities: string[];
-  supported_actions: string[];
-  supported_modes: string[];
-  supported_modes_by_provider?: Record<string, string[]>;
-  pii_entity_categories: Array<{
-    category: string;
-    entities: string[];
-  }>;
-  content_filter_settings?: {
-    prebuilt_patterns: Array<{
-      name: string;
-      display_name: string;
-      category: string;
-      description: string;
-    }>;
-    pattern_categories: string[];
-    supported_actions: string[];
-    content_categories?: Array<{
-      name: string;
-      display_name: string;
-      description: string;
-      default_action: string;
-    }>;
-  };
 }
 
 interface ContentFilterPattern {
@@ -311,6 +287,8 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
       config: undefined,
       presidio_analyzer_api_base: undefined,
       presidio_anonymizer_api_base: undefined,
+      [CACHE_ENABLED]: null,
+      [CACHE_TTL]: null,
     };
     if (value === "BlockCodeExecution") {
       resetValues.confidence_threshold = 0.5;
@@ -382,6 +360,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
 
     // Validate configuration steps
     if (currentStep === 1) {
+      if (selectedProvider === "PresidioPII" && !(await form.trigger(CACHE_TTL))) return;
       if (shouldRenderPIIConfigSettings(selectedProvider) && selectedEntities.length === 0) {
         toast.fromError("Please select at least one PII entity to continue");
         return;
@@ -461,6 +440,8 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
       if (skipToolForCreate !== undefined) {
         guardrailData.litellm_params.skip_tool_message_in_guardrail = skipToolForCreate;
       }
+
+      Object.assign(guardrailData.litellm_params, cachePayload(values, guardrailProvider));
 
       // For Presidio PII, add the entity and action configurations
       if (providerKey === "PresidioPII" && selectedEntities.length > 0) {
@@ -631,6 +612,7 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
         }
 
         allowedParams.forEach((paramName) => {
+          if (isPresidioCacheField(paramName)) return;
           // Check for both direct parameter name and nested optional_params object
           const directValue = values[paramName];
           const paramValue =
@@ -813,15 +795,18 @@ const AddGuardrailForm: React.FC<AddGuardrailFormProps> = ({ visible, onClose, a
     if (!guardrailSettings || selectedProvider !== "PresidioPII") return null;
 
     return (
-      <PiiConfiguration
-        entities={guardrailSettings.supported_entities}
-        actions={guardrailSettings.supported_actions}
-        selectedEntities={selectedEntities}
-        selectedActions={selectedActions}
-        onEntitySelect={handleEntitySelect}
-        onActionSelect={handleActionSelect}
-        entityCategories={guardrailSettings.pii_entity_categories}
-      />
+      <>
+        <PresidioAnalysisCache control={form.control} settings={guardrailSettings.presidio_analysis_cache} />
+        <PiiConfiguration
+          entities={guardrailSettings.supported_entities}
+          actions={guardrailSettings.supported_actions}
+          selectedEntities={selectedEntities}
+          selectedActions={selectedActions}
+          onEntitySelect={handleEntitySelect}
+          onActionSelect={handleActionSelect}
+          entityCategories={guardrailSettings.pii_entity_categories}
+        />
+      </>
     );
   };
 

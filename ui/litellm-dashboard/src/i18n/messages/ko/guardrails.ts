@@ -1,6 +1,27 @@
 import type { MessageCatalog } from "../types";
 
 export const guardrailsMessages: MessageCatalog = {
+  "guardrails.cache.title": "분석 결과 캐시",
+  "guardrails.cache.mode": "캐시 사용",
+  "guardrails.cache.inherit": "서버 기본값 사용",
+  "guardrails.cache.enabled": "사용",
+  "guardrails.cache.disabled": "사용 안 함",
+  "guardrails.cache.ttl": "TTL (초)",
+  "guardrails.cache.ttlHelp": "비워두면 서버 TTL을 사용합니다. 허용 범위: 1~86400초",
+  "guardrails.cache.ttlInvalid": "1부터 86400 사이의 정수를 입력하세요",
+  "guardrails.cache.storage":
+    "Redis가 설정되어 있으면 Pod 간 결과를 공유합니다. Redis가 없으면 만료 또는 재시작 전까지 현재 프로세스에만 보관합니다.",
+  "guardrails.cache.defaults": "서버 기본값: {{mode}}, TTL {{ttl}}초",
+  "guardrails.cache.ready":
+    "서버 사전 조건이 준비되었습니다. 재사용에는 인증된 tenant 범위와 동일한 분석 조건도 필요합니다.",
+  "guardrails.cache.unavailable": "캐시 사전 조건이 준비되지 않았습니다. Presidio 직접 검사는 계속 수행합니다.",
+  "guardrails.cache.unknown": "서버 캐시 준비 상태를 불러오지 못했습니다.",
+  "guardrails.cache.reason.analysis_not_verified": "서버에서 전체 입력 분석 검증이 완료되지 않았습니다.",
+  "guardrails.cache.reason.hmac_secret_missing_or_invalid": "서버에 유효한 HMAC 비밀키가 필요합니다.",
+  "guardrails.cache.reason.key_version_missing_or_invalid": "유효한 HMAC 키 버전이 필요합니다.",
+  "guardrails.cache.reason.analysis_version_missing_or_invalid": "유효한 분석 버전이 필요합니다.",
+  "guardrails.cache.reason.invalid_configuration": "서버 캐시 설정이 올바르지 않습니다.",
+
   "guardrails.add.success": "가드레일이 생성되었습니다",
   "guardrails.add.errorPrefix": "가드레일 생성 실패: {{message}}",
   "guardrails.add.loadError": "가드레일 설정을 불러오지 못했습니다",

@@ -374,6 +374,18 @@ class PresidioPresidioConfigModelUserInterface(BaseModel):
         ),
         json_schema_extra={"min": 1, "max": 64, "step": 1},
     )
+    presidio_analysis_cache_enabled: bool | None = Field(
+        default=None,
+        strict=True,
+        description="Enable analysis caching for this guardrail. Null inherits the server default; server safety prerequisites still apply.",
+    )
+    presidio_analysis_cache_ttl_seconds: int | None = Field(
+        default=None,
+        strict=True,
+        ge=1,
+        le=86400,
+        description="Analysis cache TTL in seconds. Null inherits the server default.",
+    )
     unreachable_fallback: Literal["fail_open", "fail_closed"] = Field(
         default="fail_open",
         description=(
@@ -1139,12 +1151,20 @@ class ListGuardrailsResponse(BaseModel):
     guardrails: list[GuardrailInfoResponse]
 
 
+class PresidioAnalysisCacheUISettings(BaseModel):
+    enabled_by_default: bool
+    ttl_seconds: int
+    prerequisites_ready: bool
+    unavailable_reasons: tuple[str, ...]
+
+
 class GuardrailUIAddGuardrailSettings(BaseModel):
     supported_entities: list[str]
     supported_actions: list[str]
     supported_modes: list[str]
     supported_modes_by_provider: dict[str, list[str]]
     pii_entity_categories: list[PiiEntityCategoryMap]
+    presidio_analysis_cache: PresidioAnalysisCacheUISettings | None = None
     content_filter_settings: dict[str, Any] | None = None
 
 

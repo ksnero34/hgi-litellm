@@ -283,6 +283,8 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         presidio_filter_scope: Literal["input", "output", "both"] = "both",
         presidio_max_parallel_requests: int = 4,
         presidio_analysis_cache: AnalysisCache | None = None,
+        presidio_analysis_cache_enabled: bool | None = None,
+        presidio_analysis_cache_ttl_seconds: int | None = None,
         pii_entities_config: dict[PiiEntityType | str, PiiAction] | None = None,
         presidio_language: str | None = None,
         presidio_score_thresholds: dict[PiiEntityType | str, float] | None = None,
@@ -310,7 +312,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         ):
             raise ValueError("presidio_max_parallel_requests must be between 1 and 64")
         self.presidio_max_parallel_requests = presidio_max_parallel_requests
-        self._analysis_cache = presidio_analysis_cache or AnalysisCache(AnalysisCacheConfig.from_env())
+        self._analysis_cache = presidio_analysis_cache or AnalysisCache(
+            AnalysisCacheConfig.from_env().with_guardrail_overrides(
+                presidio_analysis_cache_enabled, presidio_analysis_cache_ttl_seconds
+            )
+        )
         self._mock_testing = mock_testing
         self.unreachable_fallback = unreachable_fallback
 
@@ -327,9 +333,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 self.event_hook = cast(list[GuardrailEventHooks], [current_hook, "post_call"])
             elif isinstance(current_hook, list) and "post_call" not in current_hook:
                 self.event_hook = cast(list[GuardrailEventHooks], current_hook + ["post_call"])
-        self.pii_entities_config: dict[PiiEntityType | str, PiiAction] = pii_entities_config or {}
-        self.presidio_score_thresholds: dict[PiiEntityType | str, float] = presidio_score_thresholds or {}
-        self.presidio_entities_deny_list: list[PiiEntityType | str] = presidio_entities_deny_list or []
+        self._set_pii_policy(pii_entities_config, presidio_score_thresholds, presidio_entities_deny_list)
         self.presidio_language = presidio_language or "en"
         self.presidio_analyze_chunk_size_bytes: int = self._coerce_analyze_chunk_size(presidio_analyze_chunk_size_bytes)
         # Shared HTTP session to prevent memory leaks (issue #14540)
@@ -2820,11 +2824,22 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             )
         return inputs
 
+    def _set_pii_policy(
+        self,
+        entities: dict[PiiEntityType | str, PiiAction] | None,
+        thresholds: dict[PiiEntityType | str, float] | None,
+        deny_list: list[PiiEntityType | str] | None,
+    ) -> None:
+        self.pii_entities_config: dict[PiiEntityType | str, PiiAction] = entities or {}
+        self.presidio_score_thresholds: dict[PiiEntityType | str, float] = thresholds or {}
+        self.presidio_entities_deny_list: list[PiiEntityType | str] = deny_list or []
+
     def update_in_memory_litellm_params(self, litellm_params: LitellmParams) -> None:
         """
         Update the guardrails litellm params in memory
         """
-        super().update_in_memory_litellm_params(litellm_params)
+        for key in litellm_params.model_fields_set:
+            setattr(self, key, getattr(litellm_params, key))
         self.unreachable_fallback = (
             litellm_params.unreachable_fallback
             if "unreachable_fallback" in litellm_params.model_fields_set
@@ -2832,15 +2847,14 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         )
         if "presidio_max_parallel_requests" in litellm_params.model_fields_set:
             self.presidio_max_parallel_requests = litellm_params.presidio_max_parallel_requests
-        if litellm_params.pii_entities_config:
-            self.pii_entities_config = litellm_params.pii_entities_config
-        if litellm_params.presidio_score_thresholds:
-            self.presidio_score_thresholds = litellm_params.presidio_score_thresholds
-        if litellm_params.presidio_entities_deny_list:
-            self.presidio_entities_deny_list = litellm_params.presidio_entities_deny_list
-        if litellm_params.presidio_analyze_chunk_size_bytes is not None:
-            # Same validation as __init__: a non-positive value from a guardrail
-            # update must not silently disable detection via degenerate chunking.
-            self.presidio_analyze_chunk_size_bytes = self._coerce_analyze_chunk_size(
-                litellm_params.presidio_analyze_chunk_size_bytes
-            )
+        self._analysis_cache = AnalysisCache(
+            AnalysisCacheConfig.from_env().with_guardrail_overrides(
+                litellm_params.presidio_analysis_cache_enabled,
+                litellm_params.presidio_analysis_cache_ttl_seconds,
+            ),
+            redis_cache=self._analysis_cache.redis_cache,
+        )
+        self._set_pii_policy(self.pii_entities_config, self.presidio_score_thresholds, self.presidio_entities_deny_list)
+        self.presidio_language = self.presidio_language or "en"
+        self.presidio_filter_scope = self.presidio_filter_scope or "both"
+        self.presidio_analyze_chunk_size_bytes = self._coerce_analyze_chunk_size(self.presidio_analyze_chunk_size_bytes)

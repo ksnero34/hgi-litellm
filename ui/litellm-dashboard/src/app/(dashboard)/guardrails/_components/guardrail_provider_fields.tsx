@@ -1,3 +1,4 @@
+import { isPresidioCacheField } from "./presidio_cache_form";
 import React, { useState, useEffect } from "react";
 import {
   guardrail_provider_map,
@@ -281,7 +282,7 @@ const GuardrailProviderFields: React.FC<GuardrailProviderFieldsProps> = ({
       const fullFieldKey = parentKey ? `${parentKey}:${fieldKey}` : fieldKey;
       const fieldValue = parentValue ? readRecord(parentValue, fieldKey) : value?.[fieldKey];
       // Skip ui_friendly_name - it's metadata for the UI dropdown, not a user configuration field
-      if (fieldKey === "ui_friendly_name") {
+      if (fieldKey === "ui_friendly_name" || isPresidioCacheField(fieldKey)) {
         return null;
       }
 

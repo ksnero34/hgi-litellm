@@ -29978,6 +29978,16 @@ export interface components {
              */
             presidio_ad_hoc_recognizers?: string | null;
             /**
+             * Presidio Analysis Cache Enabled
+             * @description Enable analysis caching for this guardrail. Null inherits the server default; server safety prerequisites still apply.
+             */
+            presidio_analysis_cache_enabled?: boolean | null;
+            /**
+             * Presidio Analysis Cache Ttl Seconds
+             * @description Analysis cache TTL in seconds. Null inherits the server default.
+             */
+            presidio_analysis_cache_ttl_seconds?: number | null;
+            /**
              * Presidio Analyze Chunk Size Bytes
              * @description Maximum UTF-8 bytes of text sent in a single Presidio /analyze call. Longer texts are split into overlapping chunks of at most this size and the merged results are remapped onto the original text. Defaults to 500000; set it below your analyzer deployment's request body limit, leaving headroom for the rest of the analyze payload.
              */

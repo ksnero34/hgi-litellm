@@ -254,7 +254,14 @@
         "tests/test_litellm/proxy/guardrails/guardrail_hooks/test_presidio_http.py",
         "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/GuardrailExecutionFields.tsx",
         "ui/litellm-dashboard/src/components/view_logs/GuardrailViewer/GuardrailUsageBadges.tsx",
-        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.characterization.test.tsx"
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.characterization.test.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/PresidioAnalysisCache.integration.test.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/PresidioAnalysisCache.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/presidio_cache_form.test.ts",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/presidio_cache_form.ts",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/presidio_cache_routes.integration.test.tsx",
+        "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_provider_fields.tsx",
+        "ui/litellm-dashboard/src/components/guardrails/types.ts"
       ],
       "remove_paths": []
     },

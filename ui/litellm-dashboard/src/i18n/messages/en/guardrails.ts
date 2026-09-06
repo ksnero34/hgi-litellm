@@ -1,6 +1,27 @@
 import type { MessageCatalog } from "../types";
 
 export const guardrailsMessages: MessageCatalog = {
+  "guardrails.cache.title": "Analysis result cache",
+  "guardrails.cache.mode": "Cache mode",
+  "guardrails.cache.inherit": "Use server default",
+  "guardrails.cache.enabled": "Enabled",
+  "guardrails.cache.disabled": "Disabled",
+  "guardrails.cache.ttl": "TTL (seconds)",
+  "guardrails.cache.ttlHelp": "Leave blank to use the server TTL. Allowed: 1–86400 seconds.",
+  "guardrails.cache.ttlInvalid": "Enter a whole number from 1 to 86400.",
+  "guardrails.cache.storage":
+    "Configured Redis shares results across Pods. Without Redis, results stay in this process until expiry or restart.",
+  "guardrails.cache.defaults": "Server defaults: {{mode}}, TTL {{ttl}} seconds",
+  "guardrails.cache.ready":
+    "Server prerequisites are ready. Reuse also requires authenticated tenant scope and matching analysis conditions.",
+  "guardrails.cache.unavailable": "Cache prerequisites are not ready. Presidio still inspects requests directly.",
+  "guardrails.cache.unknown": "Server cache readiness could not be loaded.",
+  "guardrails.cache.reason.analysis_not_verified": "Full-input analysis has not been verified on the server.",
+  "guardrails.cache.reason.hmac_secret_missing_or_invalid": "A valid server HMAC secret is required.",
+  "guardrails.cache.reason.key_version_missing_or_invalid": "A valid HMAC key version is required.",
+  "guardrails.cache.reason.analysis_version_missing_or_invalid": "A valid analysis version is required.",
+  "guardrails.cache.reason.invalid_configuration": "The server cache configuration is invalid.",
+
   "guardrails.add.success": "Guardrail created successfully",
   "guardrails.add.errorPrefix": "Failed to create guardrail: {{message}}",
   "guardrails.add.loadError": "Failed to load guardrail configuration",
