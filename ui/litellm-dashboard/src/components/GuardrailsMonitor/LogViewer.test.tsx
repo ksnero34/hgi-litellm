@@ -41,6 +41,7 @@ describe("LogViewer", () => {
                 guardrail_event: "logging_only",
                 usage_action: "flagged",
                 input_source: { scope: "current_user_prompt" },
+                analysis_cache: { status: "hit", hit_count: 1, total_count: 1 },
               },
             ],
           },
@@ -82,6 +83,7 @@ describe("LogViewer", () => {
           guardrail_event: "logging_only",
           usage_action: "flagged",
           input_source: { scope: "current_user_prompt" },
+          analysis_cache: { status: "hit", hit_count: 1, total_count: 1 },
         },
       ],
     });

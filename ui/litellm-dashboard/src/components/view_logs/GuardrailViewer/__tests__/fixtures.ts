@@ -1,3 +1,4 @@
+import type { AnalysisCacheMetadata } from "../GuardrailUsageBadges";
 import type {
   BedrockGuardrailResponse,
   BedrockAssessment,
@@ -32,6 +33,7 @@ export interface GuardrailInformation {
   guardrail_usage?: Record<string, number>;
   guardrail_cost?: number;
   guardrail_cost_in_spend?: boolean;
+  analysis_cache?: AnalysisCacheMetadata;
   guardrail_provider?: string;
   guardrail_run_id?: string;
   guardrail_event?: string;

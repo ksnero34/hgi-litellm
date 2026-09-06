@@ -3044,7 +3044,14 @@ class GuardrailInputSource(TypedDict, total=False):
     scope: GuardrailInputScope
 
 
+class GuardrailAnalysisCacheInfo(TypedDict):
+    status: ReadOnly[Literal["hit", "partial", "miss"]]
+    hit_count: ReadOnly[int]
+    total_count: ReadOnly[int]
+
+
 class StandardLoggingGuardrailInformation(TypedDict, total=False):
+    analysis_cache: ReadOnly[GuardrailAnalysisCacheInfo]
     guardrail_name: str | None
     guardrail_provider: str | None
     guardrail_mode: GuardrailEventHooks | list[GuardrailEventHooks] | GuardrailMode | None

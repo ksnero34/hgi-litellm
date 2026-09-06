@@ -25,6 +25,7 @@ from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigM
 from litellm.types.utils import (
     CallTypes,
     GenericGuardrailAPIInputs,
+    GuardrailAnalysisCacheInfo,
     GuardrailEnforcementMode,
     GuardrailInputSource,
     GuardrailStatus,
@@ -1119,6 +1120,7 @@ class CustomGuardrail(CustomLogger):
         tracing_detail: GuardrailTracingDetail | None = None,
         usage_action: GuardrailUsageAction | None = None,
         enforcement_mode: GuardrailEnforcementMode | None = None,
+        analysis_cache: GuardrailAnalysisCacheInfo | None = None,
     ) -> None:
         """
         Builds `StandardLoggingGuardrailInformation` and adds it to the request metadata so it can be used for logging to DataDog, Langfuse, etc.
@@ -1143,7 +1145,7 @@ class CustomGuardrail(CustomLogger):
         policy_names, policy_ids = _get_guardrail_policy_references(request_data, self.guardrail_name)
         resolved_usage_action = _resolve_guardrail_usage_action(usage_action, guardrail_status)
 
-        slg: Final = StandardLoggingGuardrailInformation(
+        base_slg: Final = StandardLoggingGuardrailInformation(
             guardrail_name=self.guardrail_name,
             guardrail_provider=guardrail_provider,
             guardrail_mode=guardrail_mode,
@@ -1164,6 +1166,12 @@ class CustomGuardrail(CustomLogger):
             policy_name=policy_names[0] if policy_names else None,
             **(tracing_detail or {}),
         )
+        optional_cache_info: Final = (
+            StandardLoggingGuardrailInformation(analysis_cache=analysis_cache)
+            if analysis_cache is not None
+            else StandardLoggingGuardrailInformation()
+        )
+        slg: Final[StandardLoggingGuardrailInformation] = {**base_slg, **optional_cache_info}
 
         def _append_guardrail_info(container: dict) -> None:
             key: Final = "standard_logging_guardrail_information"

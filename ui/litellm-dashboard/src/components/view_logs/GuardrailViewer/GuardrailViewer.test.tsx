@@ -6,6 +6,7 @@ import {
   makeBedrockResponse,
   makeEntity,
   makeGuardrailInformation,
+  type GuardrailInformation,
 } from "@/components/view_logs/GuardrailViewer/__tests__/fixtures";
 import GuardrailViewer from "@/components/view_logs/GuardrailViewer/GuardrailViewer";
 
@@ -32,6 +33,51 @@ describe("GuardrailViewer", () => {
     // duration displays in ms format: Math.round(1.23456 * 1000) = 1235
     expect(screen.getByText("1235ms")).toBeInTheDocument();
   });
+
+  it("shows cached analysis on a blocked evaluation without changing its policy outcome", async () => {
+    const user = userEvent.setup();
+    const overrides: Partial<GuardrailInformation> = {
+      guardrail_status: "blocked",
+      usage_action: "blocked",
+      analysis_cache: { status: "hit", hit_count: 2, total_count: 2 },
+    };
+    const data = makeGuardrailInformation(overrides);
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    const badge = screen.getByText("Analysis cache hit (2/2)");
+    expect(badge).toBeVisible();
+    expect(screen.getByText("BLOCKED")).toBeVisible();
+    expect(screen.getByText("1 Blocked")).toBeVisible();
+    await user.hover(badge);
+    expect(
+      await screen.findByText(
+        "Reused cached Presidio analysis for 2 of 2 text fragments. Policy checks and anonymization still run.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("distinguishes partial cache reuse for a chunked input", () => {
+    const overrides: Partial<GuardrailInformation> = {
+      analysis_cache: { status: "partial", hit_count: 1, total_count: 3 },
+    };
+    const data = makeGuardrailInformation(overrides);
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    expect(screen.getByText("Partial analysis cache hit (1/3)")).toBeVisible();
+    expect(screen.queryByText(/^Analysis cache hit/)).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, { status: "miss" as const, hit_count: 0, total_count: 1 }])(
+    "does not claim cached analysis for an old log or fresh analysis: %j",
+    (analysisCache) => {
+      const overrides: Partial<GuardrailInformation> = { analysis_cache: analysisCache };
+      const data = makeGuardrailInformation(overrides);
+      renderWithProviders(<GuardrailViewer data={data} />);
+
+      expect(screen.queryByText(/analysis cache hit/i)).not.toBeInTheDocument();
+      expect(screen.getByText("Guardrails & Policy Compliance")).toBeVisible();
+    },
+  );
 
   it("shows masked Presidio detections as flagged when the guardrail call succeeded", () => {
     const data = makeGuardrailInformation({

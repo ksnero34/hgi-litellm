@@ -247,7 +247,8 @@ async def test_shared_miss_cancel_one_waiter_bounded_workers_and_deadline(use_re
     analyze = SyntheticAnalyzer(0.08)
     payload = {"text": "가상", "language": "ko"}
     first = asyncio.create_task(engine.analyze_many([payload], context(), analyze))
-    second = asyncio.create_task(other.analyze_many([payload], context(), analyze))
+    second_context = context()
+    second = asyncio.create_task(other.analyze_many([payload], second_context, analyze))
     await asyncio.sleep(0.02)
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -255,6 +256,7 @@ async def test_shared_miss_cancel_one_waiter_bounded_workers_and_deadline(use_re
     assert await second
     assert analyze.calls == 1
     assert other.counters["singleflight_shared"] == 1
+    assert other.cache_info([payload], second_context) == {"status": "miss", "hit_count": 0, "total_count": 1}
     assert not _FLIGHTS[asyncio.get_running_loop()]
     limited = SyntheticAnalyzer(0.02)
     await engine.analyze_many([{"text": "가상" + str(i)} for i in range(20)], context(concurrency=2), limited)

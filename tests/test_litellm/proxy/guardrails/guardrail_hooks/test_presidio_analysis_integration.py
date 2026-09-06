@@ -219,7 +219,7 @@ async def test_http_cache_hit_preserves_mask_restore_sources_audit_and_offsets()
         off = guardrail_for(url, cache_for(redis, enabled=False))
         try:
             outcomes = []
-            for guardrail in (cold, warm, off):
+            for guardrail, expected_status in ((cold, "miss"), (warm, "hit"), (off, "miss")):
                 data = {"metadata": {}}
                 async with tenant_request():
                     masked = await guardrail.apply_guardrail(
@@ -231,6 +231,9 @@ async def test_http_cache_hit_preserves_mask_restore_sources_audit_and_offsets()
                 assert metadata["pii_tokens"] == {"<PERSON_1>": "홍길동"}
                 assert metadata["pii_token_sources"]["<PERSON_1>"]["path"] == "messages[0].content"
                 assert len(metadata["standard_logging_guardrail_information"]) == 1
+                assert metadata["standard_logging_guardrail_information"][0]["analysis_cache"] == {
+                    "status": expected_status, "hit_count": int(expected_status == "hit"), "total_count": 1,
+                }
                 restored = await guardrail.apply_guardrail({"texts": masked["texts"]}, data, "response")
                 assert restored["texts"] == [text]
                 outcomes.append(copy.deepcopy(metadata["pii_tokens"]))
@@ -266,7 +269,12 @@ async def test_repeated_fragments_across_apply_and_tool_arguments_are_deduped():
                 assert "홍길동" not in str(second)
                 assert len(data["metadata"]["pii_tokens"]) == 4
                 assert len(data["metadata"]["standard_logging_guardrail_information"]) == 4
+                assert all(
+                    entry["analysis_cache"] == {"status": "miss", "hit_count": 0, "total_count": 1}
+                    for entry in data["metadata"]["standard_logging_guardrail_information"]
+                )
             assert not context.results
+            assert not context.cache_hits
             assert not context.pending
             next_data = {"metadata": {}}
             async with tenant_request():
@@ -520,5 +528,67 @@ async def test_shared_http_limit_covers_analyze_and_anonymize_across_concurrent_
             assert server.combined_active == 0
             assert all("홍길동" not in str(result) for result in results)
             assert all(len(result["texts"]) == 2 for result in results)
+        finally:
+            await guardrail._close_http_session()
+
+
+@pytest.mark.asyncio
+async def test_cache_audit_mixed_chunks_concurrent_requests_and_direct_check():
+    async with local_presidio() as (server, url):
+        guardrail = guardrail_for(url, cache_for(None))
+        guardrail.presidio_analyze_chunk_size_bytes = 24
+        text = "abcdefghij " * 8
+        chunks = guardrail._analysis_text_chunks(text)
+        unique_chunks = tuple(dict.fromkeys(chunk for _, chunk in chunks))
+        assert len(unique_chunks) > 1
+        try:
+            async with tenant_request():
+                await guardrail.analyze_text(unique_chunks[0], None, {})
+
+            async def run(tenant, value):
+                data = {"metadata": {}}
+                async with tenant_request(tenant=tenant):
+                    await guardrail.apply_guardrail({"texts": [value]}, data, "request")
+                return data["metadata"]["standard_logging_guardrail_information"][0]["analysis_cache"]
+
+            mixed, other_tenant = await asyncio.gather(
+                run("team:synthetic", text), run("team:other", text)
+            )
+            assert mixed == {"status": "partial", "hit_count": 1, "total_count": len(unique_chunks)}
+            assert other_tenant == {"status": "miss", "hit_count": 0, "total_count": len(unique_chunks)}
+            assert await run("team:synthetic", text) == {
+                "status": "hit", "hit_count": len(unique_chunks), "total_count": len(unique_chunks),
+            }
+            direct = {"metadata": {}}
+            await guardrail.check_pii("uncached direct call", True, None, direct)
+            assert direct["metadata"]["standard_logging_guardrail_information"][0]["analysis_cache"] == {
+                "status": "miss", "hit_count": 0, "total_count": 1,
+            }
+            blank = {"metadata": {}}
+            await guardrail.check_pii("  ", True, None, blank)
+            assert "analysis_cache" not in blank["metadata"]["standard_logging_guardrail_information"][0]
+        finally:
+            await guardrail._close_http_session()
+
+
+@pytest.mark.asyncio
+async def test_prefetch_failure_cache_audit_is_scoped_to_each_text():
+    async with local_presidio() as (server, url):
+        guardrail = guardrail_for(url, cache_for(None))
+        try:
+            async with tenant_request():
+                await guardrail.analyze_text("cached plain text", None, {})
+            server.status = 503
+            data = {"metadata": {}}
+            async with tenant_request():
+                with pytest.raises(_PresidioServiceError):
+                    await guardrail.apply_guardrail(
+                        {"texts": ["cached plain text", "uncached plain text"]}, data, "request"
+                    )
+            entries = data["metadata"]["standard_logging_guardrail_information"]
+            assert len(entries) == 2
+            assert all(entry["guardrail_status"] == "guardrail_failed_to_respond" for entry in entries)
+            assert entries[0]["analysis_cache"] == {"status": "hit", "hit_count": 1, "total_count": 1}
+            assert entries[1]["analysis_cache"] == {"status": "miss", "hit_count": 0, "total_count": 1}
         finally:
             await guardrail._close_http_session()

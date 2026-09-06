@@ -19,6 +19,7 @@ from typing_extensions import ReadOnly
 
 from litellm.caching.redis_cache import RedisCache
 from litellm.secret_managers.main import get_secret
+from litellm.types.utils import GuardrailAnalysisCacheInfo
 
 Entity: TypeAlias = dict[str, object]
 
@@ -191,6 +192,7 @@ class RequestAnalysisContext:
     max_concurrency: int = 8
     redis_cache: RedisCache | None = field(default=None, repr=False)
     results: dict[str, list[Entity]] = field(default_factory=dict, repr=False)
+    cache_hits: dict[str, bool] = field(default_factory=dict, repr=False)
     pending: dict[str, asyncio.Future[list[Entity]]] = field(default_factory=dict, repr=False)
     semaphore: asyncio.Semaphore = field(init=False, repr=False)
     analysis_semaphore: asyncio.Semaphore = field(init=False, repr=False)
@@ -211,6 +213,7 @@ class RequestAnalysisContext:
             task.cancel()
         self.pending.clear()
         self.results.clear()
+        self.cache_hits.clear()
         self.engine_semaphores.clear()
         self.http_semaphores.clear()
         self.tenant_scope = None
@@ -492,6 +495,19 @@ class AnalysisCache:
                     if not flight.task.cancelled():
                         flight.task.exception()
 
+    def cache_info(
+        self, payloads: Sequence[Mapping[str, object]], context: RequestAnalysisContext
+    ) -> GuardrailAnalysisCacheInfo | None:
+        keys: Final = frozenset(self._request_key(payload, context) for payload in payloads)
+        if not keys or any(key not in context.cache_hits for key in keys):
+            return None
+        hit_count: Final = sum(context.cache_hits[key] for key in keys)
+        return GuardrailAnalysisCacheInfo(
+            status="hit" if hit_count == len(keys) else "partial" if hit_count else "miss",
+            hit_count=hit_count,
+            total_count=len(keys),
+        )
+
     async def analyze_many(
         self,
         payloads: Sequence[Mapping[str, object]],
@@ -569,6 +585,7 @@ class AnalysisCache:
 
         async def process(key: str, payload: Mapping[str, object]) -> list[Entity]:
             cache_key: Final = keys[key]
+            context.cache_hits[key] = cache_key is not None and cache_key in hits
             if cache_key is not None and cache_key in hits:
                 return copy.deepcopy(hits[cache_key])
             queued: Final = time.monotonic()

@@ -7,7 +7,7 @@ import BedrockGuardrailDetails, {
 import ContentFilterDetails from "./ContentFilterDetails";
 import CompliancePanel from "./CompliancePanel";
 import { complianceBadgeClass, OUTCOME_PRECEDENCE } from "./compliance";
-import { GuardrailUsageBadges } from "./GuardrailUsageBadges";
+import { GuardrailUsageBadges, type AnalysisCacheMetadata } from "./GuardrailUsageBadges";
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -73,6 +73,7 @@ interface GuardrailInformation {
   guardrail_usage?: Record<string, number>;
   guardrail_cost?: number;
   guardrail_cost_in_spend?: boolean;
+  analysis_cache?: AnalysisCacheMetadata;
 }
 
 interface GuardrailViewerProps {
@@ -617,6 +618,7 @@ const EvaluationCard = ({
           )}
 
           <GuardrailUsageBadges
+            analysisCache={entry.analysis_cache}
             textRecords={textRecords}
             cost={entry.guardrail_cost}
             includedInSpend={entry.guardrail_cost_in_spend}

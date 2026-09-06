@@ -73,7 +73,7 @@ from litellm.types.proxy.guardrails.guardrail_hooks.presidio import (
     PresidioAnalyzeRequest,
     PresidioAnalyzeResponseItem,
 )
-from litellm.types.utils import GuardrailStatus, StreamingChoices
+from litellm.types.utils import GuardrailAnalysisCacheInfo, GuardrailStatus, StreamingChoices
 from litellm.utils import (
     EmbeddingResponse,
     ImageResponse,
@@ -766,6 +766,21 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     async def _cached_analyze_payload(self, payload: Mapping[str, object]) -> Sequence[Mapping[str, object]]:
         return await self._analyze_payload(payload)
 
+    def _analysis_cache_info(
+        self, text: str, presidio_config: PresidioPerRequestConfig | None, request_data: dict
+    ) -> GuardrailAnalysisCacheInfo | None:
+        context: Final = current_analysis_context()
+        if context is None or not text.strip() or self._mock_testing or self.mock_redacted_text is not None:
+            return None
+        try:
+            payloads: Final = tuple(
+                self._get_presidio_analyze_request_payload(chunk_text, presidio_config, request_data)
+                for _, chunk_text in self._analysis_text_chunks(self._text_for_pii_analysis(text))
+            )
+            return self._analysis_cache.cache_info(payloads, context)
+        except (_PresidioServiceError, ValueError, TypeError, KeyError, RuntimeError):
+            return None
+
     async def _prepare_analysis(
         self,
         texts: Sequence[str],
@@ -809,6 +824,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     event_type=log_context.get("guardrail_event"),
                     input_source=log_context.get("input_source"),
                     enforcement_mode="observe" if self.logging_only else "enforce",
+                    analysis_cache=self._analysis_cache_info(texts[index], presidio_config, request_data),
                 )
             self.mark_guardrail_information_recorded()
             if isinstance(error, (asyncio.CancelledError, _PresidioServiceError)):
@@ -1327,6 +1343,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         """
         Calls Presidio Analyze + Anonymize endpoints for PII Analysis + Masking
         """
+        if current_analysis_context() is None:
+            with analysis_request_scope(max_concurrency=self.presidio_max_parallel_requests):
+                return await self.check_pii(text, output_parse_pii, presidio_config, request_data)
         start_time = datetime.now()
         analysis_text = self._text_for_pii_analysis(text)
         analyze_results: list[PresidioAnalyzeResponseItem] | dict | None = None
@@ -1436,6 +1455,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     else None
                 ),
                 enforcement_mode="observe" if self.logging_only else "enforce",
+                analysis_cache=self._analysis_cache_info(text, presidio_config, request_data),
             )
 
     async def async_pre_call_hook(

@@ -128,3 +128,11 @@ Node 24.14.1 production build와 TypeScript 검사 및 정적 페이지 생성�
 현재 브랜치 HEAD 대비 strict Ruff, LIT 타입 규율, basedpyright 및 테스트 품질 게이트를 확인했다. 이는 기존 코드 전체의 타입 오류가 0이라는 의미가 아니라 이번 변경이 해당 기준을 악화시키지 않았다는 의미다. 필수 budget 갱신 명령은 상한을 높이지 않았으며 이번 변경에서 감축 대상은 0건이었다. 설정 입력 검증의 타입 경계를 명확히 한 후 캐시 단위시험 51건을 재실행해 통과했다. 입력·출력·복원·감사 callback 초기화도 SDK 내부 mock 없이 실제 등록된 인스턴스로 검증한다.
 
 최종 실제 callback 등록 시험으로 변경한 후 Presidio·HTTP 전체 169건과 생성·편집 UI API 연결 2건을 재실행해 통과했다. Dashboard 전체 ESLint 및 budget도 통과했으며 inline-object 상한은 기존 559를 유지했다. 예산 파일, suppression과 운영 설정은 변경하지 않았다.
+
+### 요청 상세의 캐시 표시
+
+Logs 또는 Guardrails Monitor에서 요청을 열면 `Guardrails & Policy Compliance`의 각 평가 행에 분석 캐시 재사용 여부가 표시된다. 해당 입력의 모든 분석 구간을 캐시에서 읽으면 `Analysis cache hit (2/2)`, 일부만 읽으면 `Partial analysis cache hit (1/3)`처럼 표시한다. 괄호는 중복을 제외한 분석 구간 중 캐시에서 읽은 수와 전체 수다
+
+이 배지는 검증을 통과한 로컬 메모리 또는 Redis 분석 결과를 실제로 읽은 경우에만 나타난다. 새 분석, 캐시 우회, 캐시 정보가 없는 이전 로그에는 적중 배지를 표시하지 않는다. 요청 내 중복 제거와 동시에 진행 중인 새 분석의 공유만으로 적중을 표시하지 않는다. 캐시 재사용 여부는 정책 판정과 별개이며 캐시 적중 이후에도 차단·마스킹·감사 처리는 유지된다
+
+새 로그의 `guardrail_information[].analysis_cache`에 `status`, `hit_count`, `total_count`를 저장하며 요청 본문, 캐시 키와 비밀키는 포함하지 않는다. 기존 로그에는 소급 적용되지 않으며 새 이미지로 백엔드와 대시보드를 배포한 뒤 생성한 요청에서 확인할 수 있다

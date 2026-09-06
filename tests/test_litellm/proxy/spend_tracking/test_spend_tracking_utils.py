@@ -1490,6 +1490,7 @@ def test_sanitize_guardrail_information_redacts_all_prompt_carrying_fields_when_
             "match_details": [{"type": "pattern", "snippet": "hi", "action_taken": "log"}],
             "classification": {"intent": "x", "evidence": [{"match": "hi"}]},
             "guardrail_action": "NONE",
+            "analysis_cache": {"status": "partial", "hit_count": 1, "total_count": 2},
         }
     ]
 
@@ -1504,6 +1505,9 @@ def test_sanitize_guardrail_information_redacts_all_prompt_carrying_fields_when_
     assert entry["guardrail_name"] == "demo-echo-guard"
     assert entry["guardrail_status"] == "success"
     assert entry["guardrail_action"] == "NONE"
+    assert json.loads(json.dumps(result))[0]["analysis_cache"] == {
+        "status": "partial", "hit_count": 1, "total_count": 2,
+    }
 
 
 @patch("litellm.proxy.spend_tracking.spend_tracking_utils._should_store_prompts_and_responses_in_spend_logs")
