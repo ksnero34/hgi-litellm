@@ -5325,3 +5325,108 @@ async def test_logging_only_persists_masked_native_request_snapshot_without_muta
         assert checked_texts.count("Instructions person@example.com") == 1
     else:
         assert persisted["messages"][0]["content"] == "Input <EMAIL_ADDRESS>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["chat", "anthropic", "responses"])
+@pytest.mark.parametrize("overlapping", [False, True])
+async def test_unified_blocked_request_persists_entity_tokens_for_all_checked_messages(
+    api_format, overlapping, monkeypatch
+):
+    import copy
+    import json
+    from typing import Final
+
+    from litellm.llms.anthropic.chat.guardrail_translation.handler import AnthropicMessagesHandler
+    from litellm.llms.openai.chat.guardrail_translation.handler import OpenAIChatCompletionsHandler
+    from litellm.llms.openai.responses.guardrail_translation.handler import OpenAIResponsesHandler
+    from litellm.proxy.spend_tracking.spend_tracking_utils import _get_proxy_server_request_for_spend_logs_payload
+
+    class MixedActionPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def analyze_text(self, text, presidio_config, request_data):
+            return [
+                {
+                    "entity_type": entity,
+                    "start": text.index(value),
+                    "end": text.index(value) + len(value),
+                    "score": 0.99,
+                }
+                for entity, value in (
+                    ("PERSON", "홍길동"),
+                    ("EMAIL_ADDRESS", "person@example.com"),
+                    ("PHONE_NUMBER", "555-123-4567"),
+                )
+                if value in text
+            ]
+
+        async def anonymize_text(self, text, analyze_results, output_parse_pii, masked_entity_count, request_data=None):
+            return text.replace("person@example.com", "<EMAIL_ADDRESS>").replace("555-123-4567", "<PHONE_NUMBER>")
+
+    messages: Final = (
+        [
+            {"role": "user", "content": "Email person@example.com"},
+            {"role": "user", "content": "Email person@example.com and phone 555-123-4567"},
+            {"role": "user", "content": "Name 홍길동"},
+        ]
+        if overlapping
+        else [
+            {"role": "user", "content": "Name 홍길동"},
+            {"role": "user", "content": "Email person@example.com"},
+        ]
+    )
+    body: Final = {
+        "model": "test-model",
+        "max_tokens": 10,
+        "input" if api_format == "responses" else "messages": messages,
+        "metadata": {},
+    }
+    logging_obj: Final = MagicMock(spec=Logging)
+    logging_obj.model_call_details = {
+        "litellm_params": {"proxy_server_request": {"body": copy.deepcopy(body)}},
+        "messages": copy.deepcopy(messages),
+    }
+    request: Final = {
+        **body,
+        "proxy_server_request": {"body": copy.deepcopy(body)},
+        "litellm_logging_obj": logging_obj,
+    }
+    handlers: Final = {
+        "chat": OpenAIChatCompletionsHandler(),
+        "anthropic": AnthropicMessagesHandler(),
+        "responses": OpenAIResponsesHandler(),
+    }
+    guardrail: Final = MixedActionPresidio(
+        mock_testing=True,
+        pii_entities_config={PiiEntityType.PERSON: PiiAction.BLOCK, PiiEntityType.EMAIL_ADDRESS: PiiAction.MASK},
+    )
+
+    with pytest.raises(BlockedPiiEntityError):
+        await handlers[api_format].process_input_messages(
+            data=request, guardrail_to_apply=guardrail, litellm_logging_obj=logging_obj
+        )
+
+    monkeypatch.setenv("STORE_PROMPTS_IN_SPEND_LOGS", "true")
+    persisted: Final = json.loads(
+        _get_proxy_server_request_for_spend_logs_payload(
+            metadata={}, litellm_params=logging_obj.model_call_details["litellm_params"]
+        )
+    )
+    persisted_messages: Final = persisted["input" if api_format == "responses" else "messages"]
+    assert persisted_messages == (
+        [
+            {"role": "user", "content": "Email <EMAIL_ADDRESS>"},
+            {"role": "user", "content": "Email <EMAIL_ADDRESS> and phone <PHONE_NUMBER>"},
+            {"role": "user", "content": "Name <PERSON>"},
+        ]
+        if overlapping
+        else [
+            {"role": "user", "content": "Name <PERSON>"},
+            {"role": "user", "content": "Email <EMAIL_ADDRESS>"},
+        ]
+    )
+    assert "555-123-4567" not in str(request)
+    assert "555-123-4567" not in str(logging_obj.model_call_details)
+    assert "홍길동" not in str(request)
+    assert "person@example.com" not in str(request)
+    assert "홍길동" not in str(logging_obj.model_call_details)
+    assert "person@example.com" not in str(logging_obj.model_call_details)

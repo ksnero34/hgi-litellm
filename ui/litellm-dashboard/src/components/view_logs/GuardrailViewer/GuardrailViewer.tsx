@@ -182,6 +182,8 @@ const isEntrySuccess = (entry: GuardrailInformation): boolean => {
   return (entry.guardrail_status ?? "").toLowerCase() === "success";
 };
 
+const hasExecutionError = (entry: GuardrailInformation): boolean => /fail|error/i.test(entry.guardrail_status ?? "");
+
 type GuardrailAction = "passed" | "flagged" | "blocked";
 type ComplianceOutcome = GuardrailAction | "observed";
 
@@ -252,19 +254,32 @@ const ShieldIcon = () => (
   </svg>
 );
 
-const CheckCircleIcon = ({ className }: { className?: string }) => (
-  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" className={className}>
-    <circle cx="11" cy="11" r="10" stroke="#16A34A" strokeWidth="1.5" fill="#F0FDF4" />
-    <path d="M7 11l3 3 5-6" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
+const outcomeIconStyle = {
+  passed: { color: "text-success bg-success/10", path: "M7 11l3 3 5-6", label: "Passed" },
+  flagged: { color: "text-warning bg-warning/10", path: "M11 6v6m0 3v.01", label: "Flagged" },
+  blocked: { color: "text-destructive bg-destructive/10", path: "M8 8l6 6M14 8l-6 6", label: "Blocked" },
+  observed: { color: "text-purple-700 bg-purple-100", path: "M11 10v6m0-10v.01", label: "Observed" },
+};
 
-const FailCircleIcon = ({ className }: { className?: string }) => (
-  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" className={className}>
-    <circle cx="11" cy="11" r="10" stroke="#DC2626" strokeWidth="1.5" fill="#FEF2F2" />
-    <path d="M8 8l6 6M14 8l-6 6" stroke="#DC2626" strokeWidth="1.5" strokeLinecap="round" />
-  </svg>
-);
+const OutcomeIcon = ({ outcome, executionError }: { outcome: ComplianceOutcome; executionError?: boolean }) => {
+  const style = outcomeIconStyle[outcome];
+  const label = executionError && outcome !== "blocked" ? `${style.label}: guardrail execution error` : style.label;
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 22 22"
+      fill="none"
+      className={`rounded-full ${style.color}`}
+      role="img"
+      aria-label={label}
+    >
+      <title>{label}</title>
+      <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="1.5" />
+      <path d={style.path} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+};
 
 const PlayCircleIcon = () => (
   <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -383,7 +398,7 @@ interface TimelineEntry {
   label: string;
   offsetMs?: number;
   status?: string;
-  isSuccess?: boolean;
+  executionError?: boolean;
   outcome?: ComplianceOutcome;
 }
 
@@ -414,7 +429,7 @@ const RequestLifecycle = ({
             offsetMs: offset(entry.end_time),
             status: outcome.toUpperCase(),
             outcome,
-            isSuccess: outcome === "passed" || outcome === "observed",
+            executionError: hasExecutionError(entry),
           };
         });
     return [
@@ -441,11 +456,9 @@ const RequestLifecycle = ({
                   <GrayDotIcon />
                 ) : item.type === "llm" ? (
                   <PlayCircleIcon />
-                ) : item.isSuccess ? (
-                  <CheckCircleIcon />
-                ) : (
-                  <FailCircleIcon />
-                )}
+                ) : item.outcome ? (
+                  <OutcomeIcon outcome={item.outcome} executionError={item.executionError} />
+                ) : null}
               </div>
               {idx < timeline.length - 1 && <div className="w-0.5 bg-border grow" style={{ minHeight: "24px" }} />}
             </div>
@@ -518,7 +531,9 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
         onClick={() => setExpanded(!expanded)}
       >
         {/* Status icon */}
-        <div className="shrink-0">{success ? <CheckCircleIcon /> : <FailCircleIcon />}</div>
+        <div className="shrink-0">
+          <OutcomeIcon outcome={complianceOutcome} executionError={hasExecutionError(entry)} />
+        </div>
 
         {/* Name + badges */}
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">

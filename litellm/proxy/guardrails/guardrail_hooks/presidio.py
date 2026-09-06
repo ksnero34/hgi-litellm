@@ -2731,7 +2731,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     async def apply_guardrail(
         self,
         inputs: GenericGuardrailAPIInputs,
-        request_data: dict,
+        request_data: dict[str, object],
         input_type: Literal["request", "response"],
         logging_obj: "LiteLLMLoggingObj | None" = None,
     ) -> GenericGuardrailAPIInputs:
@@ -2758,7 +2758,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
     async def _apply_guardrail(
         self,
         inputs: "GenericGuardrailAPIInputs",
-        request_data: dict,
+        request_data: dict[str, object],
         input_type: Literal["request", "response"],
         logging_obj: "LiteLLMLoggingObj | None" = None,
     ) -> "GenericGuardrailAPIInputs":
@@ -2811,8 +2811,11 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             semaphore = (
                 context.semaphore if context is not None else asyncio.Semaphore(self.presidio_max_parallel_requests)
             )
+            check_texts: Final = tuple(texts) + tuple(
+                self._tool_arguments(function) for _, function in tool_call_functions
+            )
             await self._prepare_analysis(
-                tuple(texts) + tuple(self._tool_arguments(function) for _, function in tool_call_functions),
+                check_texts,
                 None,
                 request_data,
                 log_contexts=tuple(
@@ -2894,6 +2897,16 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                 self.mark_guardrail_information_recorded()
             first_exception = next((result for result in responses if isinstance(result, Exception)), None)
             if first_exception is not None:
+                for original_text, result in sorted(
+                    zip(check_texts, responses, strict=True), key=lambda item: len(item[0]), reverse=True
+                ):
+                    if isinstance(result, str) and result != original_text:
+                        self._sanitize_blocked_content_for_logging(
+                            request_data=request_data,
+                            sensitive_text=original_text,
+                            masked_text=result,
+                            redact_fragmented_responses=False,
+                        )
                 raise first_exception
 
             text_count = len(texts)

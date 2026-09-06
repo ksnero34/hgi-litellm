@@ -34,6 +34,35 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("1235ms")).toBeInTheDocument();
   });
 
+  it.each([
+    { action: "passed", mode: "pre_call", label: "Passed", color: "text-success" },
+    { action: "flagged", mode: "pre_call", label: "Flagged", color: "text-warning" },
+    { action: "blocked", mode: "pre_call", label: "Blocked", color: "text-destructive" },
+    { action: "flagged", mode: "logging_only", label: "Observed", color: "text-purple-700" },
+  ] as const)("uses the $label icon consistently in the timeline and evaluation", ({ action, mode, label, color }) => {
+    const overrides: Partial<GuardrailInformation> = {
+      guardrail_status: action === "blocked" ? "guardrail_intervened" : "success",
+      usage_action: action,
+      guardrail_event: mode,
+    };
+    renderWithProviders(<GuardrailViewer data={makeGuardrailInformation(overrides)} />);
+    const icons = screen.getAllByRole("img", { name: label });
+    expect(icons).toHaveLength(2);
+    for (const icon of icons) {
+      expect(icon).toHaveClass(color);
+      if (action !== "blocked") expect(icon).not.toHaveClass("text-destructive");
+    }
+  });
+
+  it("distinguishes a guardrail execution error from a policy block", () => {
+    const data = makeGuardrailInformation({ guardrail_status: "error", guardrail_event: "pre_call" });
+    renderWithProviders(<GuardrailViewer data={data} />);
+    const icons = screen.getAllByRole("img", { name: "Flagged: guardrail execution error" });
+    expect(icons).toHaveLength(2);
+    for (const icon of icons) expect(icon).toHaveClass("text-warning");
+    expect(screen.queryByRole("img", { name: "Blocked" })).not.toBeInTheDocument();
+  });
+
   it("shows cached analysis on a blocked evaluation without changing its policy outcome", async () => {
     const user = userEvent.setup();
     const overrides: Partial<GuardrailInformation> = {
