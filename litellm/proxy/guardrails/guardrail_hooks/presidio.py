@@ -20,6 +20,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import reduce
+from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -186,8 +187,9 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                         ordered_tokens.append(token)
                 return
             if isinstance(current, Mapping):
-                for nested_value in current.values():
-                    _collect_tokens(nested_value)
+                for entry in current.items():
+                    if entry[0] != "structured_messages":
+                        _collect_tokens(entry[1])
                 return
             if isinstance(current, (list, tuple)):
                 for nested_value in current:
@@ -218,7 +220,10 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
                     current,
                 )
             if isinstance(current, dict):
-                return {key: _replace_tokens(nested_value) for key, nested_value in current.items()}
+                return {
+                    key: nested_value if key == "structured_messages" else _replace_tokens(nested_value)
+                    for key, nested_value in current.items()
+                }
             if isinstance(current, list):
                 return [_replace_tokens(nested_value) for nested_value in current]
             if isinstance(current, tuple):
@@ -720,7 +725,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         if presidio_config and presidio_config.language:
             analyze_payload["language"] = presidio_config.language
 
-        casted_analyze_payload: Final[dict] = cast(dict, analyze_payload)
+        casted_analyze_payload: Final = MappingProxyType[str, object](analyze_payload).copy()
         casted_analyze_payload.update(self.get_guardrail_dynamic_request_body_params(request_data=request_data))
         if casted_analyze_payload.get("text") != text:
             raise _PresidioServiceError("Presidio analyzer text override would invalidate masking offsets")
@@ -1630,7 +1635,27 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             return run_in_new_loop()
 
     @staticmethod
-    def _sync_standard_logging_object(logged_kwargs: dict, translation: object, sync_messages: bool) -> None:
+    def _sync_standard_logging_object(
+        logged_kwargs: dict[str, object], translation: object, sync_messages: bool
+    ) -> None:
+        if sync_messages:
+            logging_fields: Final[Mapping[str, object]] = logged_kwargs
+            if "proxy_server_request" in logging_fields:
+                logged_kwargs["proxy_server_request"] = _OPTIONAL_PresidioPIIMasking._masked_logging_request_snapshot(
+                    logging_fields["proxy_server_request"], logging_fields
+                )
+            parameter_fields: Final = _OPTIONAL_PresidioPIIMasking._logging_mapping(
+                logging_fields.get("litellm_params")
+            )
+            if parameter_fields is not None and "proxy_server_request" in parameter_fields:
+                logged_kwargs["litellm_params"] = MappingProxyType(
+                    {
+                        **parameter_fields,
+                        "proxy_server_request": _OPTIONAL_PresidioPIIMasking._masked_logging_request_snapshot(
+                            parameter_fields["proxy_server_request"], logging_fields
+                        ),
+                    }
+                ).copy()
         standard_logging_object = logged_kwargs.get("standard_logging_object")
         if not isinstance(standard_logging_object, dict):
             return
@@ -1641,12 +1666,50 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
             if structured_messages is not None:
                 standard_logging_object["messages"] = copy.deepcopy(structured_messages)
 
-        metadata = logged_kwargs.get("metadata") or logged_kwargs.get("litellm_metadata")
-        if not isinstance(metadata, dict):
+        metadata: Final = _OPTIONAL_PresidioPIIMasking._logging_mapping(
+            logged_kwargs.get("metadata") or logged_kwargs.get("litellm_metadata")
+        )
+        if metadata is None:
             return
-        guardrail_information = metadata.get("standard_logging_guardrail_information")
+        guardrail_information: Final = metadata.get("standard_logging_guardrail_information")
         if guardrail_information is not None:
             standard_logging_object["guardrail_information"] = copy.deepcopy(guardrail_information)
+
+    @staticmethod
+    def _logging_mapping(value: object) -> Mapping[str, object] | None:
+        return cast(Mapping[str, object], value) if isinstance(value, dict) else None
+
+    @staticmethod
+    def _masked_logging_request_snapshot(
+        snapshot: object,
+        logged_kwargs: Mapping[str, object],
+    ) -> object:
+        snapshot_mapping: Final = _OPTIONAL_PresidioPIIMasking._logging_mapping(snapshot)
+        if snapshot_mapping is None:
+            return snapshot
+        body_mapping: Final = _OPTIONAL_PresidioPIIMasking._logging_mapping(snapshot_mapping.get("body"))
+        if body_mapping is None:
+            return snapshot
+        content_fields: Final = frozenset(("messages", "input", "instructions", "tools"))
+        masked_body: Final = MappingProxyType(
+            {
+                key: copy.deepcopy(logged_kwargs[key])
+                if key in content_fields and key in logged_kwargs
+                else _OPTIONAL_PresidioPIIMasking._logging_metadata_without_tokens(value)
+                if key in ("metadata", "litellm_metadata")
+                else value
+                for key, value in body_mapping.items()
+                if key != "pii_tokens"
+            }
+        ).copy()
+        return MappingProxyType({**snapshot_mapping, "body": masked_body}).copy()
+
+    @staticmethod
+    def _logging_metadata_without_tokens(value: object) -> object:
+        metadata: Final = _OPTIONAL_PresidioPIIMasking._logging_mapping(value)
+        if metadata is None:
+            return value
+        return MappingProxyType({key: item for key, item in metadata.items() if key != "pii_tokens"}).copy()
 
     async def async_logging_hook(self, kwargs: dict, result: Any, call_type: str) -> tuple[dict, Any]:
         """
@@ -1668,7 +1731,7 @@ class _OPTIONAL_PresidioPIIMasking(CustomGuardrail):
         }:
             return kwargs, result
 
-        logged_kwargs = dict(kwargs)
+        logged_kwargs = dict[str, object](kwargs)
         for field in (
             "messages",
             "input",

@@ -5167,3 +5167,161 @@ def test_presidio_cache_initializer_all_callbacks(monkeypatch, mode, expected_co
     finally:
         for callback in registered_callbacks():
             litellm.logging_callback_manager.remove_callback_from_all_lists(callback)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["chat", "anthropic"])
+async def test_unified_input_keeps_masking_when_reversible_checks_finish_out_of_order(api_format, monkeypatch):
+    import copy
+    import json
+    from typing import Final, cast
+
+    from litellm.llms.anthropic.chat.guardrail_translation.handler import AnthropicMessagesHandler
+    from litellm.llms.openai.chat.guardrail_translation.handler import OpenAIChatCompletionsHandler
+    from litellm.proxy.common_request_processing import _synchronize_guardrailed_proxy_request
+    from litellm.proxy.litellm_pre_call_utils import refresh_proxy_server_request_body_snapshot
+    from litellm.proxy.spend_tracking.spend_tracking_utils import _get_proxy_server_request_for_spend_logs_payload
+    from litellm.types.guardrails import PresidioPerRequestConfig
+
+    completed_second: Final = asyncio.Event()
+
+    class OutOfOrderPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def check_pii(
+            self,
+            text: str,
+            output_parse_pii: bool,
+            presidio_config: PresidioPerRequestConfig | None,
+            request_data: dict[str, object],
+        ) -> str:
+            if text == "first":
+                await completed_second.wait()
+            metadata: Final = cast(dict[str, dict[str, str]], request_data["metadata"])
+            tokens: Final = metadata.setdefault("pii_tokens", {})
+            entity: Final = "PERSON" if text == "first" else "ACTNO"
+            token: Final = f"<{entity}_{len(tokens) + 1}>"
+            tokens[token] = text
+            if text == "second":
+                completed_second.set()
+            return token
+
+    guardrail: Final = OutOfOrderPresidio(mock_testing=True, output_parse_pii=True)
+    handler: Final = OpenAIChatCompletionsHandler() if api_format == "chat" else AnthropicMessagesHandler()
+    data: Final = {
+        "model": "test-model",
+        "max_tokens": 10,
+        "metadata": {},
+        "messages": [
+            {"role": "user", "content": "first"},
+            {"role": "user", "content": "second"},
+        ],
+    }
+
+    data["proxy_server_request"] = {"body": copy.deepcopy(data)}
+    logging_obj: Final = MagicMock()
+    logging_obj.litellm_params = {}
+    logging_obj.model_call_details = {"litellm_params": {}}
+    result: Final = await handler.process_input_messages(data=data, guardrail_to_apply=guardrail)
+
+    assert result["messages"] == [
+        {"role": "user", "content": "<PERSON_1>"},
+        {"role": "user", "content": "<ACTNO_2>"},
+    ]
+    assert result["metadata"]["pii_tokens"] == {"<PERSON_1>": "first", "<ACTNO_2>": "second"}
+
+    refresh_proxy_server_request_body_snapshot(result)
+    _synchronize_guardrailed_proxy_request(result, logging_obj)
+    monkeypatch.setenv("STORE_PROMPTS_IN_SPEND_LOGS", "true")
+    persisted_request: Final = json.loads(
+        _get_proxy_server_request_for_spend_logs_payload(
+            metadata={},
+            litellm_params=logging_obj.model_call_details["litellm_params"],
+        )
+    )
+    assert persisted_request["messages"] == result["messages"]
+    assert "first" not in json.dumps(persisted_request)
+    assert "second" not in json.dumps(persisted_request)
+    assert "pii_tokens" not in persisted_request["metadata"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call_type", ["acompletion", "aresponses"])
+async def test_logging_only_persists_masked_native_request_snapshot_without_mutating_live_payload(
+    call_type: str, monkeypatch
+):
+    import copy
+    import json
+    from typing import Final
+
+    from litellm.proxy.spend_tracking.spend_tracking_utils import _get_proxy_server_request_for_spend_logs_payload
+    from litellm.types.guardrails import PresidioPerRequestConfig
+
+    checked_texts: Final[list[str]] = []
+
+    class LoggingPresidio(_OPTIONAL_PresidioPIIMasking):
+        async def check_pii(
+            self,
+            text: str,
+            output_parse_pii: bool,
+            presidio_config: PresidioPerRequestConfig | None,
+            request_data: dict[str, object],
+        ) -> str:
+            checked_texts.append(text)
+            return text.replace("person@example.com", "<EMAIL_ADDRESS>")
+
+    request_fields: Final = (
+        {"messages": [{"role": "user", "content": "Input person@example.com"}]}
+        if call_type == "acompletion"
+        else {
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "Input person@example.com"}]}],
+            "instructions": "Instructions person@example.com",
+        }
+    )
+    body: Final = {
+        **request_fields,
+        "model": "test-model",
+        "metadata": {"pii_tokens": {"<EMAIL_ADDRESS_1>": "person@example.com"}, "request_id": "test"},
+        "pii_tokens": {"<EMAIL_ADDRESS_1>": "person@example.com"},
+    }
+    snapshot: Final = {"body": copy.deepcopy(body), "method": "POST", "url": "http://localhost/v1/test"}
+    kwargs: Final = {
+        **request_fields,
+        "metadata": {},
+        "proxy_server_request": snapshot,
+        "litellm_params": {"proxy_server_request": snapshot},
+    }
+    original_kwargs: Final = copy.deepcopy(kwargs)
+    response: Final = (
+        ModelResponse(
+            choices=[Choices(index=0, message=Message(role="assistant", content="Output person@example.com"))]
+        )
+        if call_type == "acompletion"
+        else {
+            "object": "response",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "Output person@example.com"}]}],
+        }
+    )
+    original_response: Final = copy.deepcopy(response)
+    guardrail: Final = LoggingPresidio(mock_testing=True, logging_only=True)
+
+    logged_kwargs, logged_response = await guardrail.async_logging_hook(kwargs, response, call_type)
+
+    monkeypatch.setenv("STORE_PROMPTS_IN_SPEND_LOGS", "true")
+    persisted: Final = json.loads(
+        _get_proxy_server_request_for_spend_logs_payload(metadata={}, litellm_params=logged_kwargs["litellm_params"])
+    )
+    assert "person@example.com" not in json.dumps(persisted)
+    assert "person@example.com" not in str(logged_response)
+    assert "<EMAIL_ADDRESS>" in str(logged_response)
+    assert kwargs == original_kwargs
+    assert response == original_response
+    assert persisted["metadata"] == {"request_id": "test"}
+    assert "pii_tokens" not in persisted
+    assert logged_kwargs["proxy_server_request"]["body"] == persisted
+    assert logged_kwargs["proxy_server_request"]["method"] == "POST"
+    assert checked_texts.count("Input person@example.com") == 1
+    if call_type == "aresponses":
+        assert persisted["input"][0]["content"][0] == {"type": "input_text", "text": "Input <EMAIL_ADDRESS>"}
+        assert persisted["instructions"] == "Instructions <EMAIL_ADDRESS>"
+        assert checked_texts.count("Instructions person@example.com") == 1
+    else:
+        assert persisted["messages"][0]["content"] == "Input <EMAIL_ADDRESS>"

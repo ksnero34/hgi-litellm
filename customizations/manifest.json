@@ -513,7 +513,8 @@
         "tests/local_testing/test_dynamic_rate_limit_handler.py",
         "tests/test_litellm/test_logging.py",
         "tests/hgi/",
-        "type-discipline-budget.json"
+        "type-discipline-budget.json",
+        "ui/litellm-dashboard/eslint-budgets.json"
       ],
       "remove_paths": []
     }

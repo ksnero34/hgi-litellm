@@ -113,11 +113,86 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("1 Observed")).toBeInTheDocument();
     expect(screen.getByText("0 Passed")).toBeInTheDocument();
     expect(screen.getAllByText("OBSERVED")).toHaveLength(2);
+    expect(screen.getAllByText("PASSED")).toHaveLength(2);
     expect(screen.queryByText(/Post-call guardrail:/)).not.toBeInTheDocument();
 
     const responseReturned = screen.getByText("Response returned");
     const loggingAudit = screen.getByText(/Logging-only audit:/);
     expect(responseReturned.compareDocumentPosition(loggingAudit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps input outcomes separate while aggregating the run summary", () => {
+    const cleanInput: Partial<GuardrailInformation> = {
+      guardrail_run_id: "mixed",
+      guardrail_name: "clean-input",
+      guardrail_event: "pre_call",
+      usage_action: "passed",
+      masked_entity_count: {},
+    };
+    const detectedInput: Partial<GuardrailInformation> = {
+      ...cleanInput,
+      guardrail_name: "pii-input",
+      usage_action: "flagged",
+      masked_entity_count: { PERSON: 1 },
+    };
+    renderWithProviders(
+      <GuardrailViewer data={[makeGuardrailInformation(cleanInput), makeGuardrailInformation(detectedInput)]} />,
+    );
+    expect(screen.getByText("1 guardrail evaluated")).toBeVisible();
+    expect(screen.getByText("1 Flagged")).toBeVisible();
+    expect(screen.getAllByText("PASSED")).toHaveLength(2);
+    expect(screen.getAllByText("FLAGGED")).toHaveLength(2);
+  });
+
+  it.each([undefined, { request_id: "invalid", startTime: "invalid", endTime: "invalid" }])(
+    "does not fabricate request or model timing without valid timestamps: %j",
+    (logEntry) => {
+      renderWithProviders(
+        <GuardrailViewer
+          logEntry={logEntry}
+          data={makeGuardrailInformation({
+            guardrail_event: "pre_call",
+            start_time: 100,
+            end_time: 100.008,
+          })}
+        />,
+      );
+      expect(screen.getAllByText(/^T\+/).map((element) => element.textContent)).toEqual(["T+8ms"]);
+      expect(screen.getByText("LLM call")).toBeVisible();
+      expect(screen.getByText("Response returned")).toBeVisible();
+    },
+  );
+
+  it("uses recorded request times and orders concurrent guardrail completions", () => {
+    const slowInput: Partial<GuardrailInformation> = {
+      guardrail_name: "slow",
+      guardrail_event: "pre_call",
+      start_time: 100.001,
+      end_time: 100.008,
+    };
+    const fastInput: Partial<GuardrailInformation> = {
+      ...slowInput,
+      guardrail_name: "fast",
+      start_time: 100.002,
+      end_time: 100.004,
+    };
+    renderWithProviders(
+      <GuardrailViewer
+        logEntry={{ request_id: "timed", startTime: "1970-01-01T00:01:40Z", endTime: "1970-01-01T00:01:42Z" }}
+        data={[makeGuardrailInformation(slowInput), makeGuardrailInformation(fastInput)]}
+      />,
+    );
+    expect(screen.getAllByText(/^T\+/).map((element) => element.textContent)).toEqual([
+      "T+0ms",
+      "T+4ms",
+      "T+8ms",
+      "T+2000ms",
+    ]);
+    expect(
+      screen
+        .getByText("Pre-call guardrail: fast")
+        .compareDocumentPosition(screen.getByText("Pre-call guardrail: slow")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("calculates and displays masked entity totals", async () => {

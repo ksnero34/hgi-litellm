@@ -84,6 +84,7 @@ interface GuardrailViewerProps {
     user?: string;
     model?: string;
     startTime?: string;
+    endTime?: string;
     metadata?: Record<string, any>;
   };
 }
@@ -380,97 +381,52 @@ const GenericGuardrailResponse = ({ response }: { response: any }) => {
 interface TimelineEntry {
   type: "request" | "guardrail" | "llm" | "response";
   label: string;
-  offsetMs: number;
+  offsetMs?: number;
   status?: string;
   isSuccess?: boolean;
+  outcome?: ComplianceOutcome;
 }
 
-const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
-  const sorted = useMemo(() => [...entries].sort((a, b) => (a.start_time ?? 0) - (b.start_time ?? 0)), [entries]);
-
-  const timeline = useMemo(() => {
-    if (sorted.length === 0) return [];
-
-    const baseTime = sorted[0].start_time;
-    const items: TimelineEntry[] = [];
-
-    // Request received
-    items.push({ type: "request", label: "Request received", offsetMs: 0 });
-
-    // Pre-call guardrails — use modeMatches so array modes (e.g. ["pre_call", "post_call"])
-    // place the entry in every matching bucket.
-    const preCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "pre_call"));
-    const postCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "post_call"));
-    const loggingOnlyCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "logging_only"));
-    const duringCalls = sorted.filter((e) => modeMatches(e.guardrail_event ?? e.guardrail_mode, "during_call"));
-
-    for (const e of preCalls) {
-      const offsetMs = Math.round((e.end_time - baseTime) * 1000);
-      items.push({
-        type: "guardrail",
-        label: `Pre-call guardrail: ${getDisplayName(e)}`,
-        offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
-        isSuccess: isEntrySuccess(e),
-      });
-    }
-
-    // LLM call — infer from gap between pre-call end and post-call start
-    const lastPreEnd = preCalls.length > 0 ? Math.max(...preCalls.map((e) => e.end_time)) : baseTime;
-    const firstPostStart = postCalls.length > 0 ? Math.min(...postCalls.map((e) => e.start_time)) : undefined;
-    const llmEndTime = firstPostStart ?? lastPreEnd + 1;
-    const llmOffsetMs = Math.round((llmEndTime - baseTime) * 1000);
-
-    items.push({
-      type: "llm",
-      label: "LLM call",
-      offsetMs: llmOffsetMs,
-    });
-
-    // During-call guardrails (rare)
-    for (const e of duringCalls) {
-      const offsetMs = Math.round((e.end_time - baseTime) * 1000);
-      items.push({
-        type: "guardrail",
-        label: `During-call guardrail: ${getDisplayName(e)}`,
-        offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
-        isSuccess: isEntrySuccess(e),
-      });
-    }
-
-    // Post-call guardrails
-    for (const e of postCalls) {
-      const offsetMs = Math.round((e.end_time - baseTime) * 1000);
-      items.push({
-        type: "guardrail",
-        label: `Post-call guardrail: ${getDisplayName(e)}`,
-        offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
-        isSuccess: isEntrySuccess(e),
-      });
-    }
-
-    // Response returned
-    const responseEntries = sorted.filter((e) => !isLoggingOnlyEntry(e));
-    const maxEnd = Math.max(...(responseEntries.length > 0 ? responseEntries : sorted).map((e) => e.end_time));
-    const responseOffsetMs = Math.round((maxEnd - baseTime) * 1000) + 1;
-    items.push({ type: "response", label: "Response returned", offsetMs: responseOffsetMs });
-
-    // Logging-only guardrails observe the completed response and cannot block it.
-    for (const e of loggingOnlyCalls) {
-      const offsetMs = Math.max(responseOffsetMs + 1, Math.round((e.end_time - baseTime) * 1000));
-      items.push({
-        type: "guardrail",
-        label: `Logging-only audit: ${getDisplayName(e)}`,
-        offsetMs,
-        status: "LOGGED",
-        isSuccess: true,
-      });
-    }
-
-    return items;
-  }, [sorted]);
+const RequestLifecycle = ({
+  entries,
+  logEntry,
+}: {
+  entries: GuardrailInformation[];
+  logEntry?: GuardrailViewerProps["logEntry"];
+}) => {
+  const timeline = useMemo<TimelineEntry[]>(() => {
+    if (entries.length === 0) return [];
+    const sorted = [...entries].sort((a, b) => a.end_time - b.end_time);
+    const requestStart = Date.parse(logEntry?.startTime ?? "") / 1000;
+    const requestEnd = Date.parse(logEntry?.endTime ?? "") / 1000;
+    const hasRequestStart = Number.isFinite(requestStart);
+    const baseTime = hasRequestStart ? requestStart : Math.min(...entries.map((entry) => entry.start_time));
+    const offset = (time: number) =>
+      Number.isFinite(time) && time >= baseTime ? Math.round((time - baseTime) * 1000) : undefined;
+    const guardrailItems = (stage: string, label: string): TimelineEntry[] =>
+      sorted
+        .filter((entry) => modeMatches(entry.guardrail_event ?? entry.guardrail_mode, stage))
+        .map((entry) => {
+          const outcome = getComplianceOutcome(entry);
+          return {
+            type: "guardrail",
+            label: `${label}: ${getDisplayName(entry)}`,
+            offsetMs: offset(entry.end_time),
+            status: outcome.toUpperCase(),
+            outcome,
+            isSuccess: outcome === "passed" || outcome === "observed",
+          };
+        });
+    return [
+      { type: "request", label: "Request received", offsetMs: hasRequestStart ? 0 : undefined },
+      ...guardrailItems("pre_call", "Pre-call guardrail"),
+      { type: "llm", label: "LLM call" },
+      ...guardrailItems("during_call", "During-call guardrail"),
+      ...guardrailItems("post_call", "Post-call guardrail"),
+      { type: "response", label: "Response returned", offsetMs: offset(requestEnd) },
+      ...guardrailItems("logging_only", "Logging-only audit"),
+    ] satisfies TimelineEntry[];
+  }, [entries, logEntry?.startTime, logEntry?.endTime]);
 
   return (
     <div>
@@ -503,13 +459,15 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
                 {item.status && (
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      item.isSuccess ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+                      item.outcome ? complianceBadgeClass[item.outcome] : ""
                     }`}
                   >
                     {item.status}
                   </span>
                 )}
-                <span className="text-xs text-muted-foreground font-mono ml-auto shrink-0">T+{item.offsetMs}ms</span>
+                {item.offsetMs != null && (
+                  <span className="text-xs text-muted-foreground font-mono ml-auto shrink-0">T+{item.offsetMs}ms</span>
+                )}
               </div>
             </div>
           </div>
@@ -521,13 +479,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
 
 // ── Evaluation Card ─────────────────────────────────────────────────────────
 
-const EvaluationCard = ({
-  entry,
-  outcomeOverride,
-}: {
-  entry: GuardrailInformation;
-  outcomeOverride?: ComplianceOutcome;
-}) => {
+const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
   const [expanded, setExpanded] = useState(false);
   const success = isEntrySuccess(entry);
   const totalMasked = getTotalMasked(entry);
@@ -535,7 +487,7 @@ const EvaluationCard = ({
   const durationStr = formatDurationMs(entry.duration);
   const modeStr = formatMode(entry.guardrail_event ?? entry.guardrail_mode);
   const riskScore = getRiskScore(entry);
-  const complianceOutcome = outcomeOverride ?? getComplianceOutcome(entry);
+  const complianceOutcome = getComplianceOutcome(entry);
   const inputSourceLabel = getInputSourceLabel(entry.input_source);
   const textRecords = entry.guardrail_usage?.["text_records"];
 
@@ -890,7 +842,7 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
       <div className="flex flex-col">
         {/* Request Lifecycle */}
         <div className="border-b border-border px-6 py-5">
-          <RequestLifecycle entries={guardrailEntries} />
+          <RequestLifecycle entries={guardrailEntries} logEntry={logEntry} />
         </div>
 
         {/* Evaluation Details */}
@@ -900,11 +852,7 @@ const GuardrailViewer = ({ data, accessToken, logEntry }: GuardrailViewerProps) 
           </h4>
           <div className="space-y-3">
             {guardrailEntries.map((entry, index) => (
-              <EvaluationCard
-                key={`${entry.guardrail_name ?? "guardrail"}-${index}`}
-                entry={entry}
-                outcomeOverride={entry.guardrail_run_id ? outcomesByRun.get(entry.guardrail_run_id) : undefined}
-              />
+              <EvaluationCard key={`${entry.guardrail_name ?? "guardrail"}-${index}`} entry={entry} />
             ))}
           </div>
         </div>

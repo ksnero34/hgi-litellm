@@ -207,6 +207,7 @@ export function LogDetailContent({ logEntry, isLoadingDetails = false, accessTok
               user: logEntry.user,
               model: logEntry.model,
               startTime: logEntry.startTime,
+              endTime: logEntry.endTime,
               metadata: logEntry.metadata,
             }}
           />

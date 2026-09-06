@@ -5,7 +5,9 @@ import { LogDetailContent } from "./LogDetailContent";
 import type { LogEntry } from "../columns";
 
 vi.mock("../GuardrailViewer/GuardrailViewer", () => ({
-  default: ({ data }: { data: unknown }) => <div data-testid="guardrail-viewer">{JSON.stringify(data)}</div>,
+  default: ({ data, logEntry }: { data: unknown; logEntry: unknown }) => (
+    <div data-testid="guardrail-viewer">{JSON.stringify({ data, logEntry })}</div>
+  ),
 }));
 
 const createLogEntry = (overrides: Partial<LogEntry> = {}): LogEntry =>
@@ -34,6 +36,13 @@ const createLogEntry = (overrides: Partial<LogEntry> = {}): LogEntry =>
   }) as LogEntry;
 
 describe("LogDetailContent", () => {
+  it("passes recorded request timestamps to the guardrail timeline", () => {
+    const logEntry = createLogEntry({ metadata: { guardrail_information: [{ guardrail_name: "presidio" }] } });
+    render(<LogDetailContent logEntry={logEntry} />);
+    expect(screen.getByTestId("guardrail-viewer")).toHaveTextContent(logEntry.startTime);
+    expect(screen.getByTestId("guardrail-viewer")).toHaveTextContent(logEntry.endTime);
+  });
+
   it("should render the component successfully", () => {
     render(<LogDetailContent logEntry={createLogEntry()} />);
 
