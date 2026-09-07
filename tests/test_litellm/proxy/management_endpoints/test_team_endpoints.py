@@ -1236,6 +1236,7 @@ def test_add_new_models_to_team():
     from litellm.proxy.management_endpoints.team_endpoints import add_new_models_to_team
 
     team_obj = MagicMock(spec=LiteLLM_TeamTable)
+    team_obj.organization_id = None
     team_obj.models = []
     new_models = ["model4", "model5"]
     updated_models = add_new_models_to_team(team_obj=team_obj, new_models=new_models)
@@ -13501,3 +13502,100 @@ async def test_team_member_update_skips_invalidation_when_no_budget_fields_sent(
 
     assert await real_cache.async_get_cache(key="team-1_member-1") == "still-fresh-membership"
     assert real_spend_counter_cache.in_memory_cache.get_cache(key="spend:team_member:member-1:team-1") == 1.5
+
+
+@pytest.mark.asyncio
+async def test_organization_model_policy_override_requires_org_authority_and_explicit_models():
+    from litellm.proxy.management_endpoints.team_endpoints import _validate_team_organization_model_policy
+
+    team = LiteLLM_TeamTable(team_id="policy-team", organization_id="policy-org", models=["allowed"])
+    client = MagicMock()
+    client.db.litellm_organizationmembership.find_many = AsyncMock(return_value=[])
+    member = UserAPIKeyAuth(user_id="member", user_role=LitellmUserRoles.INTERNAL_USER)
+    override = UpdateTeamRequest(
+        team_id=team.team_id, models=["exception"], metadata={"organization_model_policy": "override"}
+    )
+    with pytest.raises(HTTPException) as denied:
+        await _validate_team_organization_model_policy(override, member, client, team)
+    assert denied.value.status_code == 403
+    admin = UserAPIKeyAuth(user_id="admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+    allowed = await _validate_team_organization_model_policy(override, admin, client, team)
+    assert allowed.models == ["exception"]
+    client.db.litellm_organizationmembership.find_many = AsyncMock(return_value=[MagicMock()])
+    org_allowed = await _validate_team_organization_model_policy(override, member, client, team)
+    assert org_allowed.models == ["exception"]
+    from prisma.builder import QueryBuilder
+    from prisma.models import LiteLLM_OrganizationMembership
+
+    where = client.db.litellm_organizationmembership.find_many.await_args.kwargs["where"]
+    query = QueryBuilder(
+        method="find_many", arguments={"where": where}, model=LiteLLM_OrganizationMembership
+    ).build()
+    assert 'organization_id: "policy-org"' in json.loads(query)["query"]
+    client.db.litellm_organizationmembership.find_many.assert_awaited_once_with(where={
+        "user_id": "member", "organization_id": "policy-org", "user_role": LitellmUserRoles.ORG_ADMIN.value,
+    })
+    for models in ([], ["*"], ["all-proxy-models"], ["all-team-models"], ["no-default-models"]):
+        with pytest.raises(HTTPException) as invalid:
+            await _validate_team_organization_model_policy(
+                override.model_copy(update={"models": models}), admin, client, team
+            )
+        assert invalid.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_organization_model_policy_preserved_and_existing_exception_cannot_be_expanded():
+    from litellm.proxy.management_endpoints.team_endpoints import _validate_team_organization_model_policy
+
+    team = LiteLLM_TeamTable(
+        team_id="policy-team",
+        organization_id="policy-org",
+        models=["exception"],
+        metadata={"organization_model_policy": "override"},
+    )
+    client = MagicMock()
+    client.db.litellm_organizationmembership.find_many = AsyncMock(return_value=[])
+    member = UserAPIKeyAuth(user_id="member", user_role=LitellmUserRoles.INTERNAL_USER)
+    unchanged = await _validate_team_organization_model_policy(
+        UpdateTeamRequest(team_id=team.team_id, metadata={"other": "value"}), member, client, team
+    )
+    assert unchanged.metadata == {"organization_model_policy": "override", "other": "value"}
+    assert unchanged.models == ["exception"]
+    with pytest.raises(HTTPException) as denied:
+        await _validate_team_organization_model_policy(
+            UpdateTeamRequest(team_id=team.team_id, models=["exception", "extra"]), member, client, team
+        )
+    assert denied.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_organization_policy_override_skips_only_model_limit_and_move_inherits_empty_models():
+    from litellm.proxy.management_endpoints.team_endpoints import (
+        _check_org_team_limits,
+        add_new_models_to_team,
+        validate_team_org_change,
+    )
+
+    org = LiteLLM_OrganizationTableWithMembers(
+        organization_id="policy-org",
+        organization_alias="policy",
+        budget_id="budget",
+        models=["allowed"],
+        members=[],
+        created_by="admin",
+        updated_by="admin",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    team = LiteLLM_TeamTable(team_id="policy-team", models=[])
+    assert validate_team_org_change(team, org, MagicMock(), is_proxy_admin=True)
+    scoped = team.model_copy(update={"organization_id": org.organization_id})
+    assert add_new_models_to_team(scoped, ["allowed"]) == ["allowed"]
+    request = UpdateTeamRequest(
+        team_id=team.team_id, models=["exception"], metadata={"organization_model_policy": "override"}
+    )
+    await _check_org_team_limits(org, request, MagicMock())
+    with pytest.raises(HTTPException):
+        await _check_org_team_limits(
+            org, request.model_copy(update={"metadata": {"organization_model_policy": "inherit"}}), MagicMock()
+        )

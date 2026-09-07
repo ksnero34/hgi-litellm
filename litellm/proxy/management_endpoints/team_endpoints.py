@@ -966,6 +966,87 @@ def check_org_team_rpm_tpm_limits(
     )
 
 
+class _OrganizationPolicyMembershipWhere(TypedDict):
+    user_id: ReadOnly[str | None]
+    organization_id: ReadOnly[str | None]
+    user_role: ReadOnly[str]
+
+
+async def _validate_team_organization_model_policy(
+    data: NewTeamRequest | UpdateTeamRequest,
+    user_api_key_dict: UserAPIKeyAuth,
+    prisma_client: PrismaClient,
+    existing_team: LiteLLM_TeamTable | None = None,
+) -> NewTeamRequest | UpdateTeamRequest:
+    previous_policy: Final = (
+        (existing_team.metadata or MappingProxyType({})).get("organization_model_policy", "inherit")
+        if existing_team
+        else "inherit"
+    )
+    metadata: Final = MappingProxyType(
+        {
+            **(
+                MappingProxyType({"organization_model_policy": previous_policy})
+                if existing_team and "organization_model_policy" in (existing_team.metadata or MappingProxyType({}))
+                else MappingProxyType({})
+            ),
+            **(data.metadata or MappingProxyType({})),
+        }
+    )
+    policy: Final = metadata.get("organization_model_policy", "inherit")
+    if policy not in ("inherit", "override"):
+        raise HTTPException(status_code=400, detail="organization_model_policy must be inherit or override")
+    models: Final = data.models if data.models is not None else (existing_team.models if existing_team else ())
+    organization_id: Final = (
+        (data.organization_id or None)
+        if data.organization_id is not None
+        else (existing_team.organization_id if existing_team else None)
+    )
+    if policy == "override" and (
+        not models
+        or any(model in ("*", "all-proxy-models", "all-team-models", "no-default-models") for model in models)
+    ):
+        raise HTTPException(status_code=400, detail="Organization model policy override requires explicit team models")
+    changes_exception: Final = (
+        (existing_team is not None and existing_team.organization_id is not None and organization_id is None)
+        or policy != previous_policy
+        or (
+            policy == "override"
+            and (
+                existing_team is None
+                or frozenset(models or ()) != frozenset(existing_team.models or ())
+                or organization_id != existing_team.organization_id
+            )
+        )
+    )
+    if changes_exception and user_api_key_dict.user_role != LitellmUserRoles.PROXY_ADMIN.value:
+        membership_where: Final[_OrganizationPolicyMembershipWhere] = {
+            "user_id": user_api_key_dict.user_id,
+            "organization_id": organization_id or (existing_team.organization_id if existing_team else None),
+            "user_role": LitellmUserRoles.ORG_ADMIN.value,
+        }
+        memberships: Final = (
+            await _org_membership_db(prisma_client).find_many(where=membership_where)
+            if (organization_id or (existing_team.organization_id if existing_team else None))
+            and user_api_key_dict.user_id
+            else ()
+        )
+        if not memberships:
+            raise HTTPException(
+                status_code=403,
+                detail="Only proxy admin or organization admin may change organization model policy exceptions",
+            )
+    return type(data).model_validate(
+        MappingProxyType(
+            {
+                **data.model_dump(exclude_unset=True),
+                "metadata": metadata if metadata or data.metadata is not None else None,
+                "models": models,
+            }
+        )
+    )
+
+
 async def _check_org_team_limits(
     org_table: LiteLLM_OrganizationTable,
     data: NewTeamRequest | UpdateTeamRequest,
@@ -993,7 +1074,11 @@ async def _check_org_team_limits(
         )
 
     # Validate team models against organization's allowed models
-    if data.models is not None and len(org_table.models) > 0:
+    if (
+        (data.metadata or MappingProxyType({})).get("organization_model_policy") != "override"
+        and data.models is not None
+        and len(org_table.models) > 0
+    ):
         # If organization has 'all-proxy-models', skip validation as it allows all models
         if SpecialModelNames.all_proxy_models.value in org_table.models:
             pass
@@ -1414,6 +1499,8 @@ async def new_team(
                 if default_budget is not None:
                     data.max_budget = default_budget
 
+        await _validate_team_organization_model_policy(data, user_api_key_dict, prisma_client)
+
         # check org key limits - done here to handle inheriting org id from team
         if data.organization_id is not None and prisma_client is not None:
             try:
@@ -1831,24 +1918,13 @@ def validate_team_org_change(
     if team.organization_id == organization.organization_id:
         return True
 
-    # Check if the org has access to the team's models
-    if len(organization.models) > 0:
-        if SpecialModelNames.all_proxy_models.value in organization.models:
-            pass
-        elif team.models is None or len(team.models) == 0:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error": "Cannot move team to organization. Team has access to all proxy models, but the organization does not."
-                },
-            )
-        else:
-            for model in team.models:
-                can_org_access_model(
-                    model=model,
-                    org_object=organization,
-                    llm_router=llm_router,
-                )
+    if (
+        organization.models
+        and (team.metadata or MappingProxyType({})).get("organization_model_policy") != "override"
+        and SpecialModelNames.all_proxy_models.value not in organization.models
+    ):
+        for model in team.models or ():
+            can_org_access_model(model=model, org_object=organization, llm_router=llm_router)
 
     # Check if the team's budget is less than the org's max_budget
     if (
@@ -2086,6 +2162,13 @@ async def update_team(
                         },
                     )
 
+        policy_data: Final = await _validate_team_organization_model_policy(
+            data,
+            user_api_key_dict,
+            prisma_client,
+            LiteLLM_TeamTable.model_validate(existing_team_row.model_dump()),
+        )
+
         if data.organization_id is not None and len(data.organization_id) > 0:  # allow unsetting the organization_id
             # If the caller is relocating the team to a different org, they
             # must also be PROXY_ADMIN or an org-admin of the DESTINATION org.
@@ -2124,7 +2207,15 @@ async def update_team(
 
             await fetch_and_validate_organization(
                 organization_id=data.organization_id,
-                existing_team_row=existing_team_row,
+                existing_team_row=LiteLLM_TeamTable.model_validate(
+                    MappingProxyType(
+                        {
+                            **existing_team_row.model_dump(),
+                            "metadata": policy_data.metadata,
+                            "models": policy_data.models,
+                        }
+                    )
+                ),
                 llm_router=llm_router,
                 prisma_client=prisma_client,
                 user_api_key_dict=user_api_key_dict,
@@ -2146,7 +2237,7 @@ async def update_team(
             if org_table is not None:
                 await _check_org_team_limits(
                     org_table=org_table,
-                    data=data,
+                    data=policy_data,
                     prisma_client=prisma_client,
                 )
 
@@ -2159,7 +2250,11 @@ async def update_team(
                 existing_team_max_budget=existing_team_row.max_budget,
             )
 
-        updated_kv = data.json(exclude_unset=True)
+        updated_kv = data.model_copy(
+            update=MappingProxyType({"metadata": policy_data.metadata})
+            if "metadata" in data.model_fields_set
+            else MappingProxyType({})
+        ).json(exclude_unset=True)
 
         # Drop server-owned metadata keys from caller input so they can only
         # be written by the same code path that creates the underlying rows.
@@ -5469,12 +5564,34 @@ async def ui_view_teams(
         raise HTTPException(status_code=500, detail=f"Error searching teams: {e}")
 
 
+async def _validate_team_model_edit(
+    team: LiteLLM_TeamTable,
+    models: Sequence[str],
+    user_api_key_dict: UserAPIKeyAuth,
+    prisma_client: PrismaClient,
+) -> None:
+    from litellm.proxy.proxy_server import user_api_key_cache
+
+    data: Final = await _validate_team_organization_model_policy(
+        UpdateTeamRequest.model_validate(MappingProxyType({"team_id": team.team_id, "models": models})),
+        user_api_key_dict,
+        prisma_client,
+        team,
+    )
+    if team.organization_id:
+        organization: Final = await get_org_object(
+            org_id=team.organization_id, prisma_client=prisma_client, user_api_key_cache=user_api_key_cache
+        )
+        if organization is not None:
+            await _check_org_team_limits(organization, data, prisma_client)
+
+
 def add_new_models_to_team(team_obj: LiteLLM_TeamTable, new_models: list[str]) -> list[str]:
     """
     Add new models to a team's allowed model list.
     """
     current_models = team_obj.models
-    if current_models is not None and len(current_models) == 0:  # implies all model access
+    if current_models is not None and len(current_models) == 0 and team_obj.organization_id is None:
         current_models = [SpecialModelNames.all_proxy_models.value]
     else:
         current_models = team_obj.models
@@ -5544,14 +5661,15 @@ async def team_model_add(
 
     # Atomic array append with dedup at the database level so concurrent
     # BYOK model creates don't overwrite each other's team.models entries.
-    # When the team currently has models=[] (unrestricted access), the
-    # CASE expression inserts the 'all-proxy-models' sentinel first.
     models_to_add: Final = list(data.models)
+    await _validate_team_model_edit(
+        team_obj, add_new_models_to_team(team_obj, models_to_add), user_api_key_dict, prisma_client
+    )
     await prisma_client.db.execute_raw(
         'UPDATE "LiteLLM_TeamTable" '
         "SET models = ("
         "  SELECT ARRAY(SELECT DISTINCT unnest("
-        "    CASE WHEN cardinality(COALESCE(models, ARRAY[]::text[])) = 0 "
+        "    CASE WHEN cardinality(COALESCE(models, ARRAY[]::text[])) = 0 AND $3::boolean "
         "         THEN ARRAY['all-proxy-models']::text[] "
         "         ELSE models "
         "    END || $1::text[]"
@@ -5560,6 +5678,7 @@ async def team_model_add(
         "WHERE team_id = $2",
         models_to_add,
         data.team_id,
+        team_obj.organization_id is None,
     )
     # Re-fetch via update (write-routed) instead of find_unique (read-routed)
     # to avoid returning stale data from a read replica. The models column
@@ -5652,6 +5771,7 @@ async def team_model_delete(
 
     # Remove specified models
     updated_models: Final = [m for m in current_models if m not in data.models]
+    await _validate_team_model_edit(team_obj, updated_models, user_api_key_dict, prisma_client)
 
     # Update team. See team_model_add for the rationale on `include`.
     updated_team: Final = await _team_db(prisma_client).update(

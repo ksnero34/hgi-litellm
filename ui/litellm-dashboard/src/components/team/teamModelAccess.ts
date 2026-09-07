@@ -7,7 +7,7 @@ export interface TeamAccessGroupModelGrant {
   models: string[];
 }
 
-export type TeamModelBadgeKind = "all-proxy" | "no-default" | "direct" | "access-group";
+export type TeamModelBadgeKind = "all-proxy" | "inherited" | "no-default" | "direct" | "access-group";
 
 export interface TeamModelBadge {
   label: string;
@@ -15,8 +15,16 @@ export interface TeamModelBadge {
   tooltip: string;
 }
 
-export function normalizeTeamModelSelection(models: string[] | undefined): string[] {
+export function normalizeTeamModelSelection(models: string[] | undefined, organizationId?: string | null): string[] {
+  if (organizationId) return models ?? [];
   return models && models.length > 0 ? models : [NO_DEFAULT_MODELS];
+}
+
+export function hasExplicitTeamModels(models: string[] | undefined): boolean {
+  return (
+    Boolean(models?.length) &&
+    !models?.some((model) => [ALL_PROXY_MODELS, NO_DEFAULT_MODELS, "all-team-models", "*"].includes(model))
+  );
 }
 
 const describeGroups = (names: string[]): string =>
@@ -26,6 +34,7 @@ export function computeTeamModelBadges(
   models: string[],
   accessGroupModels: string[],
   accessGroupDetails: TeamAccessGroupModelGrant[] | undefined,
+  inheritsOrganization = false,
 ): TeamModelBadge[] {
   const grants = accessGroupDetails ?? [];
   const groupNamesFor = (model: string): string[] =>
@@ -54,6 +63,14 @@ export function computeTeamModelBadges(
     tooltip: "No models are granted directly. Access comes only from access groups",
   };
   const headBadge = (): TeamModelBadge[] => {
+    if (allProxy && inheritsOrganization)
+      return [
+        {
+          label: "Organization models",
+          kind: "inherited",
+          tooltip: "Inherits the organization's allowed models",
+        },
+      ];
     if (allProxy) return [allProxyBadge];
     if (models.includes(NO_DEFAULT_MODELS)) return [noDefaultBadge];
     return [];

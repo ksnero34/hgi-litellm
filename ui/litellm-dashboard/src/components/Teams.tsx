@@ -61,7 +61,7 @@ interface TeamProps {
 
 import DeleteResourceModal from "./common_components/DeleteResourceModal";
 import { teamCreateCall } from "./networking";
-import { normalizeTeamModelSelection } from "./team/teamModelAccess";
+import { hasExplicitTeamModels, normalizeTeamModelSelection } from "./team/teamModelAccess";
 import { ModelSelect } from "./ModelSelect/ModelSelect";
 
 const SUPPRESSED_BY_DESCRIPTION = "";
@@ -72,6 +72,7 @@ const teamCreateFieldsSchema = z.object({
   team_alias: z.string().min(1, "Please input a team name"),
   organization_id: z.string().nullish(),
   models: z.array(z.string()).optional(),
+  organization_model_override: z.boolean().optional(),
   max_budget: numericInputSchema,
   budget_duration: z.string().nullish(),
   tpm_limit: numericInputSchema,
@@ -107,6 +108,7 @@ const EMPTY_TEAM_CREATE_VALUES: TeamCreateFormValues = {
   team_alias: "",
   organization_id: null,
   models: [],
+  organization_model_override: false,
   max_budget: undefined,
   budget_duration: undefined,
   tpm_limit: undefined,
@@ -219,6 +221,13 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
   const teamCreateSchema = useMemo(
     () =>
       teamCreateFieldsSchema.superRefine((values, ctx) => {
+        if (values.organization_id && values.organization_model_override && !hasExplicitTeamModels(values.models)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Select explicit models for an organization policy exception",
+            path: ["models"],
+          });
+        }
         if (isOrgAdmin && !values.organization_id) {
           ctx.addIssue({ code: "custom", message: SUPPRESSED_BY_DESCRIPTION, path: ["organization_id"] });
         }
@@ -231,6 +240,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
 
   const form = useZodForm(teamCreateSchema, { defaultValues: EMPTY_TEAM_CREATE_VALUES });
   const watchedOrganizationId = form.watch("organization_id");
+  const modelPolicyOverride = form.watch("organization_model_override") === true;
   const watchedMcpSelection = form.watch("allowed_mcp_servers_and_groups");
   const watchedToolPermissions = form.watch("mcp_tool_permissions");
 
@@ -403,8 +413,12 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
 
         const metadataObject = {
           ...metadataPairsToObject(formValues.metadata),
+          ...(formValues.organization_id
+            ? { organization_model_policy: formValues.organization_model_override ? "override" : "inherit" }
+            : {}),
           ...(loggingSettings.length > 0 ? { logging: loggingSettings.filter((config) => config.callback_name) } : {}),
         };
+        delete formValues.organization_model_override;
         formValues.metadata = Object.keys(metadataObject).length > 0 ? JSON.stringify(metadataObject) : undefined;
 
         if (formValues.secret_manager_settings) {
@@ -504,7 +518,10 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
           }
         }
 
-        await teamCreateCall(accessToken, { ...formValues, models: normalizeTeamModelSelection(formValues.models) });
+        await teamCreateCall(accessToken, {
+          ...formValues,
+          models: normalizeTeamModelSelection(formValues.models, formValues.organization_id),
+        });
         toast.success("Team created");
         await refreshTeams();
         resetCreateForm();
@@ -742,12 +759,26 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                       </>
                     );
                   })()}
+                  {watchedOrganizationId && (
+                    <FormField
+                      control={form.control}
+                      name="organization_model_override"
+                      label="Organization model policy exception"
+                      description="Allow this team to use explicitly selected models outside the organization's model list"
+                    >
+                      {({ id, value, onChange }) => (
+                        <Switch id={id} checked={value ?? false} onCheckedChange={onChange} />
+                      )}
+                    </FormField>
+                  )}
                   <FormField
                     control={form.control}
                     name="models"
                     label={labelWithHint(
                       "Models",
-                      "These are the models that your selected team has access to. Leave empty to grant no models directly, e.g. when the team gets its models from access groups",
+                      watchedOrganizationId
+                        ? "Leave empty to inherit organization models. An exception requires explicit models"
+                        : "Leave empty to grant no models directly, e.g. when the team gets its models from access groups",
                     )}
                   >
                     {({ id, value, onChange }) => (
@@ -757,8 +788,8 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                         onChange={onChange}
                         organizationID={watchedOrganizationId ?? undefined}
                         options={{
-                          includeSpecialOptions: true,
-                          showAllProxyModelsOverride: !watchedOrganizationId,
+                          includeSpecialOptions: !modelPolicyOverride,
+                          showAllProxyModelsOverride: !watchedOrganizationId || modelPolicyOverride,
                         }}
                         context="team"
                         dataTestId="create-team-models-select"

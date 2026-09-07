@@ -1063,3 +1063,16 @@ async def test_find_member_if_email_missing_row_raises_documented_400():
             "non-existent user_email in LiteLLM_UserTable. Use 'user_id' instead."
         )
     }
+
+
+@pytest.mark.asyncio
+async def test_organization_model_cache_invalidation_evicts_both_variants():
+    from litellm.caching.dual_cache import DualCache
+    from litellm.proxy.management_endpoints.organization_endpoints import _invalidate_organization_model_cache
+
+    cache = DualCache()
+    cache.set_cache("org_id:policy-org", {"models": ["old-model"]})
+    cache.set_cache("org_id:policy-org:with_budget", {"models": ["old-model"]})
+    await _invalidate_organization_model_cache("policy-org", cache)
+    assert cache.get_cache("org_id:policy-org") is None
+    assert cache.get_cache("org_id:policy-org:with_budget") is None

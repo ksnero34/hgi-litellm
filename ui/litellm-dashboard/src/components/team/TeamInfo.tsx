@@ -53,6 +53,7 @@ import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import BudgetDurationDropdown, { NEVER_RESETS_BUDGET_DURATION } from "../common_components/budget_duration_dropdown";
 import {
   computeTeamModelBadges,
+  hasExplicitTeamModels,
   normalizeTeamModelSelection,
   TeamAccessGroupModelGrant,
   TeamModelBadge,
@@ -94,6 +95,7 @@ import TeamMembersComponent from "./TeamMemberTab";
 import { TeamVirtualKeysTable } from "./TeamVirtualKeysTable";
 
 const UI_MANAGED_METADATA_KEYS: ReadonlySet<string> = new Set([
+  "organization_model_policy",
   "logging",
   "secret_manager_settings",
   "soft_budget_alerting_emails",
@@ -109,6 +111,7 @@ const UI_MANAGED_METADATA_KEYS: ReadonlySet<string> = new Set([
 
 const TEAM_MODEL_BADGE_TONES: Record<TeamModelBadgeKind, StatusTone> = {
   "all-proxy": "error",
+  inherited: "info",
   "no-default": "neutral",
   direct: "info",
   "access-group": "success",
@@ -203,6 +206,7 @@ const numericInputSchema = z.union([z.string(), z.number()]).nullish();
 const teamUpdateFieldsSchema = z.object({
   team_alias: z.string().min(1, "Please input a team name"),
   models: z.array(z.string()).optional(),
+  organization_model_override: z.boolean().optional(),
   max_budget: numericInputSchema,
   soft_budget: numericInputSchema,
   soft_budget_alerting_emails: z.union([z.string(), z.array(z.string())]).optional(),
@@ -280,6 +284,7 @@ const SEARCH_TOOL_SETTINGS_FIELDS = ["object_permission_search_tools"] as const;
 const EMPTY_TEAM_UPDATE_VALUES: TeamUpdateFormValues = {
   team_alias: "",
   models: [],
+  organization_model_override: false,
   max_budget: undefined,
   soft_budget: undefined,
   soft_budget_alerting_emails: "",
@@ -326,6 +331,7 @@ const computeEffectiveGuardrails = (info: TeamInfoRecord, globalGuardrailNames: 
 const toTeamFormValues = (info: TeamInfoRecord, effectiveGuardrails: string[]): TeamUpdateFormValues => ({
   team_alias: info.team_alias,
   models: info.models,
+  organization_model_override: info.metadata?.organization_model_policy === "override",
   max_budget: info.max_budget,
   soft_budget: info.soft_budget,
   soft_budget_alerting_emails: Array.isArray(info.metadata?.soft_budget_alerting_emails)
@@ -406,6 +412,13 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
   const teamUpdateSchema = useMemo(
     () =>
       teamUpdateFieldsSchema.superRefine((values, ctx) => {
+        if (values.organization_id && values.organization_model_override && !hasExplicitTeamModels(values.models)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Select explicit models for an organization policy exception",
+            path: ["models"],
+          });
+        }
         if (!isParsableJson(values.secret_manager_settings)) {
           ctx.addIssue({ code: "custom", message: SUPPRESSED_BY_DESCRIPTION, path: ["secret_manager_settings"] });
         }
@@ -458,6 +471,8 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
   // Models currently selected in the team edit form, used to scope the per-model
   // rate limit dropdown to models this team actually has access to.
   const watchedModels = form.watch("models");
+  const watchedOrganizationId = form.watch("organization_id");
+  const modelPolicyOverride = form.watch("organization_model_override") === true;
   const killSwitchOn = form.watch("disable_global_guardrails");
   const watchedMcpSelection = form.watch("mcp_servers_and_groups");
   const watchedToolPermissions = form.watch("mcp_tool_permissions");
@@ -782,7 +797,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
       const updateData: any = {
         team_id: teamId,
         team_alias: values.team_alias,
-        models: normalizeTeamModelSelection(values.models),
+        models: normalizeTeamModelSelection(values.models, values.organization_id),
         tpm_limit: sanitizeNumeric(values.tpm_limit),
         rpm_limit: sanitizeNumeric(values.rpm_limit),
         model_tpm_limit: modelTpmLimit,
@@ -792,6 +807,9 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
         budget_duration: values.budget_duration ?? null,
         metadata: {
           ...parsedMetadata,
+          ...(values.organization_id
+            ? { organization_model_policy: values.organization_model_override ? "override" : "inherit" }
+            : {}),
           ...passthroughRoutesMetadata,
           guardrails: (values.guardrails || []).filter((n: string) => !globalGuardrailNames.has(n)),
           opted_out_global_guardrails: optedOutGlobalGuardrails,
@@ -1008,19 +1026,22 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
           <Card className="block p-6">
             <p>Models</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {computeTeamModelBadges(info.models, info.access_group_models || [], info.access_group_details).map(
-                (badge, index) => (
-                  <SimpleTooltip key={`${badge.kind}-${badge.label}-${index}`} content={badge.tooltip}>
-                    <span>
-                      <StatusBadge
-                        tone={TEAM_MODEL_BADGE_TONES[badge.kind]}
-                        label={badge.label}
-                        href={teamModelBadgeHref(badge)}
-                      />
-                    </span>
-                  </SimpleTooltip>
-                ),
-              )}
+              {computeTeamModelBadges(
+                info.models,
+                info.access_group_models || [],
+                info.access_group_details,
+                Boolean(info.organization_id) && info.metadata?.organization_model_policy !== "override",
+              ).map((badge, index) => (
+                <SimpleTooltip key={`${badge.kind}-${badge.label}-${index}`} content={badge.tooltip}>
+                  <span>
+                    <StatusBadge
+                      tone={TEAM_MODEL_BADGE_TONES[badge.kind]}
+                      label={badge.label}
+                      href={teamModelBadgeHref(badge)}
+                    />
+                  </span>
+                </SimpleTooltip>
+              ))}
             </div>
           </Card>
 
@@ -1143,11 +1164,27 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     {({ ref, value, ...field }) => <UIInput {...field} ref={ref} value={value ?? ""} />}
                   </FormField>
 
+                  {watchedOrganizationId && (is_proxy_admin || isOrgAdminForTeam) && (
+                    <FormField
+                      control={form.control}
+                      name="organization_model_override"
+                      label="Organization model policy exception"
+                      description="Allow this team to use explicitly selected models outside the organization's model list"
+                    >
+                      {({ id, value, onChange }) => (
+                        <Switch id={id} checked={value ?? false} onCheckedChange={onChange} />
+                      )}
+                    </FormField>
+                  )}
                   <FormField
                     control={form.control}
                     name="models"
                     label="Models"
-                    description="Leave empty to grant no models directly. The team keeps any models granted through its access groups"
+                    description={
+                      watchedOrganizationId
+                        ? "Leave empty to inherit organization models. An exception requires explicit models"
+                        : "Leave empty to grant no models directly. The team keeps any models granted through its access groups"
+                    }
                   >
                     {({ id, value, onChange }) => (
                       <ModelSelect
@@ -1155,12 +1192,12 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                         value={value ?? []}
                         onChange={onChange}
                         teamID={teamId}
-                        organizationID={teamData?.team_info?.organization_id || undefined}
+                        organizationID={watchedOrganizationId || undefined}
                         options={{
-                          includeSpecialOptions: true,
-                          includeUserModels: !teamData?.team_info?.organization_id,
+                          includeSpecialOptions: !modelPolicyOverride,
+                          includeUserModels: !watchedOrganizationId,
                           showAllProxyModelsOverride:
-                            isProxyAdminRole(userRole) && !teamData?.team_info?.organization_id,
+                            modelPolicyOverride || (isProxyAdminRole(userRole) && !watchedOrganizationId),
                         }}
                         context="team"
                         dataTestId="models-select"

@@ -34,6 +34,7 @@ from litellm.proxy._types import *
 from litellm.proxy.auth.auth_checks import can_user_call_model, get_user_object
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.timezone_utils import get_budget_reset_time
+from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.management_endpoints.budget_management_endpoints import (
     new_budget,
     update_budget,
@@ -660,7 +661,7 @@ async def update_organization(
     """
     Update an organization
     """
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import prisma_client, user_api_key_cache
 
     if prisma_client is None:
         raise HTTPException(
@@ -763,6 +764,8 @@ async def update_organization(
         include={"members": True, "teams": True, "litellm_budget_table": True},
     )
 
+    await _invalidate_organization_model_cache(data.organization_id, user_api_key_cache)
+
     await _create_organization_audit_log(
         object_id=data.organization_id,
         action="updated",
@@ -773,6 +776,15 @@ async def update_organization(
     )
 
     return response
+
+
+async def _invalidate_organization_model_cache(organization_id: str, user_api_key_cache: UserApiKeyCache) -> None:
+    from litellm.proxy.common_utils.auth_cache_invalidation_pubsub import evict_and_broadcast
+
+    await evict_and_broadcast(
+        cache_keys=(f"org_id:{organization_id}", f"org_id:{organization_id}:with_budget"),
+        user_api_key_cache=user_api_key_cache,
+    )
 
 
 async def handle_update_object_permission(
@@ -824,7 +836,7 @@ async def update_organization_v2(
     Validation failures return 422; the object-permission upsert, budget-row write, and
     org-row write are one transaction.
     """
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import prisma_client, user_api_key_cache
 
     if prisma_client is None:
         raise HTTPException(
@@ -950,6 +962,8 @@ async def update_organization_v2(
             data=organization_write_data,
             include={"members": True, "teams": True, "litellm_budget_table": True},
         )
+
+    await _invalidate_organization_model_cache(organization_id, user_api_key_cache)
 
     await _create_organization_audit_log(
         object_id=organization_id,

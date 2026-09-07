@@ -7394,6 +7394,13 @@ async def get_available_models_for_user(
     Returns:
         List of model names available to the user
     """
+    from litellm.proxy._types import UI_TEAM_ID
+    from litellm.proxy.auth.auth_checks import (
+        get_model_policy_organization,
+        get_model_policy_team_models,
+        get_team_object,
+        organization_model_access_error,
+    )
     from litellm.proxy.auth.model_checks import (
         get_complete_model_list,
         get_key_models,
@@ -7420,11 +7427,40 @@ async def get_available_models_for_user(
         else None
     )
 
+    effective_team_id: Final = team_id or user_api_key_dict.team_id
+    policy_team: Final = requested_team_object or (
+        await get_team_object(
+            team_id=effective_team_id,
+            prisma_client=prisma_client,
+            user_api_key_cache=user_api_key_cache,
+            proxy_logging_obj=proxy_logging_obj,
+        )
+        if effective_team_id
+        and effective_team_id != UI_TEAM_ID
+        and prisma_client is not None
+        and user_api_key_cache is not None
+        else None
+    )
+    organization: Final = await get_model_policy_organization(
+        team_object=policy_team,
+        org_id=user_api_key_dict.org_id,
+        prisma_client=prisma_client,
+        user_api_key_cache=user_api_key_cache or UserApiKeyCache(),
+        proxy_logging_obj=proxy_logging_obj,
+    )
+    effective_policy_models: Final = await get_model_policy_team_models(
+        policy_team, organization, prisma_client, user_api_key_cache or UserApiKeyCache(), proxy_logging_obj
+    )
+
     key_models: Final[Sequence[str]] = (
         ()
         if requested_team_object is not None
         else get_key_models(
-            user_api_key_dict=user_api_key_dict,
+            user_api_key_dict=(
+                user_api_key_dict.model_copy(update=MappingProxyType({"team_models": policy_team.models}))
+                if policy_team is not None
+                else user_api_key_dict
+            ),
             proxy_model_list=proxy_model_list,
             model_access_groups=model_access_groups,
             include_model_access_groups=include_model_access_groups,
@@ -7432,15 +7468,11 @@ async def get_available_models_for_user(
     )
 
     team_models: Final = get_team_models(
-        team_models=(
-            requested_team_object.models if requested_team_object is not None else user_api_key_dict.team_models
-        ),
+        team_models=(policy_team.models if policy_team is not None else user_api_key_dict.team_models),
         proxy_model_list=proxy_model_list,
         model_access_groups=model_access_groups,
         include_model_access_groups=include_model_access_groups,
     )
-
-    effective_team_id: Final = team_id or user_api_key_dict.team_id
 
     access_group_models: Final = (
         await _get_access_group_models(
@@ -7478,7 +7510,19 @@ async def get_available_models_for_user(
         team_id=effective_team_id,
     )
 
-    return all_models
+    return [  # mutable-ok: preserve the existing list[str] model-list return contract
+        model
+        for model in all_models
+        if organization_model_access_error(
+            model=model,
+            team_object=policy_team,
+            team_models=effective_policy_models,
+            organization=organization,
+            llm_router=llm_router,
+            team_model_aliases=user_api_key_dict.team_model_aliases,
+        )
+        is None
+    ]
 
 
 def create_model_info_response(

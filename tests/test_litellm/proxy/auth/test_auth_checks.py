@@ -79,6 +79,120 @@ def _rendered_log_message(call):
     return message % values if values else message
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "team_models,policy,requested,allowed",
+    [
+        ([], "inherit", "allowed-model", True),
+        ([], "inherit", "other-model", False),
+        (["all-proxy-models"], "inherit", "other-model", False),
+        (["other-model"], "inherit", "other-model", False),
+        (["other-model"], "override", "other-model", True),
+        (["other-model"], "override", "allowed-model", False),
+        ([], "override", "other-model", False),
+        ([], "inherit", ["allowed-model", "other-model"], False),
+    ],
+)
+async def test_common_checks_organization_model_policy(team_models, policy, requested, allowed):
+    from litellm.proxy._types import LiteLLM_OrganizationTable
+    from litellm.proxy.auth.auth_checks import common_checks
+
+    organization = LiteLLM_OrganizationTable(
+        organization_id="org-policy", budget_id="budget-policy", models=["allowed-model"],
+        created_by="admin", updated_by="admin",
+    )
+    team = LiteLLM_TeamTable(
+        team_id="team-policy", organization_id="org-policy", models=team_models,
+        metadata={"organization_model_policy": policy},
+    )
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="org_id:org-policy", value=organization)
+    with patch.multiple(  # test-quality-ok: TQ008 legacy entrypoint reads process DB/cache globals; inject test infrastructure
+        "litellm.proxy.proxy_server", prisma_client=MagicMock(), user_api_key_cache=cache
+    ):
+        call = common_checks(
+            request_body={"model": requested}, team_object=team, user_object=None,
+            end_user_object=None, global_proxy_spend=None, general_settings={},
+            route="/chat/completions", llm_router=None, proxy_logging_obj=MagicMock(),
+            valid_token=UserAPIKeyAuth(team_id="team-policy"), request=Request({"type": "http", "headers": []}),
+            skip_budget_checks=True,
+        )
+        if allowed:
+            assert await call is True
+        else:
+            with pytest.raises(ProxyException) as exc:
+                await call
+            assert exc.value.code == "403"
+
+
+@pytest.mark.asyncio
+async def test_resolved_model_keeps_organization_ceiling():
+    from litellm.proxy._types import LiteLLM_OrganizationTable, LiteLLM_TeamTableCachedObj
+    from litellm.proxy.auth.auth_checks import can_key_call_resolved_model
+
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="team_id:team-policy", value=LiteLLM_TeamTableCachedObj(
+        team_id="team-policy", organization_id="org-policy", models=[],
+    ))
+    await cache.async_set_cache(key="org_id:org-policy", value=LiteLLM_OrganizationTable(
+        organization_id="org-policy", budget_id="budget-policy", models=["allowed-model"],
+        created_by="admin", updated_by="admin",
+    ))
+    with patch.multiple(  # test-quality-ok: TQ008 legacy entrypoint reads process DB/cache globals; inject test infrastructure
+        "litellm.proxy.proxy_server", prisma_client=MagicMock(), user_api_key_cache=cache
+    ):
+        with pytest.raises(ProxyException) as exc:
+            await can_key_call_resolved_model(
+                model="other-model", llm_model_list=None, llm_router=None,
+                valid_token=UserAPIKeyAuth(team_id="team-policy", models=[]),
+            )
+        assert exc.value.code == "403"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alias_target,allowed", [("allowed-model", True), ("other-model", False)])
+async def test_organization_model_policy_resolves_team_alias_targets(alias_target, allowed):
+    from litellm.proxy._types import LiteLLM_OrganizationTable
+    from litellm.proxy.auth.auth_checks import common_checks
+
+    organization = LiteLLM_OrganizationTable(
+        organization_id="org-policy", budget_id="budget-policy", models=["allowed-model"],
+        created_by="admin", updated_by="admin",
+    )
+    team = LiteLLM_TeamTable(team_id="team-policy", organization_id="org-policy", models=[])
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="org_id:org-policy", value=organization)
+    with patch.multiple(  # test-quality-ok: TQ008 legacy entrypoint reads process DB/cache globals; inject test infrastructure
+        "litellm.proxy.proxy_server", prisma_client=MagicMock(), user_api_key_cache=cache
+    ):
+        call = common_checks(
+            request_body={"model": "team-alias"}, team_object=team, user_object=None,
+            end_user_object=None, global_proxy_spend=None, general_settings={},
+            route="/chat/completions", llm_router=None, proxy_logging_obj=MagicMock(),
+            valid_token=UserAPIKeyAuth(team_id="team-policy", team_model_aliases={"team-alias": alias_target}),
+            request=Request({"type": "http", "headers": []}), skip_budget_checks=True,
+        )
+        if allowed:
+            assert await call is True
+        else:
+            with pytest.raises(ProxyException) as exc:
+                await call
+            assert exc.value.code == "403"
+
+
+@pytest.mark.asyncio
+async def test_organization_model_policy_does_not_ignore_lookup_failure():
+    from litellm.proxy.auth.auth_checks import get_model_policy_organization
+
+    prisma = MagicMock()
+    prisma.db.litellm_organizationtable.find_unique = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await get_model_policy_organization(
+            team_object=LiteLLM_TeamTable(team_id="team-policy", organization_id="org-policy"),
+            org_id=None, prisma_client=prisma, user_api_key_cache=UserApiKeyCache(), proxy_logging_obj=MagicMock(),
+        )
+
+
 @pytest.fixture(autouse=True)
 def set_salt_key(monkeypatch):
     """Automatically set LITELLM_SALT_KEY for all tests"""

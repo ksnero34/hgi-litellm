@@ -899,6 +899,27 @@ async def common_checks(
     if team_object is not None and team_object.blocked is True:
         raise Exception(f"Team={team_object.team_id} is blocked. Update via `/team/unblock` if you're an admin.")
 
+    if _model:
+        organization: Final = await get_model_policy_organization(
+            team_object=team_object,
+            org_id=valid_token.org_id if valid_token is not None else None,
+            prisma_client=prisma_client,
+            user_api_key_cache=user_api_key_cache,
+            proxy_logging_obj=proxy_logging_obj,
+        )
+        policy_error: Final = organization_model_access_error(
+            model=_model,
+            team_object=team_object,
+            team_models=await get_model_policy_team_models(
+                team_object, organization, prisma_client, user_api_key_cache, proxy_logging_obj
+            ),
+            organization=organization,
+            llm_router=llm_router,
+            team_model_aliases=valid_token.team_model_aliases if valid_token is not None else None,
+        )
+        if policy_error is not None:
+            raise policy_error
+
     # 2. If team can call model (or key's access_group_ids grant it)
     if _model and team_object:
         with tracer.trace("litellm.proxy.auth.common_checks.can_team_access_model"):
@@ -3908,10 +3929,10 @@ async def _get_agent_ids_from_access_groups(
 
 
 def _resolve_all_team_model_sentinel_for_auth_check(
-    models: list[str],
+    models: Sequence[str],
     llm_router: Router | None,
     team_id: str | None,
-) -> list[str]:
+) -> Sequence[str]:
     if SpecialModelNames.all_team_models.value not in models or team_id is None or llm_router is None:
         return models
     proxy_models: Final = llm_router.get_model_names()
@@ -3924,7 +3945,7 @@ def _resolve_all_team_model_sentinel_for_auth_check(
 def _check_model_access_helper(
     model: str,
     llm_router: Router | None,
-    models: list[str],
+    models: Sequence[str],
     team_model_aliases: dict[str, str] | None = None,
     team_id: str | None = None,
 ) -> bool:
@@ -3970,9 +3991,9 @@ def _check_model_access_helper(
 
 
 def _can_object_call_model(
-    model: str | list[str],
+    model: str | Sequence[str],
     llm_router: Router | None,
-    models: list[str],
+    models: Sequence[str],
     team_model_aliases: dict[str, str] | None = None,
     team_id: str | None = None,
     object_type: Literal["user", "team", "key", "org", "project"] = "user",
@@ -3996,7 +4017,7 @@ def _can_object_call_model(
     """
     if fallback_depth >= DEFAULT_MAX_RECURSE_DEPTH:
         raise Exception(f"Unable to parse model, max fallback depth exceeded - received model: {model}")
-    if isinstance(model, list):
+    if not isinstance(model, str):
         for m in model:
             _can_object_call_model(
                 model=m,
@@ -4343,6 +4364,7 @@ async def can_key_call_resolved_model(
         except Exception:
             team_object = LiteLLM_TeamTableCachedObj(
                 team_id=valid_token.team_id,
+                organization_id=valid_token.org_id,
                 models=valid_token.team_models,
                 blocked=valid_token.team_blocked,
                 team_alias=valid_token.team_alias,
@@ -4381,6 +4403,26 @@ async def can_key_call_resolved_model(
                 proxy_logging_obj=proxy_logging_obj,
             )
 
+    organization: Final = await get_model_policy_organization(
+        team_object=team_object,
+        org_id=valid_token.org_id,
+        prisma_client=prisma_client,
+        user_api_key_cache=user_api_key_cache,
+        proxy_logging_obj=proxy_logging_obj,
+    )
+    policy_error: Final = organization_model_access_error(
+        model=model,
+        team_object=team_object,
+        team_models=await get_model_policy_team_models(
+            team_object, organization, prisma_client, user_api_key_cache, proxy_logging_obj
+        ),
+        organization=organization,
+        llm_router=llm_router,
+        team_model_aliases=valid_token.team_model_aliases,
+    )
+    if policy_error is not None:
+        raise policy_error
+
     if valid_token.project_id is not None:
         project_object: Final = await get_project_object(
             project_id=valid_token.project_id,
@@ -4394,6 +4436,91 @@ async def can_key_call_resolved_model(
                 project_object=project_object,
                 llm_router=llm_router,
             )
+
+
+async def get_model_policy_organization(
+    team_object: LiteLLM_TeamTable | None,
+    org_id: str | None,
+    prisma_client: PrismaClient | None,
+    user_api_key_cache: UserApiKeyCache,
+    proxy_logging_obj: ProxyLogging | None,
+) -> LiteLLM_OrganizationTable | None:
+    organization_id: Final = team_object.organization_id if team_object is not None else org_id
+    if organization_id is None:
+        return None
+    return await get_org_object(
+        org_id=organization_id,
+        prisma_client=prisma_client,
+        user_api_key_cache=user_api_key_cache,
+        proxy_logging_obj=proxy_logging_obj,
+    )
+
+
+async def get_model_policy_team_models(
+    team_object: LiteLLM_TeamTable | None,
+    organization: LiteLLM_OrganizationTable | None,
+    prisma_client: PrismaClient | None,
+    user_api_key_cache: UserApiKeyCache,
+    proxy_logging_obj: ProxyLogging | None,
+) -> Sequence[str]:
+    if (
+        organization is None
+        or team_object is None
+        or not team_object.models
+        or not team_object.access_group_ids
+        or (team_object.metadata or MappingProxyType({})).get("organization_model_policy") == "override"
+    ):
+        return team_object.models if team_object is not None else ()
+    group_models: Final = await _get_models_from_access_groups(
+        access_group_ids=team_object.access_group_ids,
+        prisma_client=prisma_client,
+        user_api_key_cache=user_api_key_cache,
+        proxy_logging_obj=proxy_logging_obj,
+    )
+    return (*team_object.models, *group_models)
+
+
+def organization_model_access_error(
+    model: str | list[str],
+    team_object: LiteLLM_TeamTable | None,
+    organization: LiteLLM_OrganizationTable | None,
+    llm_router: Router | None,
+    team_model_aliases: dict[str, str] | None = None,
+    team_models: Sequence[str] | None = None,
+) -> ProxyException | None:
+    if organization is None:
+        return None
+    override: Final = (
+        team_object is not None
+        and (team_object.metadata or MappingProxyType({})).get("organization_model_policy") == "override"
+    )
+    requested_models: Final = (model,) if isinstance(model, str) else model
+    resolved_models: Final = tuple(
+        (team_model_aliases or MappingProxyType({})).get(name, name) for name in requested_models
+    )
+    effective_team_models: Final = (
+        team_models if team_models is not None else (team_object.models if team_object is not None else ())
+    )
+    try:
+        if not override:
+            _can_object_call_model(
+                model=resolved_models,
+                models=organization.models,
+                llm_router=llm_router,
+                team_id=team_object.team_id if team_object is not None else None,
+                object_type="org",
+            )
+        if team_object is not None:
+            _can_object_call_model(
+                model=resolved_models,
+                models=effective_team_models or ((SpecialModelNames.no_default_models.value,) if override else ()),
+                llm_router=llm_router,
+                team_id=team_object.team_id,
+                object_type="team",
+            )
+    except ProxyException as error:
+        return error
+    return None
 
 
 def can_org_access_model(

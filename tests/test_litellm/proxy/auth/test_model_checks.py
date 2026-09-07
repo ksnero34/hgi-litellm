@@ -6,6 +6,153 @@ from litellm.proxy._types import LiteLLM_TeamTable, LiteLLM_UserTable, Member
 from litellm.proxy.auth.handle_jwt import JWTAuthManager
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "team_models,key_models,policy,expected",
+    [
+        ([], [], "inherit", ["allowed-model"]),
+        ([], ["all-proxy-models"], "inherit", ["allowed-model"]),
+        (["other-model"], [], "inherit", []),
+        (["other-model"], [], "override", ["other-model"]),
+        (["other-model"], ["allowed-model"], "override", []),
+        ([], [], "override", []),
+    ],
+)
+async def test_model_listing_applies_organization_model_policy(team_models, key_models, policy, expected):
+    from unittest.mock import MagicMock
+
+    from litellm.proxy._types import LiteLLM_OrganizationTable, LiteLLM_TeamTableCachedObj, UserAPIKeyAuth
+    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+    from litellm.proxy.utils import get_available_models_for_user
+    from litellm.router import Router
+
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="team_id:team-policy", value=LiteLLM_TeamTableCachedObj(
+        team_id="team-policy", organization_id="org-policy", models=team_models,
+        metadata={"organization_model_policy": policy},
+    ))
+    await cache.async_set_cache(key="org_id:org-policy", value=LiteLLM_OrganizationTable(
+        organization_id="org-policy", budget_id="budget-policy", models=["allowed-model"],
+        created_by="admin", updated_by="admin",
+    ))
+    router = Router(model_list=[
+        {"model_name": name, "litellm_params": {"model": "openai/" + name, "api_key": "test"}}
+        for name in ["allowed-model", "other-model"]
+    ])
+    result = await get_available_models_for_user(
+        user_api_key_dict=UserAPIKeyAuth(team_id="team-policy", models=key_models, team_models=team_models),
+        llm_router=router, general_settings={}, user_model=None,
+        prisma_client=MagicMock(), user_api_key_cache=cache, proxy_logging_obj=MagicMock(),
+    )
+    assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_model_listing_ui_team_sentinel_with_database():
+    from unittest.mock import MagicMock
+
+    from litellm.proxy._types import UI_TEAM_ID
+    from litellm.proxy._types import UserAPIKeyAuth
+    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+    from litellm.proxy.utils import get_available_models_for_user
+    from litellm.router import Router
+
+    router = Router(model_list=[
+        {"model_name": "ui-model", "litellm_params": {"model": "openai/ui-model", "api_key": "test"}},
+    ])
+    result = await get_available_models_for_user(
+        user_api_key_dict=UserAPIKeyAuth(team_id=UI_TEAM_ID, models=[], team_models=[]),
+        llm_router=router, general_settings={}, user_model=None,
+        prisma_client=MagicMock(), user_api_key_cache=UserApiKeyCache(), proxy_logging_obj=MagicMock(),
+    )
+    assert result == ["ui-model"]
+
+
+@pytest.mark.asyncio
+async def test_model_listing_all_team_models_uses_fresh_team_permissions():
+    from unittest.mock import MagicMock
+
+    from litellm.proxy._types import LiteLLM_TeamTableCachedObj, UserAPIKeyAuth
+    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+    from litellm.proxy.utils import get_available_models_for_user
+    from litellm.router import Router
+
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="team_id:fresh-team", value=LiteLLM_TeamTableCachedObj(
+        team_id="fresh-team", models=["new-model"],
+    ))
+    router = Router(model_list=[
+        {"model_name": name, "litellm_params": {"model": "openai/" + name, "api_key": "test"}}
+        for name in ["old-model", "new-model"]
+    ])
+    result = await get_available_models_for_user(
+        user_api_key_dict=UserAPIKeyAuth(
+            team_id="fresh-team", models=["all-team-models"], team_models=["old-model"],
+        ),
+        llm_router=router, general_settings={}, user_model=None,
+        prisma_client=MagicMock(), user_api_key_cache=cache, proxy_logging_obj=MagicMock(),
+    )
+    assert result == ["new-model"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("team_owned", [True, False])
+async def test_model_listing_access_groups_respect_organization_and_team_ceiling(team_owned):
+    from unittest.mock import MagicMock
+
+    from litellm.proxy._types import (
+        LiteLLM_AccessGroupTable,
+        LiteLLM_OrganizationTable,
+        LiteLLM_TeamTableCachedObj,
+        UserAPIKeyAuth,
+    )
+    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+    from litellm.proxy.utils import get_available_models_for_user
+    from litellm.router import Router
+
+    team_models = ["no-default-models"] if team_owned else ["team-model"]
+    cache = UserApiKeyCache()
+    await cache.async_set_cache(key="team_id:group-team", value=LiteLLM_TeamTableCachedObj(
+        team_id="group-team", organization_id="group-org", models=team_models,
+        access_group_ids=["team-group"] if team_owned else [],
+    ))
+    await cache.async_set_cache(key="org_id:group-org", value=LiteLLM_OrganizationTable(
+        organization_id="group-org", budget_id="group-budget", models=["team-model", "group-model"],
+        created_by="admin", updated_by="admin",
+    ))
+    await cache.async_set_cache(
+        key="access_group_id:team-group" if team_owned else "access_group_id:key-group",
+        value=LiteLLM_AccessGroupTable(
+            access_group_id="team-group" if team_owned else "key-group",
+            access_group_name="model-grants",
+            access_model_names=(
+                ["group-model", "outside-org-model"]
+                if team_owned else ["team-model", "group-model", "outside-org-model"]
+            ),
+            assigned_team_ids=["group-team"],
+        ),
+    )
+    router = Router(model_list=[
+        {"model_name": name, "litellm_params": {"model": "openai/" + name, "api_key": "test"}}
+        for name in ["team-model", "group-model", "outside-org-model"]
+    ])
+
+    database = MagicMock()
+    logging = MagicMock(service_logging_obj=MagicMock(async_service_success_hook=AsyncMock()))
+    with patch.multiple(  # test-quality-ok: TQ008 inject DB/cache globals required by the legacy entrypoint
+        "litellm.proxy.proxy_server", prisma_client=database, user_api_key_cache=cache, proxy_logging_obj=logging,
+    ):
+        result = await get_available_models_for_user(
+            user_api_key_dict=UserAPIKeyAuth(
+                team_id="group-team", models=["no-default-models"], team_models=team_models,
+                access_group_ids=[] if team_owned else ["key-group"],
+            ),
+            llm_router=router, general_settings={}, user_model=None,
+            prisma_client=database, user_api_key_cache=cache, proxy_logging_obj=logging,
+        )
+    assert result == (["group-model"] if team_owned else ["team-model"])
+
+
 def test_get_team_models_for_all_models_and_team_only_models():
     from litellm.proxy.auth.model_checks import get_team_models
 

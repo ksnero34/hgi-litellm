@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeTeamModelBadges, normalizeTeamModelSelection, TeamAccessGroupModelGrant } from "./teamModelAccess";
+import {
+  computeTeamModelBadges,
+  hasExplicitTeamModels,
+  normalizeTeamModelSelection,
+  TeamAccessGroupModelGrant,
+} from "./teamModelAccess";
 
 const GRANTS: TeamAccessGroupModelGrant[] = [
   { access_group_id: "ag-1", access_group_name: "shared", models: ["haiku", "gpt-4o-mini"] },
@@ -10,6 +15,11 @@ describe("normalizeTeamModelSelection", () => {
   it("substitutes the no-default-models sentinel for an empty selection", () => {
     expect(normalizeTeamModelSelection([])).toEqual(["no-default-models"]);
     expect(normalizeTeamModelSelection(undefined)).toEqual(["no-default-models"]);
+  });
+
+  it("preserves empty selections to inherit the organization policy", () => {
+    expect(normalizeTeamModelSelection([], "org-1")).toEqual([]);
+    expect(normalizeTeamModelSelection(undefined, "org-1")).toEqual([]);
   });
 
   it("passes a non-empty selection through untouched", () => {
@@ -81,6 +91,28 @@ describe("computeTeamModelBadges", () => {
     expect(badges).toEqual([
       { label: "direct-model", kind: "direct", tooltip: "Granted directly in the team's model list" },
       { label: "haiku", kind: "access-group", tooltip: "Granted via an access group" },
+    ]);
+  });
+});
+
+describe("organization model policy", () => {
+  it("requires explicit model grants for exceptions", () => {
+    expect(hasExplicitTeamModels(["model-a"])).toBe(true);
+    expect(hasExplicitTeamModels([])).toBe(false);
+    expect(hasExplicitTeamModels(undefined)).toBe(false);
+    for (const sentinel of ["all-proxy-models", "no-default-models", "all-team-models", "*"]) {
+      expect(hasExplicitTeamModels([sentinel])).toBe(false);
+      expect(hasExplicitTeamModels(["model-a", sentinel])).toBe(false);
+    }
+  });
+
+  it("labels inherited access as organization models instead of unrestricted proxy access", () => {
+    expect(computeTeamModelBadges([], [], [], true)).toEqual([
+      {
+        label: "Organization models",
+        kind: "inherited",
+        tooltip: "Inherits the organization's allowed models",
+      },
     ]);
   });
 });
