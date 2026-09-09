@@ -11,6 +11,7 @@ PARENT = {
     "user_api_key": "sk-hash",
     "user_api_key_hash": "sk-hash",
     "user_api_key_team_id": "team-1",
+    "requester_ip_address": "192.0.2.10",
     "user_api_key_budget_reservation": {"amount": 1.0},
     "user_api_key_auth": {"api_key": "sk-hash", "budget_reservation": {"amount": 1.0}},
     "routing_decision": {"router_model_name": "my-router"},
@@ -39,6 +40,7 @@ def test_sanitized_forwardable_metadata_keeps_only_identity_and_always_stamps():
     assert result[INTERNAL_CALL_ORIGIN_METADATA_KEY] == SHADOW_EVAL_ROUTER_CALL_ORIGIN
     assert result["user_api_key"] == "sk-hash"
     assert result["user_api_key_team_id"] == "team-1"
+    assert result["requester_ip_address"] == "192.0.2.10"
     assert result["user_api_key_auth"] == {"api_key": "sk-hash"}
     assert "routing_decision" not in result
     assert "headers" not in result

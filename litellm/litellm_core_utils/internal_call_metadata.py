@@ -30,7 +30,7 @@ MODEL_ACCESS_GROUP_METADATA_KEY: Final = "user_api_key_matched_model_access_grou
 
 The ``user_api_key`` prefix is load-bearing, not cosmetic: when a request carries both
 ``metadata`` and ``litellm_metadata``, ``get_litellm_metadata_from_kwargs`` returns the latter and
-copies a key across only when ``user_api_key`` appears in its name."""
+copies fields across when ``user_api_key`` appears in their names."""
 
 _USER_API_KEY_AUTH_KEY: Final = "user_api_key_auth"
 
@@ -43,6 +43,7 @@ FORWARDABLE_IDENTITY_METADATA_KEYS: Final = frozenset(
         "user_api_key_org_id",
         "user_api_key_user_id",
         "user_api_key_end_user_id",
+        "requester_ip_address",
         _USER_API_KEY_AUTH_KEY,
     }
 )

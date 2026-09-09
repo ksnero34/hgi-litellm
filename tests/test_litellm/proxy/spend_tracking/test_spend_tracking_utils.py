@@ -42,6 +42,46 @@ from litellm.types.utils import (
 )
 
 
+@pytest.mark.parametrize(
+    ("request_ip", "logging_metadata", "expected_ip"),
+    (
+        ("192.0.2.10", {"session_id": "next-turn"}, "192.0.2.10"),
+        ("192.0.2.10", {"requester_ip_address": None}, "192.0.2.10"),
+        ("192.0.2.10", {"requester_ip_address": ""}, "192.0.2.10"),
+        ("192.0.2.10", {"requester_ip_address": "192.0.2.20"}, "192.0.2.20"),
+        (None, {"requester_ip_address": "192.0.2.20"}, "192.0.2.20"),
+        (None, {"session_id": "next-turn"}, None),
+    ),
+)
+def test_get_logging_payload_preserves_requester_ip_across_metadata_buckets(
+    request_ip: str | None,
+    logging_metadata: dict[str, str | None],
+    expected_ip: str | None,
+) -> None:
+    timestamp: Final = datetime.datetime(2026, 9, 9, tzinfo=timezone.utc)
+    payload: Final = get_logging_payload(
+        kwargs={
+            "model": "test-model",
+            "call_type": "acompletion",
+            "litellm_params": {
+                "metadata": {
+                    "user_api_key_alias": "test-key",
+                    "requester_ip_address": request_ip,
+                },
+                "litellm_metadata": {"user_api_key_alias": "previous-key", **logging_metadata},
+            },
+        },
+        response_obj=litellm.ModelResponse(id="chatcmpl-ip-metadata", choices=[]),
+        start_time=timestamp,
+        end_time=timestamp,
+    )
+    metadata: Final = json.loads(payload["metadata"])
+
+    assert payload["requester_ip_address"] == expected_ip
+    assert metadata["requester_ip_address"] == expected_ip
+    assert metadata["user_api_key_alias"] == "test-key"
+
+
 def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
     payload = get_logging_payload(
         kwargs={

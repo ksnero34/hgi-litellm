@@ -1084,6 +1084,7 @@ class TestShadowPipeline:
         parent_metadata = {
             "user_api_key_hash": "key-hash",
             "user_api_key_team_id": "team-1",
+            "requester_ip_address": "192.0.2.10",
             "user_api_key_budget_reservation": {"amount": 1.0},
             "routing_decision": {"router_model_name": "other-router"},
         }
@@ -1109,6 +1110,7 @@ class TestShadowPipeline:
             assert call["fallbacks"] == []
             assert call["metadata"]["user_api_key_hash"] == "key-hash"
             assert call["metadata"]["user_api_key_team_id"] == "team-1"
+            assert call["metadata"]["requester_ip_address"] == "192.0.2.10"
             assert "user_api_key_budget_reservation" not in call["metadata"]
         assert shadow_call["metadata"][INTERNAL_CALL_ORIGIN_METADATA_KEY] == SHADOW_EVAL_ROUTER_CALL_ORIGIN
         assert judge_call["metadata"][INTERNAL_CALL_ORIGIN_METADATA_KEY] == SHADOW_EVAL_JUDGE_CALL_ORIGIN

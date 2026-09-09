@@ -236,7 +236,9 @@ def add_missing_spend_metadata_to_litellm_metadata(litellm_metadata: dict, metad
     """
     potential_spend_tracking_metadata_substring: Final = "user_api_key"
     for key, value in metadata.items():
-        if potential_spend_tracking_metadata_substring in key:
+        if potential_spend_tracking_metadata_substring in key or (
+            key == "requester_ip_address" and value and not litellm_metadata.get(key)
+        ):
             litellm_metadata[key] = value
     return litellm_metadata
 
